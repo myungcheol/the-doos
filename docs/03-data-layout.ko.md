@@ -12,29 +12,34 @@
 3. 원본은 `scan/`에 그대로 두고, 앱이 읽는 정규화 경로를 `data/pages/`에 만든다. 원본 파일명·해시는 manifest에 보존한다.
 4. `上###`는 인물 텍스트가 아니라 **페이지 참조**이므로 `page_refs` 테이블로 분리한다.
 5. 전편은 `page_texts`/`toc_entries`/`captions` 중심, 본편은 `people`/`relations` 중심으로 저장한다.
-6. 전편 63면 항렬표(`scan/63.jpg`)는 `generation_chars` 테이블로 저장한다.
-7. 파일명은 4자리 zero-pad를 쓴다. 예: `genealogy/0025.jpg`, `frontmatter/0047.jpg`.
+6. 전편 63면 항렬표(`scan/frontmatter/063.jpg`)는 `generation_chars` 테이블로 저장한다.
+7. 원본 `scan/`은 3자리 zero-pad(`frontmatter/047.jpg`), 앱 정규화 경로 `data/pages/`는 4자리(`frontmatter/0047.jpg`)를 쓴다.
+8. 폴더 이름은 `frontmatter`(전편) / `genealogy`(본편)로 확정한다. 표지는 `scan/` 루트에 둔다.
 
 ---
 
 ## 2. 폴더 구조
 
-### 2.1 원본 (수정 금지)
+### 2.1 원본 (내용 수정 금지)
 
-현재 `scan/`은 원본으로 보존한다. 2026-10-28 기준 `.jpeg` 파일은 `.jpg`로 정리했다.
+현재 `scan/`은 원본으로 보존한다. 2026-10-28 기준 `.jpeg` 파일은 `.jpg`로, 숫자 파일명은 3자리 zero-pad로 정리했고, 전편/본편을 폴더로 분리했다.
 
 ```text
 scan/
-  people/                 # 본편 세보 935장
-  1.jpg ~ 47.jpg          # 전편 1~47면 (47 = 목차)
-  49.jpg ~ 63.jpg         # 전편 사진·부록 (49~62 사진, 63 항렬표)
-  65.jpg ~ 66.jpg         # 전편 조견색인
+  frontmatter/            # 전편 (구분 A)
+    001.jpg ~ 047.jpg     # 서문·추고·구보 서문 번역·목차
+    049.jpg ~ 063.jpg     # 049~062 묘소·제각·정려 사진, 063 항렬표
+    065.jpg ~ 066.jpg     # 조견색인
+  genealogy/              # 본편 (구분 B)
+    001.jpg ~ 938.jpg     # 세보 001~935, 임원록 936, 수단 937, 간기 938
   앞표지.jpg
   뒷표지.jpg
 ```
 
-- 전편 48.jpg, 64.jpg는 현재 없다.
-- 본편 052.jpg, 934.jpg, 935.jpg는 현재 없다.
+- `frontmatter/`에는 현재 001~047, 049~063, 065~066이 있다. 즉 048, 064, 067~093은 없다.
+- `genealogy/`에는 현재 001~052, 054~933, 936~938이 있다. 즉 053, 934, 935는 없다.
+- **없는 면은 그대로 둔다.** 공백이 원래 의도된 것이거나 업로드 누락일 수 있으므로, 재스캔·추적 없이 manifest와 앱에서 “미수록”으로 표시만 한다.
+- `genealogy/052.jpg`는 원래 `053.jpg`였던 파일이 52면으로 정정된 것이다. 그래서 지금 053이 비어 있다.
 
 ### 2.2 앱용 정규화 경로
 
@@ -50,7 +55,7 @@ data/
       0047.jpg
       0049.jpg
       ...
-      0061.jpg
+      0066.jpg
     genealogy/
       0001.jpg
       0002.jpg
@@ -64,21 +69,23 @@ data/
 ```
 
 - `frontmatter`는 전편 1~93면을 대상으로 한다. 현재 스캔은 1~47, 49~63, 65~66면이 있고, 48·64·67~93면은 `missing`으로 기록한다.
-- `genealogy`는 본편 1~938면을 대상으로 한다. 현재 052, 934, 935가 없다.
+- `genealogy`는 본편 1~938면을 대상으로 한다. 현재 053, 934, 935가 없다.
 - `data/pages`는 원본의 symlink여도 되고, 복사본이어도 된다. 원본은 절대 수정하지 않는다.
+- 원본이 3자리(`scan/genealogy/025.jpg`)이고 정규화 경로가 4자리(`data/pages/genealogy/0025.jpg`)이므로, manifest가 둘을 연결한다.
 
 ### 2.3 `pages.csv` manifest
 
 ```csv
 section,printed_page_no,scan_seq,source_path,normalized_path,sha256,width,height,dpi,page_type,quality_flags,notes
-genealogy,1,1,scan/people/001.jpg,data/pages/genealogy/0001.jpg,...,688,948,96,genealogy,,1~6세 표
-genealogy,2,2,scan/people/002.jpg,data/pages/genealogy/0002.jpg,...,700,948,96,genealogy,,
+genealogy,1,1,scan/genealogy/001.jpg,data/pages/genealogy/0001.jpg,...,688,948,96,genealogy,,1~6세 표
+genealogy,2,2,scan/genealogy/002.jpg,data/pages/genealogy/0002.jpg,...,700,948,96,genealogy,,
 ...
-frontmatter,46,46,scan/46.jpg,data/pages/frontmatter/0046.jpg,...,705,956,96,preface,,
-frontmatter,47,47,scan/47.jpg,data/pages/frontmatter/0047.jpg,...,720,955,99,index,,목차
-frontmatter,52,52,scan/52.jpg,data/pages/frontmatter/0052.jpg,...,703,948,96,photo,,묘소 사진
-frontmatter,63,63,scan/63.jpg,data/pages/frontmatter/0063.jpg,...,704,940,96,generation_name_table,,항렬표
-genealogy,52,52,,,MISSING,,,,,,본편 52면 누락
+frontmatter,46,46,scan/frontmatter/046.jpg,data/pages/frontmatter/0046.jpg,...,705,956,96,preface,,
+frontmatter,47,47,scan/frontmatter/047.jpg,data/pages/frontmatter/0047.jpg,...,720,955,99,index,,목차
+frontmatter,52,52,scan/frontmatter/052.jpg,data/pages/frontmatter/0052.jpg,...,703,948,96,photo,,묘소 사진
+frontmatter,63,63,scan/frontmatter/063.jpg,data/pages/frontmatter/0063.jpg,...,704,940,96,generation_name_table,,항렬표
+frontmatter,48,48,,,,MISSING,,,,,,전편 48면 없음
+genealogy,53,53,,,,MISSING,,,,,,본편 53면 없음
 ```
 
 - `scan_seq`: 폴더 안에서의 스캔 순서.
@@ -92,29 +99,30 @@ genealogy,52,52,,,MISSING,,,,,,본편 52면 누락
 
 | 원본 | section | printed_page_no | 비고 |
 |---|---|---|---|
-| `scan/1.jpg` | frontmatter | 1 | 世譜序 |
-| `scan/2.jpg` | frontmatter | 2 | 서문 |
-| `scan/3.jpg` | frontmatter | 3 | 서문 |
-| `scan/4.jpg` | frontmatter | 4 | 杜陵序 追考 |
-| `scan/46.jpg` | frontmatter | 46 | 서문 |
-| `scan/47.jpg` | frontmatter | 47 | 목차 |
-| `scan/49.jpg`~`scan/62.jpg` | frontmatter | 49~62 | 묘소·제각·정려 사진 |
-| `scan/63.jpg` | frontmatter | 63 | **항렬표(行列名字例)** |
-| `scan/65.jpg` | frontmatter | 65 | 조견색인(早見索引) |
-| `scan/66.jpg` | frontmatter | 66 | 조견색인(早見索引) |
-| `scan/48.jpg`, `scan/64.jpg` | frontmatter | 48, 64 | **없음** |
-| `scan/people/001.jpg` | genealogy | 1 | 본편 1면, 1~6세 표 |
-| `scan/people/025.jpg` | genealogy | 25 | 본편 25면 |
-| `scan/people/063.jpg` | genealogy | 63 | 본편 63면 세보. 항렬표 아님 |
-| `scan/people/217.jpg` | genealogy | 217 | 본편 217면 |
-| `scan/people/936.jpg` | genealogy | 936 | 임원록 |
-| `scan/people/937.jpg` | genealogy | 937 | 수단 |
-| `scan/people/938.jpg` | genealogy | 938 | 간기 |
-| `scan/people/052.jpg` | genealogy | 52 | **없음** |
-| `scan/people/934.jpg` | genealogy | 934 | **없음** |
-| `scan/people/935.jpg` | genealogy | 935 | **없음** |
+| `scan/frontmatter/001.jpg` | frontmatter | 1 | 世譜序 |
+| `scan/frontmatter/002.jpg` | frontmatter | 2 | 서문 |
+| `scan/frontmatter/003.jpg` | frontmatter | 3 | 서문 |
+| `scan/frontmatter/004.jpg` | frontmatter | 4 | 杜陵序 追考 |
+| `scan/frontmatter/046.jpg` | frontmatter | 46 | 서문 |
+| `scan/frontmatter/047.jpg` | frontmatter | 47 | 목차 |
+| `scan/frontmatter/049.jpg`~`scan/frontmatter/062.jpg` | frontmatter | 49~62 | 묘소·제각·정려 사진 |
+| `scan/frontmatter/063.jpg` | frontmatter | 63 | **항렬표(行列名字例)** |
+| `scan/frontmatter/065.jpg` | frontmatter | 65 | 조견색인(早見索引) |
+| `scan/frontmatter/066.jpg` | frontmatter | 66 | 조견색인(早見索引) |
+| `scan/frontmatter/048.jpg`, `064.jpg` | frontmatter | 48, 64 | **없음** |
+| `scan/genealogy/001.jpg` | genealogy | 1 | 본편 1면, 1~6세 표 |
+| `scan/genealogy/025.jpg` | genealogy | 25 | 본편 25면 |
+| `scan/genealogy/052.jpg` | genealogy | 52 | 구 `053.jpg`에서 정정 |
+| `scan/genealogy/063.jpg` | genealogy | 63 | 본편 63면 세보. 항렬표 아님 |
+| `scan/genealogy/217.jpg` | genealogy | 217 | 본편 217면 |
+| `scan/genealogy/936.jpg` | genealogy | 936 | 임원록 |
+| `scan/genealogy/937.jpg` | genealogy | 937 | 수단 |
+| `scan/genealogy/938.jpg` | genealogy | 938 | 간기 |
+| `scan/genealogy/053.jpg` | genealogy | 53 | **없음** |
+| `scan/genealogy/934.jpg` | genealogy | 934 | **없음** |
+| `scan/genealogy/935.jpg` | genealogy | 935 | **없음** |
 
-> `scan/63.jpg`는 전편 63면 항렬표이고, `scan/people/063.jpg`는 본편 63면 세보다. 같은 “63”이지만 다른 페이지다.
+> `scan/frontmatter/063.jpg`는 전편 63면 항렬표이고, `scan/genealogy/063.jpg`는 본편 63면 세보다. 같은 “63”이지만 다른 페이지다.
 
 ---
 
@@ -242,7 +250,7 @@ CREATE TABLE toc_entries (
 
 ### 4.6 `generation_chars` — 항렬표
 
-전편 63면 `行列名字例`(`scan/63.jpg`)를 구조화한다. 세대별로 3개의 항렬자 후보와 이름에서의 위치를 표로 정리한 것으로 보인다. 정확한 적용 규칙은 문중 확인이 필요하다.
+전편 63면 `行列名字例`(`scan/frontmatter/063.jpg`)를 구조화한다. 세대별로 3개의 항렬자 후보와 이름에서의 위치를 표로 정리한 것으로 보인다. 정확한 적용 규칙은 문중 확인이 필요하다.
 
 ```sql
 CREATE TABLE generation_chars (
@@ -287,7 +295,7 @@ CREATE TABLE generation_chars (
 
 ## 6. 마이그레이션 순서
 
-1. **인벤토리**: 현재 `scan/` 전체 파일의 hash/크기/해상도를 계산하고, 중복(`010.zip`)·누락(전편 48·64·67~93, 본편 052·934·935)을 표시한다.
+1. **인벤토리**: 현재 `scan/` 전체 파일의 hash/크기/해상도를 계산하고, 누락(전편 48·64·67~93, 본편 053·934·935)을 `MISSING`으로 표시한다.
 2. **매핑**: `pages.csv` 초안을 만들고, 인쇄 면번호를 OCR/육안으로 확인한다. 최소 20장을 샘플 검증한다.
 3. **정규화 경로**: `data/pages/frontmatter`, `data/pages/genealogy`에 symlink 또는 복사본을 만든다.
 4. **DB 입력**: `sections`, `pages`, `toc_entries`를 먼저 넣는다.
@@ -302,23 +310,24 @@ CREATE TABLE generation_chars (
 
 | 항목 | 상태 | 처리 |
 |---|---|---|
-| 본편 052면 | 없음 | `missing`으로 표시. 재스캔하지 않으므로 “미수록” 안내 |
+| 본편 053면 | 없음 | `missing`으로 표시. 재스캔하지 않으므로 “미수록” 안내 |
 | 본편 934면 | 없음 | `missing`으로 표시 |
 | 본편 935면 | 없음 | `missing`으로 표시 |
 | 전편 48면 | 없음 | `missing`으로 표시 |
 | 전편 64면 | 없음 | `missing`으로 표시 |
-| 전편 67~93면 | 없음 | 소목록/재산목록 등. 기존 파일이 있으면 추가 |
-| 전편 63면 항렬표 | 있음 (`scan/63.jpg`) | `generation_chars`로 구조화 |
-| `scan/47.jpg` | 전편 47면 목차 | manifest에서 47로 매핑 |
-| `scan/people/063.jpg` | 본편 63면 | 항렬표 아님. 전편 63면과 구분 |
-| `010.zip` | 본편 1~10 중복 | 무시하거나 보조본으로 사용 |
+| 전편 67~93면 | 없음 | 소목록/재산목록 등. `missing`으로 표시 |
+| 전편 63면 항렬표 | 있음 (`scan/frontmatter/063.jpg`) | `generation_chars`로 구조화 |
+| `scan/frontmatter/047.jpg` | 전편 47면 목차 | manifest에서 47로 매핑 |
+| `scan/genealogy/063.jpg` | 본편 63면 | 항렬표 아님. 전편 63면과 구분 |
+| `scan/genealogy/052.jpg` | 구 `053.jpg`에서 정정 | 본편 52면으로 매핑, 053은 `missing` |
+| `010.zip` | 원격에서 삭제됨 | 없음 |
 
 ---
 
 ## 8. 다음 단계
 
-1. 전편 48·64·67~93면, 본편 052/934/935면의 기존 파일이 있는지 확인한다. (재스캔하지 않음)
+1. 누락 면(전편 48·64·67~93, 본편 053·934·935)은 그대로 두고 `MISSING`으로 기록한다. (재스캔·추적 없음)
 2. `pages.csv` 초안을 실제 파일에서 생성한다.
 3. `sections`/`pages` DDL과 import 스크립트를 만든다.
-4. `scan/63.jpg` 항렬표를 `generation_chars`로 구조화한다.
+4. `scan/frontmatter/063.jpg` 항렬표를 `generation_chars`로 구조화한다.
 5. 20~30장 파일럿으로 페이지 분류/OCR/`上###` 파싱을 검증한다.
