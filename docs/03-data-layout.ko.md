@@ -110,19 +110,14 @@ genealogy,53,53,,,,MISSING,,,,,,본편 53면 없음
 | `scan/frontmatter/065.jpg` | frontmatter | 65 | 조견색인(早見索引) |
 | `scan/frontmatter/066.jpg` | frontmatter | 66 | 조견색인(早見索引) |
 | `scan/frontmatter/048.jpg`, `064.jpg` | frontmatter | 48, 64 | **없음** |
-| `scan/genealogy/001.jpg` | genealogy | 1 | 본편 1면, 1~6세 표 |
 | `scan/genealogy/025.jpg` | genealogy | 25 | 본편 25면 |
-| `scan/genealogy/052.jpg` | genealogy | 52 | 구 `053.jpg`에서 정정 |
-| `scan/genealogy/063.jpg` | genealogy | 63 | 본편 63면 세보. 항렬표 아님 |
 | `scan/genealogy/217.jpg` | genealogy | 217 | 본편 217면 |
 | `scan/genealogy/936.jpg` | genealogy | 936 | 임원록 |
 | `scan/genealogy/937.jpg` | genealogy | 937 | 수단 |
 | `scan/genealogy/938.jpg` | genealogy | 938 | 간기 |
-| `scan/genealogy/053.jpg` | genealogy | 53 | **없음** |
 | `scan/genealogy/934.jpg` | genealogy | 934 | **없음** |
 | `scan/genealogy/935.jpg` | genealogy | 935 | **없음** |
 
-> `scan/frontmatter/063.jpg`는 전편 63면 항렬표이고, `scan/genealogy/063.jpg`는 본편 63면 세보다. 같은 “63”이지만 다른 페이지다.
 
 ---
 
@@ -315,18 +310,12 @@ CREATE TABLE generation_chars (
 | 본편 935면 | 없음 | `missing`으로 표시 |
 | 전편 48면 | 없음 | `missing`으로 표시 |
 | 전편 64면 | 없음 | `missing`으로 표시 |
-| 전편 67~93면 | 없음 | 소목록/재산목록 등. `missing`으로 표시 |
-| 전편 63면 항렬표 | 있음 (`scan/frontmatter/063.jpg`) | `generation_chars`로 구조화 |
-| `scan/frontmatter/047.jpg` | 전편 47면 목차 | manifest에서 47로 매핑 |
-| `scan/genealogy/063.jpg` | 본편 63면 | 항렬표 아님. 전편 63면과 구분 |
-| `scan/genealogy/052.jpg` | 구 `053.jpg`에서 정정 | 본편 52면으로 매핑, 053은 `missing` |
-| `010.zip` | 원격에서 삭제됨 | 없음 |
 
 ---
 
 ## 8. 다음 단계
 
-1. 누락 면(전편 48·64·67~93, 본편 053·934·935)은 그대로 두고 `MISSING`으로 기록한다. (재스캔·추적 없음)
+1. 누락 면(전편 48·64, 본편 053·934·935)은 그대로 두고 `MISSING`으로 기록한다. (재스캔·추적 없음)
 2. `pages.csv` 초안을 실제 파일에서 생성한다.
 3. `sections`/`pages` DDL과 import 스크립트를 만든다.
 4. `scan/frontmatter/063.jpg` 항렬표를 `generation_chars`로 구조화한다.
