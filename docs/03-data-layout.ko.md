@@ -10,7 +10,7 @@
 1. 스캔을 **전편(frontmatter)** 과 **본편(genealogy)** 으로 분리한다.
 2. 페이지 키는 `(section, printed_page_no)` 복합 키다. `page_no` 단일 unique는 금지한다.
 3. 원본은 `scan/`에 그대로 두고, 앱이 읽는 정규화 경로를 `data/pages/`에 만든다. 원본 파일명·해시는 manifest에 보존한다.
-4. `上###`는 인물 텍스트가 아니라 **페이지 참조**이므로 `page_refs` 테이블로 분리한다.
+4. `上###`·`下###`는 인물 텍스트가 아니라 **페이지 참조**이므로 `page_refs` 테이블로 분리하고, `direction`(`up`/`down`)을 함께 저장한다.
 5. 전편은 `page_texts`/`toc_entries`/`captions` 중심, 본편은 `people`/`relations` 중심으로 저장한다.
 6. 전편 63면 항렬표(`scan/frontmatter/063.jpg`)는 `generation_chars` 테이블로 저장한다.
 7. 원본 `scan/`은 3자리 zero-pad(`frontmatter/047.jpg`), 앱 정규화 경로 `data/pages/`는 4자리(`frontmatter/0047.jpg`)를 쓴다.
@@ -31,7 +31,9 @@ scan/
     049.jpg ~ 063.jpg     # 049~062 묘소·제각·정려 사진, 063 항렬표
     065.jpg ~ 066.jpg     # 조견색인
   genealogy/              # 본편 (구분 B)
-    001.jpg ~ 938.jpg     # 세보 001~935, 임원록 936, 수단 937, 간기 938
+    001.jpg ~ 052.jpg
+    054.jpg ~ 933.jpg     # 053 없음
+    936.jpg ~ 938.jpg     # 934·935 없음. 936 임원록, 937 수단, 938 간기
   앞표지.jpg
   뒷표지.jpg
 ```
@@ -191,14 +193,15 @@ CREATE TABLE page_texts (
 );
 ```
 
-### 4.4 `page_refs` — `上###`
+### 4.4 `page_refs` — `上###`/`下###`
 
 ```sql
 CREATE TABLE page_refs (
   id                 bigserial PRIMARY KEY,
   source_page_id     bigint NOT NULL REFERENCES pages(id),
   source_person_id   bigint,          -- nullable; 인물에 붙은 참조
-  raw_ref            text NOT NULL,   -- '上159'
+  raw_ref            text NOT NULL,   -- '上159', '見上十三', '下4'
+  direction          text NOT NULL CHECK (direction IN ('up', 'down')),
   target_section_id  bigint NOT NULL REFERENCES sections(id),
   target_page_no     integer NOT NULL,
   target_page_id     bigint REFERENCES pages(id), -- import 후 resolve
@@ -207,7 +210,10 @@ CREATE TABLE page_refs (
 );
 ```
 
+- `direction = 'up'`은 `上###`(조상/부모 기록), `'down'`은 `下###`(자손 기록)이다.
+- 스캔에서 `T###`·`F###`로 보이는 것은 `下###`이므로 `direction = 'down'`으로 둔다.
 - `上159`는 기본적으로 `target_section = genealogy`, `target_page_no = 159`.
+- `見上十三`처럼 `見上`이 붙거나 숫자가 한자이면 `target_page_no`를 정수로 변환한다.
 - 전편을 가리키는 참조가 있으면 `target_section = frontmatter`.
 - `target_page_id`는 페이지 import 후 채운다.
 - `raw_ref`는 원문 그대로 보존한다.
@@ -243,6 +249,9 @@ CREATE TABLE toc_entries (
 | 9 | 刊行委員 및 任員錄 | genealogy | 936 |
 | 10 | 收單有司名錄 | genealogy | 937 |
 
+- 이 표의 대상 면번호는 전편 47면 목차 원문과 대조해 확정한다. `[확인 필요]`
+- 93면(宗中財產目錄)은 현재 스캔에 없으므로 `MISSING`으로 둔다.
+
 ### 4.6 `generation_chars` — 항렬표
 
 전편 63면 `行列名字例`(`scan/frontmatter/063.jpg`)를 구조화한다. 세대별로 3개의 항렬자 후보와 이름에서의 위치를 표로 정리한 것으로 보인다. 정확한 적용 규칙은 문중 확인이 필요하다.
@@ -265,7 +274,9 @@ CREATE TABLE generation_chars (
 `people`, `person_names`, `person_events`, `burials`, `relations`, `marriages`는 별도 스키마 문서에서 다룬다. 페이지와의 연결은 다음 필드로 한다.
 
 - `people.source_page_id` → `pages.id`
-- `people.row_no`, `people.bbox`
+- `people.row_no` = 단(段) 번호, `people.column_no` = 단 안 오른쪽부터의 순서, `people.bbox`
+- AI 출력의 `entries[].row`/`column`은 각각 `people.row_no`/`column_no`로 옮긴다.
+- 같은 단(`row_no`)의 인물은 같은 세대다. `row_no`만으로 절대 세대수를 확정하지 않는다.
 - `relations.source_page_id`, `relations.bbox`
 - `marriages.source_page_id`, `marriages.bbox`
 
@@ -278,7 +289,7 @@ CREATE TABLE generation_chars (
 | 페이지 메타데이터 | `pages` | `pages` |
 | OCR 원문 | `page_texts` | `page_texts` + `ocr_regions` |
 | 인물 | 원칙적으로 생성하지 않음 | `people` |
-| 예외 인물 | `generation_table`(본편 1면), 색인/임원록 | — |
+| 예외 인물 | 색인(전편 65~66) | `generation_table`(본편 1면), 임원록(936), 수단(937) |
 | 관계 | 생성하지 않음 | `relations`/`marriages` |
 | 사진 캡션 | `captions`(page_texts 확장) | — |
 | 목차 | `toc_entries` | — |
@@ -310,13 +321,14 @@ CREATE TABLE generation_chars (
 | 본편 935면 | 없음 | `missing`으로 표시 |
 | 전편 48면 | 없음 | `missing`으로 표시 |
 | 전편 64면 | 없음 | `missing`으로 표시 |
+| 전편 67~93면 | 없음 | `missing`으로 표시. 93면 宗中財產目錄도 미수록 |
 
 ---
 
 ## 8. 다음 단계
 
-1. 누락 면(전편 48·64, 본편 053·934·935)은 그대로 두고 `MISSING`으로 기록한다. (재스캔·추적 없음)
+1. 누락 면(전편 48·64·67~93, 본편 053·934·935)은 그대로 두고 `MISSING`으로 기록한다. (재스캔·추적 없음)
 2. `pages.csv` 초안을 실제 파일에서 생성한다.
 3. `sections`/`pages` DDL과 import 스크립트를 만든다.
 4. `scan/frontmatter/063.jpg` 항렬표를 `generation_chars`로 구조화한다.
-5. 20~30장 파일럿으로 페이지 분류/OCR/`上###` 파싱을 검증한다.
+5. 20~30장 파일럿으로 페이지 분류/OCR/`上###`·`下###` 파싱과 단(段)=세대 모델을 검증한다.

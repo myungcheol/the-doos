@@ -32,97 +32,52 @@
 
 **JSON만 출력한다.** 마크다운 코드블록, 설명 문장, 인사말을 붙이지 않는다.
 
+아래는 본편 25면을 축약한 예시다. 전체 필드 정의는 §4를 따른다.
+
 ```json
 {
   "page": {
     "section": "genealogy",
     "printed_page_no": 25,
     "page_type": "genealogy",
-    "quality": {
-      "rotation_degrees": 0,
-      "blur": "low",
-      "bleed_through": "medium",
-      "needs_human": false
-    },
+    "quality": { "rotation_degrees": 0, "blur": "low", "bleed_through": "medium", "needs_human": false },
+    "header": { "running_head": "仁居", "father_name": null, "notes": [] },
     "subjects": [
-      {
-        "raw_name": "子仁居",
-        "name_hanja": "仁居",
-        "name_hangul": null,
-        "prefix": "子",
-        "bbox": [640, 60, 690, 140],
-        "confidence": 0.95
-      }
+      { "raw_name": "子仁居", "name_hanja": "仁居", "name_hangul": null, "prefix": "子", "row": 1, "column": 1, "bbox": [640, 60, 690, 140], "confidence": 0.95 }
     ]
   },
   "entries": [
     {
-      "row": 1,
-      "relation_to_subject": "son",
-      "person": {
-        "raw_name": "子時興",
-        "name_hanja": "時興",
-        "name_hangul": null,
-        "prefix": "子",
-        "ja": null,
-        "ho": null,
-        "generation_no": null,
-        "generation_char": null,
-        "birth": {
-          "raw": null,
-          "ganji": null,
-          "date_text": null,
-          "certainty": "unknown"
-        },
-        "death": {
-          "raw": null,
-          "ganji": null,
-          "date_text": null,
-          "certainty": "unknown"
-        },
-        "burial": {
-          "raw": null,
-          "location": null,
-          "direction": null,
-          "certainty": "unknown"
-        },
-        "offices": [],
-        "spouses": [],
-        "children": [
-          {
-            "raw_name": "子萬元",
-            "name_hanja": "萬元",
-            "prefix": "子",
-            "relation": "son",
-            "page_ref": {
-              "raw": "上159",
-              "target_section": "genealogy",
-              "target_page_no": 159
-            }
-          }
-        ],
-        "page_ref": null,
-        "bbox": [600, 150, 690, 260],
-        "confidence": 0.9,
-        "needs_human": false
-      }
+      "row": 2, "column": 1, "generation_offset": 1, "relation_to_subject": "daughter",
+      "person": { "raw_name": "女美海擎", "name_hanja": "美海擎", "prefix": "女", "page_ref": null, "bbox": [640, 240, 690, 340], "confidence": 0.8, "needs_human": true }
+    },
+    {
+      "row": 2, "column": 2, "generation_offset": 1, "relation_to_subject": "daughter",
+      "person": { "raw_name": "女崔欽祖", "name_hanja": null, "prefix": "女", "page_ref": null, "bbox": [560, 240, 620, 340], "confidence": 0.85, "needs_human": true }
+    },
+    {
+      "row": 2, "column": 3, "generation_offset": 1, "relation_to_subject": "son",
+      "person": { "raw_name": "子時興", "name_hanja": "時興", "prefix": "子", "page_ref": null, "bbox": [480, 340, 560, 480], "confidence": 0.9, "needs_human": false }
+    },
+    {
+      "row": 3, "column": 1, "generation_offset": 2, "relation_to_subject": "grandson",
+      "person": { "raw_name": "子榮茂", "name_hanja": "榮茂", "prefix": "子", "page_ref": null, "bbox": [610, 500, 690, 590], "confidence": 0.9, "needs_human": false }
+    },
+    {
+      "row": 4, "column": 1, "generation_offset": 3, "relation_to_subject": "descendant",
+      "person": { "raw_name": "子連泰", "name_hanja": "連泰", "prefix": "子", "page_ref": null, "bbox": [610, 600, 690, 690], "confidence": 0.9, "needs_human": false }
+    },
+    {
+      "row": 5, "column": 1, "generation_offset": 4, "relation_to_subject": "descendant",
+      "person": { "raw_name": "子萬元", "name_hanja": "萬元", "prefix": "子", "page_ref": { "ref_index": 0 }, "bbox": [600, 700, 690, 790], "confidence": 0.9, "needs_human": false }
     }
   ],
   "page_refs": [
-    {
-      "raw": "上159",
-      "target_section": "genealogy",
-      "target_page_no": 159,
-      "source_bbox": [600, 220, 690, 240],
-      "confidence": 0.9
-    }
+    { "raw": "下159", "direction": "down", "target_section": "genealogy", "target_page_no": 159, "source_bbox": [600, 780, 690, 800], "confidence": 0.9 }
   ],
   "unreadable_regions": [],
   "notes": [],
-  "validation": {
-    "errors": [],
-    "warnings": []
-  }
+  "validation": { "errors": [], "warnings": [] }
 }
 ```
 
@@ -132,7 +87,7 @@
 
 > 이 절이 **유일한 정본**이다. 호출 시 `2.1`~`2.2`를 그대로 System 메시지로, `2.4`를 User 메시지로 보낸다.  
 > 다른 절에서 같은 규칙을 다시 쓰지 않는다. 규칙을 고칠 때는 여기만 고친다.  
-> (현재 §5·§6·§8에 중복된 서술이 남아 있다. 다음 정리에서 이 절로 흡수한다.)
+> §5·§6·§8은 이 절을 특정 상황에 적용한 것이므로, §2와 어긋나면 §2를 따른다.
 
 ### 2.1 역할
 
@@ -143,21 +98,21 @@
 
 1. **원문 보존**: 한자를 번역하거나 간체자로 바꾸지 않는다. 이체자·속자도 원형을 살린다.
 2. **읽기 순서**: 오른쪽 위 → 아래 → 왼쪽. 세로쓰기 컬럼을 따른다.
-3. **기준 인물**: 페이지 오른쪽 위(또는 첫 열)의 인물이 그 페이지의 기준 인물이다. `子` 접두어는 “이전 페이지 기준 인물의 아들”이라는 뜻이다.
-4. **행 = 자녀**: 행을 세대로 오해하지 않는다. 행 아래에 손자가 이어질 수 있다.
-5. **`上###`·`下###`는 페이지 참조**: `上###`은 “본편 ###면에 부모(조상)의 기록이 있다”, `下###`은 “본편 ###면에 자손의 기록이 이어진다”는 뜻이다. `T`나 `F`로 오독하지 않는다. 이름·숫자·직함으로 해석하지 않는다.
+3. **기준 인물(subject)**: 페이지의 기준 인물은 보통 첫 단의 첫 인물(대개 `子`가 붙은 사람)이다. 페이지 가장자리에 표제 인물이 따로 있으면 그 사람을 기준 인물로 삼는다. `子`는 “위 단(또는 앞 페이지)의 직계 인물의 아들”이라는 표시다. 오른쪽에 `女` 항목이 먼저 올 수 있다. 페이지가 새로 시작하면 `子` 없이 이름만 적고 `上###`로 아버지를 가리키기도 한다.
+4. **단(段) = 세대**: 페이지를 가로로 나눈 줄이 단이다. **같은 단 = 같은 세대**이고, 한 단 안에서는 **오른쪽→왼쪽**(아들 형제는 장남→차남)으로 읽는다. 딸(`女`) 항목의 위치는 페이지마다 다를 수 있으므로 `女` 표시로 구분한다. **바로 아래 단은 다음 세대**다. 한 줄을 “한 사람의 자녀 목록”으로 읽지 않는다. 아래 단을 손자로 건너뛰지도 않는다. 딸의 자손(외손)은 딸 항목 아래에 세로로 이어질 수 있으므로, 단 경계만으로 세대를 단정하지 않는다.
+5. **`上###`·`下###`는 페이지 참조**: `上###`은 “본편 ###면에 부모(조상)의 기록이 있다”, `下###`은 “본편 ###면에 자손의 기록이 이어진다”는 뜻이다. `見上十三`처럼 `見上`이 붙거나 숫자가 한자일 수 있다. 스캔에서 `T###`·`F###`로 보이는 것은 `下###`의 오독이다. 이름·숫자·직함으로 해석하지 않는다.
 6. **`子`·`女`·`配`·`系`**: `子`는 아들, `女`는 딸(뒤에 사위 이름이 올 수 있음), `配`는 배우자, `系`는 양자다.
-7. **`女` 뒤의 남성 이름은 사위다**: 딸 이름으로 넣지 않는다.
+7. **`女` 뒤의 남성 이름은 사위다**: 성씨가 붙은 남성 이름이 오면 사위로 읽고 딸 이름으로 넣지 않는다. 딸 이름이 따로 인쇄된 경우와 구분한다.
 8. **혼동하기 쉬운 글자**: `子`와 `字`, `女`와 `汝`, `配`와 `妃`, `墓`와 `基`, `上`/`下`와 `T`/`F`, `杜`와 `社`, `慶`과 `廣`, `寧`과 `靈`, `喆`과 `哲`, `鎭`과 `鎮`을 구분한다.
 9. **생몰**: `生`/`卒` 뒤의 간지 원문을 유지한다. 명시적 서기 연도가 없으면 임의로 환산하지 않는다.
 10. **관계 단정 금지**: `配`, `子`, `女`, `上`, `下` 등 명시적 표기가 있을 때만 관계를 단정한다. 없으면 `candidate` 또는 `unknown`.
-11. **페이지 유형**: `genealogy`가 아니면 `page_type`만 채우고 `entries`는 비운다. 단, `generation_table`(본편 1면)은 예외다.
+11. **페이지 유형**: `genealogy`가 아니면 `page_type`만 채우고 `entries`는 비운다. 인물이 아닌 내용은 `blocks[]`·`captions[]`·`index_entries[]` 등 해당 보조 필드에 넣는다. `generation_table`(본편 1면)은 `entries`를 채우는 예외다.
 12. **모르면 비운다**: `null`, `unreadable`, `needs_human`을 사용한다. 추측해서 이름을 만들지 않는다.
 13. **JSON만 출력한다**: 설명 문장, 마크다운 코드블록, 인사말을 붙이지 않는다.
 
 ### 2.3 출력 형식
 
-- `page_type`이 `genealogy`/`generation_table`이면 §1의 스키마대로 `entries`를 채우고, 그 외 유형은 `entries`를 빈 배열로 둔다.
+- `page_type`이 `genealogy`/`generation_table`이면 §1 예시와 §4 필드 정의에 맞춰 `entries`를 채우고, 그 외 유형은 `entries`를 빈 배열로 둔다.
 - 이것은 구현자용 메모다. 프롬프트 본문에는 2.2의 13번과 아래 `{schema}`만 있으면 된다.
 
 ### 2.4 User 템플릿
@@ -174,7 +129,7 @@ image_height: {height}
 이미지: {image}
 ```
 
-- `{schema}`에는 이 문서 §1·§4를 바탕으로 만든 JSON Schema를 넣는다. `output.schema.json` 파일은 아직 없으므로, 만들 때까지는 §1의 출력 예시를 그대로 붙여도 된다.
+- `{schema}`에는 이 문서 §1·§4를 바탕으로 만든 JSON Schema를 넣는다. `output.schema.json` 파일은 아직 없으므로, 만들 때까지는 §1의 출력 예시와 §4 필드 정의를 함께 붙여도 된다.
 
 ---
 
@@ -182,7 +137,7 @@ image_height: {height}
 
 | page_type | 처리 |
 |---|---|
-| `genealogy` | 기준 인물 + 행(자녀) + 손자 + `上###` 파싱 |
+| `genealogy` | 단(세대)별 인물 + `上`/`下` 참조 파싱. 같은 단은 같은 세대, 아래 단은 다음 세대 |
 | `generation_table` | 본편 1면처럼 1~6세를 한 표로 정리. `blocks[]`에 세대별 인물 |
 | `preface` | 서문/추고/번역문. `page_texts`만 추출하고 인물은 만들지 않음 |
 | `photo` | 묘소·제각·정려 사진. 캡션만 `captions[]`로 추출 |
@@ -201,21 +156,31 @@ image_height: {height}
 
 ## 4. 필드 정의
 
-### `page.subjects[]`
+좌표는 모두 이미지 기준 정규화 값 `[x1, y1, x2, y2]`(0~1000)이다.
 
-- `raw_name`: 인쇄된 그대로. 예: `子仁居`.
-- `name_hanja`: 접두어를 제거한 이름. 예: `仁居`.
-- `name_hangul`: 확실할 때만. 모르면 `null`.
-- `prefix`: `子`, `女`, `配`, `婦`, `婿`, `系`, 없음 등.
-- `bbox`: 정규화 좌표 `[x1, y1, x2, y2]`.
-- `confidence`: 0~1.
+### `page`
+
+- `section`: `frontmatter` | `genealogy`.
+- `printed_page_no`: 인쇄된 면번호(정수).
+- `page_type`: §3의 값.
+- `quality`: `rotation_degrees`, `blur`(`low`|`medium`|`high`), `bleed_through`(`low`|`medium`|`high`), `needs_human`.
+- `header`: 페이지 상단/여백의 제목·`派`·`世` 표기, 첫 인물 위의 아버지 이름.
+  - `running_head`: 페이지 가장자리의 큰 이름(예: `仁居`).
+  - `father_name`: 첫 인물 위에 작은 글씨로 붙은 아버지 이름(없으면 `null`).
+  - `notes`: 그 밖의 머리말.
+- `subjects[]`: 그 페이지의 **기준 인물**. 보통 1명. 첫 단 첫 인물이거나, 가장자리 표제 인물이다. 여기 넣은 인물은 `entries[]`에 다시 넣지 않는다.
+  - `raw_name`, `name_hanja`, `name_hangul`, `prefix`, `row`, `column`, `bbox`, `confidence`.
 
 ### `entries[]`
 
-- `row`: 페이지 안의 행 번호(위에서 아래로 1부터).
-- `relation_to_subject`: `son`, `daughter`, `wife`, `husband`, `grandson`, `granddaughter`, `son_in_law`, `daughter_in_law`, `unknown`.
+페이지에 인쇄된 인물 항목. **단(段)별로** 기록한다.
+
+- `row`: **단 번호**. 맨 위 단이 1. 같은 단의 인물은 같은 `row` 값을 쓴다.
+- `column`: 단 안에서 **오른쪽부터** 1, 2, 3… (오른쪽이 1).
+- `generation_offset`: **기준 인물 기준** 상대 세대. 0=기준 인물과 같은 단, 1=한 단 아래, 2=두 단 아래… 위쪽 단은 음수(-1, -2…). **절대 세대수가 아니다.** `row` 번호로 세대수를 추정하지 않는다.
+- `relation_to_subject`: 기준 인물과의 관계. `self`, `son`, `daughter`, `brother`, `sister`, `sibling`, `grandson`, `granddaughter`, `descendant`, `ancestor`, `spouse`, `son_in_law`, `daughter_in_law`, `unknown`. 기준 인물과 같은 단이면 `self`/`brother`/`sister`/`sibling`/`spouse`, 아래 단은 `son`/`daughter`/`grandson`/`granddaughter`, 3단 이상 아래이거나 정확한 관계를 모르면 `descendant`, 위쪽 단은 `ancestor`로 둔다. **같은 단의 형제·자매 관계는 `row`가 같다는 사실로도 표현된다.**
 - `person`: 아래 필드.
-- `bbox`: 행 전체 또는 인물 영역.
+- `bbox`: 그 인물 항목 전체.
 - `confidence`: 0~1.
 - `needs_human`: 불확실하면 `true`.
 
@@ -224,34 +189,41 @@ image_height: {height}
 - `raw_name`: 인쇄된 그대로.
 - `name_hanja`: 접두어 제거.
 - `name_hangul`: 확실할 때만.
-- `prefix`: `子`, `女`, `配` 등.
+- `prefix`: `子`, `女`, `配`, `婦`, `婿`, `系`, 없음 등.
 - `ja`: `字` 뒤의 값.
 - `ho`: `號` 뒤의 값.
-- `generation_no`: **명시적 `世` 표기가 있을 때만** 채운다. 행 번호로 추정하지 않는다. 추정이 필요하면 `generation_hint`에 근거와 함께 넣고 `needs_human=true`.
+- `generation_no`: **명시적 `世` 표기가 있을 때만** 채운다. `row`나 `generation_offset`으로 절대 세대수를 추정하지 않는다.
+- `generation_hint`: `世` 표기가 없을 때의 추정. `{ "value": 25, "basis": "왼쪽 여백 二十五世", "certainty": "probable" }`처럼 근거를 함께 적고 `needs_human=true`.
 - `generation_char`: 이름에서 확인되는 항렬자. 확실할 때만.
-- `birth` / `death`: `raw`, `ganji`, `date_text`, `certainty`.
-  - `raw`: 원문 전체.
-  - `ganji`: `壬子`, `丁卯` 같은 간지.
-  - `date_text`: `1929년 11월 17일`처럼 원문에 있는 서기/음력 표기.
-  - `certainty`: `exact`, `probable`, `uncertain`, `unknown`.
+- `birth` / `death`: `raw`, `ganji`, `date_text`, `certainty`(`exact`|`probable`|`uncertain`|`unknown`).
 - `burial`: `raw`, `location`, `direction`, `certainty`.
-  - `location`: 묘소 지명.
-  - `direction`: `艮坐坤向` 같은 좌향.
 - `offices`: 관직/칭호 배열. 원문 유지.
-- `spouses[]`: 배우자. `raw_name`, `name_hanja`, `bonkwan`, `father`, `certainty`.
+- `spouses[]`: 배우자.
+  - `raw_name`, `name_hanja`, `bonkwan`, `father`, `certainty`.
+  - `relation`: `wife`, `husband`, `son_in_law`, `daughter_in_law`, `unknown`.
 - `children[]`: 자녀. `raw_name`, `name_hanja`, `prefix`, `relation`, `page_ref`.
-- `page_ref`: 그 인물의 상세 기록 페이지. `raw`, `target_section`, `target_page_no`.
-- `bbox`: 인물 영역.
-- `confidence`: 0~1.
-- `needs_human`: 불확실하면 `true`.
+- `page_ref`: 그 인물의 **조상(上) 또는 자손(下)** 기록 페이지. `page_refs[]`를 가리키는 `ref_index`만 두고 `raw`를 중복 저장하지 않는다.
+- `bbox`, `confidence`, `needs_human`.
 
 ### `page_refs[]`
 
-- `raw`: `上159` 원문.
+페이지에 인쇄된 모든 `上###`·`下###` 참조의 **정본**.
+
+- `raw`: 인쇄된 그대로. 예: `上159`, `見上十三`, `下4`.
+- `direction`: `up`(조상/부모) | `down`(자손).
 - `target_section`: 기본 `genealogy`. 전편을 가리키면 `frontmatter`.
-- `target_page_no`: 정수.
+- `target_page_no`: 정수. 한자 숫자는 변환한다(十三 → 13).
 - `source_bbox`: 참조가 인쇄된 위치.
 - `confidence`: 0~1.
+
+`person.page_ref`와 `children[].page_ref`는 `{ "ref_index": 0 }`처럼 `page_refs[]`의 인덱스만 가리킨다. 같은 참조를 두 번 저장하지 않는다.
+
+### 페이지 유형별 보조 필드
+
+- `blocks[]`: `generation_table`에서 세대별 묶음. `{ "generation_no": 1, "people": [...] }`.
+- `captions[]`: `photo`의 캡션. `{ "raw": "...", "bbox": [...] }`.
+- `index_entries[]`: `index`의 색인 항목. `{ "name_hanja": "...", "name_hangul": null, "page_ref": {...} }`.
+- `annotations[]`: 한글 측주·메모. `{ "raw": "...", "bbox": [...], "kind": "note"|"address"|"burial"|"other" }`.
 
 ### `unreadable_regions[]`
 
@@ -259,17 +231,18 @@ image_height: {height}
 
 ---
 
-## 5. `女` 행의 특별 규칙
+## 5. `女` 항목의 특별 규칙
 
-전통 세보에서 `女` 뒤에 나오는 이름은 **딸의 이름이 아니라 사위의 이름**인 경우가 많다. 예: `女崔欽祖` = “딸이 崔欽祖에게 출가”.
+전통 세보에서 `女` 뒤에 오는 이름은 **딸의 이름이 아니라 사위의 이름**인 경우가 많다. 예: `女崔欽祖` = “딸이 崔欽祖에게 출가”.
 
 따라서 다음 원칙을 적용한다.
 
-1. `女` 행의 `relation_to_subject`는 `daughter`.
+1. `女` 항목의 `relation_to_subject`는 기준 인물과의 관계로 정한다. 기준 인물과 같은 단이면 `sister`/`sibling`, 한 단 아래면 `daughter`, 그 아래면 `descendant`, 위쪽 단이면 `ancestor`다.
 2. `person.name_hanja`는 **딸의 이름이 인쇄되어 있으면** 그 값을 넣고, 아니면 `null`.
 3. 뒤에 나오는 남성 이름은 `person.spouses[]`에 `son_in_law`로 넣는다. 예: `spouse.raw_name = "崔欽祖"`, `spouse.relation = "son_in_law"`, `spouse.bonkwan = "晋州"`.
 4. 딸의 이름과 사위의 이름이 모두 있는지, 사위만 있는지 확실하지 않으면 `needs_human=true`.
-5. `女` 행을 아들의 배우자로 해석하지 않는다.
+5. `女` 항목을 아들의 배우자로 해석하지 않는다.
+6. `女` 뒤 이름이 여성 이름으로 보이면 딸의 이름일 수 있다. 이때도 사위 이름과 분리하고 `needs_human=true`로 둔다.
 
 `配`는 남성 기준 배우자(주로 아내)다. `配` 뒤에는 처가의 본관/성씨/아버지 이름이 올 수 있다.
 
@@ -279,14 +252,16 @@ image_height: {height}
 
 1. 페이지 프레임 안쪽만 읽는다. 스캔 여백/손가락/그림자는 무시한다.
 2. 세로 컬럼은 오른쪽에서 왼쪽으로 읽는다.
-3. 페이지 오른쪽 위의 큰 글씨가 기준 인물이다. 페이지 제목·`派`·`世` 표기는 `page.header`로 분리한다.
-4. 한 행에 여러 사람이 있을 수 있다. `row`와 `column`을 함께 기록한다.
-5. 행의 오른쪽 = 자녀 이름, 왼쪽 = 배우자/자녀/묘소/생몰. 같은 행의 텍스트를 한 사람으로 합치지 않는다.
-6. 행 아래의 손자 목록은 `person.children[]`에 넣는다. 다음 행의 자녀로 오해하지 않는다.
-7. 한글 측주/메모는 `annotations[]`에 넣고, 한자 이름과 합치지 않는다.
-8. 사진/캡션은 `captions[]`에 넣고 인물로 만들지 않는다.
-9. 페이지가 90도/180도 회전되어 있으면 `quality.rotation_degrees`에 기록하고 `needs_human=true`.
-10. 뒷면 비침이 심하면 `quality.bleed_through="high"`로 기록한다. 글자가 겹쳐 보여도 추측하지 않는다.
+3. 첫 단의 첫 인물(보통 `子`가 붙은 사람)이 기준 인물이다. 가장자리 표제 인물이 따로 있으면 그 사람을 기준 인물로 삼는다. 오른쪽에 `女` 항목이 올 수 있다. 페이지 제목·`派`·`世` 표기와 첫 인물 위의 아버지 이름은 `page.header`로 분리한다.
+4. 한 단에 여러 사람이 있을 수 있다. `row`(단 번호)와 `column`(단 안 오른쪽부터 1)을 함께 기록한다.
+5. 단의 오른쪽 = 그 세대의 이름, 왼쪽 = 배우자·생몰·묘소·관직 등. 같은 단의 텍스트를 한 사람으로 합치지 않는다.
+6. **아래 단은 다음 세대**다. 위 단 인물의 자녀는 아래 단에 있다. 손자로 건너뛰지 않는다.
+7. 딸의 자손(외손)은 딸 항목 아래에 세로로 이어질 수 있다. 단 경계와 무관하게 붙으므로 `女` 항목 아래를 확인한다.
+8. `上###`·`下###`·`見上###`는 `page_refs[]`에 넣는다. `T###`·`F###`는 `下###`다.
+9. 한글 측주/메모는 `annotations[]`에 넣고, 한자 이름과 합치지 않는다.
+10. 사진/캡션은 `captions[]`에 넣고 인물로 만들지 않는다.
+11. 페이지가 90도/180도 회전되어 있으면 `quality.rotation_degrees`에 기록하고 `needs_human=true`.
+12. 뒷면 비침이 심하면 `quality.bleed_through="high"`로 기록한다. 글자가 겹쳐 보여도 추측하지 않는다.
 
 ---
 
@@ -294,28 +269,38 @@ image_height: {height}
 
 ### 본편 25면
 
-- 기준 인물: `子仁居`.
-- 행: `子時興`, `女崔欽祖`, `女美海擎`, `子榮茂`, `子連泰`.
-- 손자: `子萬元 上159`, `子萬迪 上168`, `子萬純 上170`.
-- `女崔欽祖`는 “딸이 崔欽祖에게 출가”로 읽고, 딸 이름은 `null`, 사위 이름은 `崔欽祖`로 분리한다.
+- 페이지는 **5개의 단**으로 되어 있다.
+- 1단: `子仁居`(맨 오른쪽).
+- 2단: `女美海擎`, `女崔欽祖`, `子時興` → 仁居의 자녀 세대. `女` 항목은 딸이고, 뒤의 이름은 사위다.
+- 3단: `子榮茂` → 다음 세대.
+- 4단: `子連泰` → 다음 세대.
+- 5단: `子萬元`, `子萬迪`, `子萬純`, `子萬成`, `子萬益`, `子萬大`, `子萬赫` → 다시 다음 세대.
+- 萬元의 `下159`(스캔에는 `F159`)는 “159면에 자손 기록이 이어진다”는 뜻이다. `上159`가 아니다.
+- 萬元을 仁居의 손자로 읽지 않는다. 仁居 기준 `generation_offset=4`다.
 
 ### 본편 217면
 
-- 기준 인물: `子洪東` (字 龍山, 1929년생).
-- 행: `女美諧順`, `子洪覺`, `子澈秀 上738`.
-- 洪東의 딸 美諧順, 아들 洪覺, 아들 澈秀. 澈秀의 상세 기록은 본편 738면.
+- 왼쪽 여백에 `二十一世`~`二十六世`가 있다.
+- 21世 단: `女…`(오른쪽), `萬宜 上29`(왼쪽). 萬宜 위의 `連泰`는 아버지 이름으로 보인다.
+- 25世 단: `子洪東`(오른쪽), `女美諧順`(가운데), `子洪覺`(왼쪽) → 세 사람은 같은 세대다. 洪東 기준으로 美諧順·洪覺은 자녀가 아니다.
+- 26世 단: `子澈秀 下738`(스캔에는 `F738`) → 다음 세대. 738면에 자손 기록이 이어진다.
+- 기준 인물을 21世 단의 인물(`generation_offset=0`)로 두면 25世(洪東·美諧順·洪覺)는 `generation_offset=4`, 26世(澈秀)는 `5`다. 洪東과 美諧順·洪覺은 `row`가 같으므로 같은 세대다.
 
 ### 본편 1면
 
 - `page_type = generation_table`.
 - `一世 杜慶寧`, `二世 杜子建`, `三世 杜宣龍` ... `六世`까지.
-- 여기서는 행이 세대다. 일반 세보 페이지와 혼동하지 않는다.
+- 각 단이 곧 세대다. 일반 세보 페이지와 같은 `row`/`column` 규칙을 적용한다.
 
 ### 본편 63면
 
-- `萬元 上15`가 먼저 나오고, 아래에 `子碩喆`, `子光林`, `子德巖`, `子永眞`, `子洪良`이 이어진다.
-- `萬元`의 상세 기록은 본편 15면.
-- 기준 인물과 아래 `子`들의 정확한 관계는 `needs_human=true`로 표시한다.
+- 페이지는 **6개의 단**으로 되어 있다.
+- 1단: `萬元 上15` → 15면에 조상(부모) 기록이 있다.
+- 2단: `女金日長`, `女田權五`, `女姜仁豐`, `子碩喆` → 萬元의 자녀 세대.
+- 3단: `女金東赫`, `子光林` → 碩喆의 자녀 세대.
+- 4단: `子金容琯`(오른쪽), `女高錫萬`(가운데), `子德巖`(왼쪽) → 光林의 자녀 세대. 오른쪽의 `金` 성 `子`는 3단 딸 金東赫의 아들(외손)일 수 있으므로 `needs_human=true`.
+- 5단: `子永眞` → 德巖의 자녀 세대.
+- 6단: `子洪良` → 永眞의 자녀 세대.
 
 ---
 
@@ -324,12 +309,19 @@ image_height: {height}
 출력 전에 다음을 확인하고 `validation`에 기록한다.
 
 - [ ] 모든 `page_refs[].target_page_no`가 해당 섹션 범위 안에 있는가? (본편 1~938, 전편 1~93)
+- [ ] `page_refs[].direction`이 `up`/`down`으로 맞는가? (`上`=up, `下`·`T`·`F`=down)
+- [ ] `見上十三` 같은 한자 숫자를 정수로 변환했는가?
 - [ ] `name_hanja`가 비어 있는데 `raw_name`도 비어 있지 않은가?
-- [ ] `子`/`女`/`配` 접두어를 `name_hanja`에 포함하지 않았는가?
-- [ ] `女` 행의 이름을 딸 이름으로 잘못 넣지 않았는가?
-- [ ] `上###`를 `T###`로 읽지 않았는가?
-- [ ] 행 번호로 세대를 추정하지 않았는가?
-- [ ] `page_type`이 `genealogy`/`generation_table`이 아닌데 `entries`가 비어 있는가?
+- [ ] `子`/`女`/`配`/`系` 접두어를 `name_hanja`에 포함하지 않았는가?
+- [ ] `女` 항목의 이름을 사위 이름으로 잘못 넣지 않았는가? (또는 그 반대)
+- [ ] **같은 단의 인물을 같은 `row`로 묶었는가?**
+- [ ] **바로 아래 단을 다음 세대로 처리했는가?** (손자로 건너뛰지 않았는가)
+- [ ] `generation_offset`이 **기준 인물** 기준인가? (첫 단 첫 인물이 항상 0은 아니다)
+- [ ] `row` 번호로 **절대 세대수**를 추정하지 않았는가?
+- [ ] `page_type`이 `genealogy`/`generation_table`이면 `entries`가 비어 있지 않은가?
+- [ ] 그 외 유형이면 `entries`가 비어 있는가?
+- [ ] `person.page_ref`/`children[].page_ref`의 `ref_index`가 `page_refs[]`와 일치하는가?
+- [ ] 첫 인물 위의 아버지 이름을 `page.header.father_name`에 넣었는가?
 - [ ] `confidence < 0.8`인 항목에 `needs_human=true`가 붙었는가?
 - [ ] 회전/블러/비침이 심한 페이지에 `quality.needs_human=true`가 붙었는가?
 
@@ -340,8 +332,8 @@ image_height: {height}
 - **골든셋**: 실제 페이지 20~30장을 사람이 정답 전사한다. 최소한 본편 1, 25, 63, 217, 936, 938면과 전편 1, 47, 63면을 포함한다.
 - **지표**:
   - 문자 오류율(CER): 한자 이름/지명/관직.
-  - 필드 F1: 이름, 字/號, 생몰 간지, 배우자, 자녀, `上###`.
-  - 관계 precision/recall: 부모-자녀, 배우자.
+  - 필드 F1: 이름, 字/號, 생몰 간지, 배우자, 자녀, `上###`/`下###`.
+  - 관계 precision/recall: 부모-자녀, 배우자, 같은 단의 형제·자매.
   - 페이지 유형 분류 정확도.
 - **모델 비교**: 같은 20장에 여러 무료/로컬 모델을 돌려 비교한다. 모델별로 잘 읽는 페이지가 다를 수 있으므로 앙상블을 고려한다.
 - **게이트**: 골든셋에서 이름/관계 F1이 목표(예: 0.95)에 못 미치면 전체 935면을 돌리지 않는다. 프롬프트/전처리/모델을 먼저 개선한다.
@@ -365,7 +357,7 @@ AI 출력은 바로 공개하지 않는다.
 
 1. AI가 `draft`를 만든다.
 2. 규칙 검증기가 오류/경고를 표시한다.
-3. 검수자는 `confidence`가 낮은 항목, 관계 이상, `上###` 불일치부터 확인한다.
+3. 검수자는 `confidence`가 낮은 항목, 관계 이상, `上###`/`下###` 불일치부터 확인한다.
 4. 검수자가 승인한 항목만 `published`로 이동한다.
 5. 모든 수정은 `review_actions`에 기록한다.
 
