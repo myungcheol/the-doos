@@ -92,7 +92,7 @@ genealogy,53,53,,,,MISSING,,,,,,본편 53면 없음
 
 - `scan_seq`: 폴더 안에서의 스캔 순서.
 - `printed_page_no`: 책에 인쇄된 면번호. OCR/육안으로 확인해 채운다.
-- `page_type`: `preface`, `photo`, `generation_table`, `genealogy`, `index`, `generation_name_table`, `property`, `officers`, `subscription`, `colophon`, `cover`, `unknown`.
+- `page_type`: `preface`, `photo`, `genealogy`, `index`, `generation_name_table`, `property`, `officers`, `subscription`, `colophon`, `cover`, `unknown`.
 - `quality_flags`: `blur`, `bleed_through`, `rotated`, `cut_off` 등.
 
 ---
@@ -254,7 +254,7 @@ CREATE TABLE toc_entries (
 
 ### 4.6 `generation_chars` — 항렬표
 
-전편 63면 `行列名字例`(`scan/frontmatter/063.jpg`)를 구조화한다. 세대별로 3개의 항렬자 후보와 이름에서의 위치를 표로 정리한 것으로 보인다. 정확한 적용 규칙은 문중 확인이 필요하다.
+전편 63면 `行列名字例`(`scan/frontmatter/063.jpg`)를 구조화한다. 세대별로 3개의 항렬자 후보와 이름에서의 위치를 표로 정리한 것으로 보인다.
 
 ```sql
 CREATE TABLE generation_chars (
@@ -275,8 +275,10 @@ CREATE TABLE generation_chars (
 
 - `people.source_page_id` → `pages.id`
 - `people.row_no` = 단(段) 번호, `people.column_no` = 단 안 오른쪽부터의 순서, `people.bbox`
-- AI 출력의 `entries[].row`/`column`은 각각 `people.row_no`/`column_no`로 옮긴다.
-- 같은 단(`row_no`)의 인물은 같은 세대다. `row_no`만으로 절대 세대수를 확정하지 않는다.
+- AI 출력의 `subjects[]`도 `people`로 옮긴다. `entries[]`에 중복해서 넣지 않는다.
+- AI 출력의 `subjects[]`/`entries[]`의 `row`/`column`은 각각 `people.row_no`/`column_no`로 옮긴다.
+- AI `entries[].generation_offset`은 `row_no`와 별도로 보존한다. 작은 글씨로 붙은 외손은 `row_no`와 실제 세대가 다를 수 있다.
+- 같은 단(`row_no`)의 인물은 원칙적으로 같은 세대다. 다만 작은 글씨로 붙은 외손은 인쇄된 단과 실제 세대가 다를 수 있다. `row_no`만으로 절대 세대수를 확정하지 않는다.
 - `relations.source_page_id`, `relations.bbox`
 - `marriages.source_page_id`, `marriages.bbox`
 
@@ -289,13 +291,13 @@ CREATE TABLE generation_chars (
 | 페이지 메타데이터 | `pages` | `pages` |
 | OCR 원문 | `page_texts` | `page_texts` + `ocr_regions` |
 | 인물 | 원칙적으로 생성하지 않음 | `people` |
-| 예외 인물 | 색인(전편 65~66) | `generation_table`(본편 1면), 임원록(936), 수단(937) |
+| 예외 인물 | 색인(전편 65~66) | 본편 1면(세보 시작), 임원록(936), 수단(937) |
 | 관계 | 생성하지 않음 | `relations`/`marriages` |
 | 사진 캡션 | `captions`(page_texts 확장) | — |
 | 목차 | `toc_entries` | — |
 | 항렬표 | `generation_chars` | — |
 
-전편의 사진/서문은 인물 DB에 넣지 않는다. 다만 **본편 1면**은 `page_type = generation_table`로 두고 인물을 생성한다.
+전편의 사진/서문은 인물 DB에 넣지 않는다. **본편 1면**도 일반 세보 페이지와 같이 `page_type = genealogy`로 두고 인물을 생성한다.
 
 ---
 
@@ -305,7 +307,7 @@ CREATE TABLE generation_chars (
 2. **매핑**: `pages.csv` 초안을 만들고, 인쇄 면번호를 OCR/육안으로 확인한다. 최소 20장을 샘플 검증한다.
 3. **정규화 경로**: `data/pages/frontmatter`, `data/pages/genealogy`에 symlink 또는 복사본을 만든다.
 4. **DB 입력**: `sections`, `pages`, `toc_entries`를 먼저 넣는다.
-5. **페이지 분류**: `page_type`을 채운다. 전편은 `page_texts`, 본편은 `genealogy`/`generation_table`.
+5. **페이지 분류**: `page_type`을 채운다. 전편은 `page_texts`, 본편은 `genealogy`.
 6. **OCR/파싱**: 본편부터 `people`/`page_refs`를 만든다. 전편은 서문/사진/색인/항렬표를 별도 처리한다.
 7. **검증**: 모든 `page_refs.target_page_id`가 존재하는지, `(section, printed_page_no)` 중복이 없는지 확인한다.
 8. **검수/발행**: `review_status`가 `approved`인 데이터만 공개한다.
