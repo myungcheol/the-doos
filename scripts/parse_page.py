@@ -156,6 +156,9 @@ def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, d
     }
     if os.environ.get("PAGE_AI_JSON_MODE") == "1":
         body["response_format"] = {"type": "json_object"}
+    reasoning_effort = os.environ.get("PAGE_AI_REASONING_EFFORT", "").strip()
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
 
     headers = {
         **extra_headers(),

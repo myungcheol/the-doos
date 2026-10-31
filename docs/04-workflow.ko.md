@@ -81,7 +81,8 @@ python3 scripts/link_pages.py
 | `PAGE_AI_TIMEOUT` | 초 단위, 기본 180. failover가 길면 600 권장 |
 | `PAGE_AI_MAX_TOKENS` | 최대 출력 토큰, 기본 8192 |
 | `PAGE_AI_JSON_MODE` | `1`이면 `response_format=json_object` 요청 |
-| `PAGE_AI_EXTRA_HEADERS` | 추가 요청 헤더 JSON. OmniRoute 압축·캐시 제어에 사용 |
+| `PAGE_AI_REASONING_EFFORT` | 선택: `low` / `medium` / `high`. reasoning 모델의 내부 사고량 조절 |
+| `PAGE_AI_EXTRA_HEADERS` | 추가 요청 헤더 JSON. OmniRoute 압축·캐시·vision bridge 제어에 사용 |
 
 예시 (Google AI Studio, 무료 티어):
 
@@ -110,12 +111,19 @@ export PAGE_AI_MODEL="<combo 이름 또는 auto/vision>"
 export PAGE_AI_TIMEOUT="600"
 
 # OCR 정확도를 위해 압축·캐시·메모리 주입을 끈다
-export PAGE_AI_EXTRA_HEADERS='{"x-omniroute-compression":"off","X-OmniRoute-No-Cache":"true","x-omniroute-no-memory":"true"}'
+# vision bridge도 끈다: 이미지를 텍스트 설명으로 바꾸면 세보 판독이 부정확해진다
+export PAGE_AI_EXTRA_HEADERS='{"x-omniroute-compression":"off","X-OmniRoute-No-Cache":"true","x-omniroute-no-memory":"true","x-omniroute-disabled-guardrails":"vision-bridge"}'
+
+# reasoning 모델이 사고에 토큰을 과도하게 쓰지 않도록
+export PAGE_AI_REASONING_EFFORT="low"
+export PAGE_AI_MAX_TOKENS="16384"
 ```
 
 OmniRoute를 쓸 때 주의할 점:
 
 - **combo에는 이미지 지원 모델만 넣는다.** 텍스트 전용 모델로 failover되면 OmniRoute가 이미지를 설명문으로 바꿔버릴 수 있다. 세보처럼 글자가 빽빽한 이미지는 설명문으로는 정확도가 떨어진다. `auto/vision`을 쓰거나 combo를 vision 모델만으로 구성한다.
+- **`x-omniroute-modality-bridge: image->text`가 보이면 실패한 것이다.** 이미지가 텍스트 설명으로 바뀐 것이므로 세보 판독이 부정확해진다. `x-omniroute-disabled-guardrails: vision-bridge`로 끄고, combo를 vision 모델만으로 구성한다.
+- **reasoning 토큰이 출력 토큰을 잠식할 수 있다.** `completion_tokens_details.reasoning_tokens`가 크면 `PAGE_AI_REASONING_EFFORT=low`와 `PAGE_AI_MAX_TOKENS=16384`를 사용한다.
 - **압축은 끈다.** 기본 압축이 켜져 있으면 프롬프트나 이미지 URL이 변형될 수 있다. 위 `x-omniroute-compression: off`를 사용한다.
 - **JSON 모드는 신중히 켠다.** combo의 모든 모델이 `response_format=json_object`를 지원하지 않으면 `PAGE_AI_JSON_MODE`를 비워둔다. 기본값은 꺼짐이다.
 - **실제로 어떤 모델이 답했는지 확인한다.** `data/parsed/<section>/<4digit>.meta.json`의 `response_models`와 `omniroute`에 실제 모델·provider·fallback 횟수가 기록된다.
