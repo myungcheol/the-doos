@@ -71,6 +71,8 @@ python3 scripts/link_pages.py
 
 `scripts/parse_page.py`는 **OpenAI 호환 `/chat/completions`**와 `image_url` 데이터 URL을 지원하는 제공자를 쓴다. 무료 티어가 있는 이미지 모델이면 된다.
 
+루트에 `.env` 파일을 만들면 스크립트와 검수 서버가 자동으로 읽는다. 셸에서 `export`한 값이 있으면 그 값이 우선한다. `.env.example`을 복사해 쓰면 된다.
+
 | 환경변수 | 설명 |
 |---|---|
 | `PAGE_AI_BASE_URL` | 제공자 주소. 기본값은 Google AI Studio의 OpenAI 호환 엔드포인트 |

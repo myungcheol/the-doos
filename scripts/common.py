@@ -119,3 +119,40 @@ def iter_parsed(section: str | None = None) -> Iterable[tuple[str, int, dict]]:
         data = load_json(path)
         if isinstance(data, dict):
             yield path.parent.name, int(path.stem), data
+
+
+def load_env(path: Path | None = None, override: bool = False) -> None:
+    """Load simple KEY=VALUE pairs from a .env file into os.environ.
+
+    Existing environment variables win by default. Quoted values and `export`
+    prefixes are supported. This keeps secrets out of commits while avoiding a
+    hard dependency on python-dotenv.
+    """
+    env_path = path or (ROOT / ".env")
+    if not env_path.is_file():
+        return
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or not all(ch.isalnum() or ch == "_" for ch in key):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+            value = value[1:-1]
+        if not override and key in os.environ:
+            continue
+        os.environ[key] = value
+
+
+load_env()

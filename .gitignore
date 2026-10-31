@@ -17,3 +17,7 @@ data/exports/*.bak
 # python
 __pycache__/
 *.pyc
+
+# local secrets
+.env
+.env.local
