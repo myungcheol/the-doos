@@ -263,6 +263,8 @@ def parse_page(
         raise SystemExit("PAGE_AI_API_KEY 환경변수를 지정하세요. 로컬 서버면 더미 값을 넣어도 됩니다.")
 
     log(f"AI   {section} {page_no}: {image.relative_to(ROOT)} ({model})")
+    if extra_headers():
+        log(f"  extra headers: {', '.join(sorted(extra_headers()))}")
     started = time.time()
     text, usage, response_meta = call_api(messages, image, model)
     response_models = [response_meta.get("response_model", model)]
