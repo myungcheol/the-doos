@@ -254,6 +254,7 @@ function renderDetail() {
   renderStatus(item);
   renderQuality(detail);
   renderValidation(detail.validation, detail.parsed);
+  renderStructure(detail.parsed);
   setSaveState("", "");
 }
 
@@ -319,6 +320,316 @@ function renderValidation(validation, parsed) {
     div.textContent = `경고: ${message}`;
     container.append(div);
   }
+}
+
+const RELATION_LABEL = {
+  self: "본인",
+  son: "아들",
+  daughter: "딸",
+  brother: "형제",
+  sister: "자매",
+  sibling: "형제/자매",
+  grandson: "손자",
+  granddaughter: "손녀",
+  descendant: "후손",
+  spouse: "배우자",
+  son_in_law: "사위",
+  daughter_in_law: "며느리",
+  unknown: "미상",
+};
+
+function text(value) {
+  if (value === null || value === undefined || value === "") return null;
+  return String(value);
+}
+
+function appendField(container, label, value) {
+  const normalized = text(value);
+  if (normalized === null) return;
+  const row = document.createElement("div");
+  row.className = "struct-field";
+  const dt = document.createElement("span");
+  dt.className = "struct-label";
+  dt.textContent = label;
+  const dd = document.createElement("span");
+  dd.className = "struct-value";
+  dd.textContent = normalized;
+  row.append(dt, dd);
+  container.append(row);
+}
+
+function appendList(container, label, values) {
+  const filtered = (values || []).map(text).filter(Boolean);
+  if (!filtered.length) return;
+  appendField(container, label, filtered.join(" · "));
+}
+
+function dateText(value) {
+  if (!value) return null;
+  const parts = [value.raw, value.king_era, value.ganji, value.date_text].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function burialText(value) {
+  if (!value) return null;
+  const parts = [value.raw];
+  if (value.location) parts.push(`위치: ${value.location}`);
+  if (value.orientation) parts.push(`방향: ${value.orientation}`);
+  if (value.note) parts.push(`비고: ${value.note}`);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function pageRefText(value) {
+  if (!value) return null;
+  return `${value.raw || ""} → ${value.target_section || ""} ${value.target_page_no || ""}`.trim();
+}
+
+function renderPersonCard(container, person, embedded = false) {
+  const card = embedded ? container : document.createElement("article");
+  if (!embedded) card.className = "struct-card";
+
+  if (!embedded) {
+    const title = document.createElement("div");
+    title.className = "struct-card-title";
+    title.textContent = person && person.raw_name ? person.raw_name : "(이름 없음)";
+    if (person && person.needs_human) {
+      const badge = document.createElement("span");
+      badge.className = "struct-badge bad";
+      badge.textContent = "확인 필요";
+      title.append(badge);
+    }
+    card.append(title);
+  }
+
+  appendField(card, "한자", person.name_hanja);
+  appendField(card, "한글", person.name_hangul);
+  appendField(card, "접두", person.prefix);
+  if (Array.isArray(person.aliases) && person.aliases.length) {
+    appendField(card, "자/호", person.aliases.map((alias) => `${alias.type || ""} ${alias.value || ""}`.trim()).join(" · "));
+  }
+  appendField(card, "세대", person.generation_no);
+  if (person.generation_hint) {
+    appendField(card, "세대 힌트", `${person.generation_hint.value} (${person.generation_hint.basis || ""})`);
+  }
+  appendField(card, "항렬자", person.generation_char);
+  appendField(card, "생", dateText(person.birth));
+  appendField(card, "졸", dateText(person.death));
+  appendField(card, "묘", burialText(person.burial));
+  appendField(card, "관직", Array.isArray(person.offices) ? person.offices.join(" · ") : null);
+  appendField(card, "페이지 참조", pageRefText(person.page_ref));
+  if (Array.isArray(person.notes) && person.notes.length) {
+    const list = document.createElement("ul");
+    list.className = "struct-list";
+    for (const note of person.notes) {
+      const li = document.createElement("li");
+      li.textContent = note;
+      list.append(li);
+    }
+    card.append(list);
+  }
+
+  if (Array.isArray(person.spouses) && person.spouses.length) {
+    const wrap = document.createElement("div");
+    wrap.className = "struct-sublist";
+    const label = document.createElement("div");
+    label.className = "struct-subtitle";
+    label.textContent = "배우자";
+    wrap.append(label);
+    for (const spouse of person.spouses) {
+      const item = document.createElement("div");
+      item.className = "struct-subitem";
+      const name = spouse.raw_name || spouse.name_hanja || "(배우자)";
+      item.textContent = name;
+      const details = [];
+      if (spouse.bonkwan) details.push(`본관 ${spouse.bonkwan}`);
+      if (spouse.father) details.push(`부 ${spouse.father}`);
+      if (spouse.relation) details.push(spouse.relation);
+      if (details.length) {
+        const small = document.createElement("small");
+        small.textContent = ` (${details.join(", ")})`;
+        item.append(small);
+      }
+      const extra = [dateText(spouse.birth), dateText(spouse.death), burialText(spouse.burial)].filter(Boolean);
+      if (extra.length) {
+        const small = document.createElement("small");
+        small.textContent = ` — ${extra.join(" / ")}`;
+        item.append(small);
+      }
+      wrap.append(item);
+    }
+    card.append(wrap);
+  }
+
+  if (Array.isArray(person.children) && person.children.length) {
+    const wrap = document.createElement("div");
+    wrap.className = "struct-sublist";
+    const label = document.createElement("div");
+    label.className = "struct-subtitle";
+    label.textContent = "자녀";
+    wrap.append(label);
+    for (const child of person.children) {
+      const item = document.createElement("div");
+      item.className = "struct-subitem";
+      item.textContent = child.raw_name || child.name_hanja || "(자녀)";
+      const details = [];
+      if (child.relation) details.push(child.relation);
+      if (child.prefix) details.push(child.prefix);
+      if (child.page_ref) details.push(pageRefText(child.page_ref));
+      if (details.length) {
+        const small = document.createElement("small");
+        small.textContent = ` (${details.join(", ")})`;
+        item.append(small);
+      }
+      wrap.append(item);
+    }
+    card.append(wrap);
+  }
+
+  if (!embedded) container.append(card);
+}
+
+function renderStructure(parsed) {
+  const container = $("#structure-view");
+  container.replaceChildren();
+  if (!parsed) {
+    const empty = document.createElement("div");
+    empty.className = "structure-empty";
+    empty.textContent = "파싱 결과가 없습니다.";
+    container.append(empty);
+    return;
+  }
+
+  const pageSection = document.createElement("section");
+  pageSection.className = "struct-section";
+  const pageHeading = document.createElement("h3");
+  pageHeading.textContent = "페이지 정보";
+  pageSection.append(pageHeading);
+  const pageCard = document.createElement("div");
+  pageCard.className = "struct-card";
+  appendField(pageCard, "구분", parsed.page && parsed.page.section === "frontmatter" ? "전편" : "본편");
+  appendField(pageCard, "면번호", parsed.page && parsed.page.printed_page_no);
+  appendField(pageCard, "유형", parsed.page && (TYPE_LABEL[parsed.page.page_type] || parsed.page.page_type));
+  if (parsed.page && parsed.page.quality) {
+    appendField(pageCard, "품질", [
+      parsed.page.quality.blur ? `흐림 ${parsed.page.quality.blur}` : null,
+      parsed.page.quality.bleed_through ? `비침 ${parsed.page.quality.bleed_through}` : null,
+      parsed.page.quality.needs_human ? "사람 확인 필요" : null,
+    ].filter(Boolean).join(" · ") || "양호");
+  }
+  if (parsed.page && parsed.page.header) {
+    appendField(pageCard, "면머리", parsed.page.header.running_head);
+    appendField(pageCard, "부", parsed.page.header.father_name);
+    if (Array.isArray(parsed.page.header.notes)) appendField(pageCard, "주기", parsed.page.header.notes.join(" · "));
+  }
+  pageSection.append(pageCard);
+  container.append(pageSection);
+
+  if (Array.isArray(parsed.subjects) && parsed.subjects.length) {
+    const section = document.createElement("section");
+    section.className = "struct-section";
+    const heading = document.createElement("h3");
+    heading.textContent = "기준 인물";
+    section.append(heading);
+    for (const subject of parsed.subjects) renderPersonCard(section, subject);
+    container.append(section);
+  }
+
+  if (Array.isArray(parsed.entries) && parsed.entries.length) {
+    const rows = new Map();
+    for (const entry of parsed.entries) {
+      const row = Number.isInteger(entry.row) ? entry.row : "?";
+      if (!rows.has(row)) rows.set(row, []);
+      rows.get(row).push(entry);
+    }
+    const section = document.createElement("section");
+    section.className = "struct-section";
+    const heading = document.createElement("h3");
+    heading.textContent = `인물 목록 (${parsed.entries.length}명)`;
+    section.append(heading);
+    for (const row of [...rows.keys()].sort((a, b) => a - b)) {
+      const group = document.createElement("div");
+      group.className = "struct-row-group";
+      const rowTitle = document.createElement("h4");
+      rowTitle.textContent = `${row}단`;
+      group.append(rowTitle);
+      const entries = rows.get(row).slice().sort((a, b) => (a.column || 0) - (b.column || 0));
+      for (const entry of entries) {
+        const card = document.createElement("article");
+        card.className = "struct-card";
+        const title = document.createElement("div");
+        title.className = "struct-card-title";
+        title.textContent = (entry.person && entry.person.raw_name) || "(이름 없음)";
+        const badge = document.createElement("span");
+        badge.className = "struct-badge";
+        badge.textContent = `${RELATION_LABEL[entry.relation_to_subject] || entry.relation_to_subject || "미상"} · 열 ${entry.column || "?"}`;
+        title.append(badge);
+        if (entry.needs_human || (entry.person && entry.person.needs_human)) {
+          const warn = document.createElement("span");
+          warn.className = "struct-badge bad";
+          warn.textContent = "확인 필요";
+          title.append(warn);
+        }
+        card.append(title);
+        appendField(card, "세대 차이", entry.generation_offset === undefined ? null : entry.generation_offset);
+        renderPersonCard(card, entry.person || {}, true);
+        // remove duplicate title by not rendering raw_name again? person card already has title; keep compact by hiding nested title? We'll leave as nested card.
+        group.append(card);
+      }
+      section.append(group);
+    }
+    container.append(section);
+  }
+
+  const generic = document.createElement("section");
+  generic.className = "struct-section";
+  let hasGeneric = false;
+  function addGeneric(title, content) {
+    if (!content) return;
+    if (!hasGeneric) {
+      const heading = document.createElement("h3");
+      heading.textContent = "기타 정보";
+      generic.append(heading);
+      hasGeneric = true;
+    }
+    const card = document.createElement("div");
+    card.className = "struct-card";
+    const h = document.createElement("div");
+    h.className = "struct-card-title";
+    h.textContent = title;
+    card.append(h);
+    if (typeof content === "string") {
+      const p = document.createElement("div");
+      p.className = "struct-generic";
+      p.textContent = content;
+      card.append(p);
+    } else {
+      card.append(content);
+    }
+    generic.append(card);
+  }
+
+  if (Array.isArray(parsed.captions) && parsed.captions.length) {
+    addGeneric("캡션", parsed.captions.map((item) => item.raw).filter(Boolean).join(" · "));
+  }
+  if (Array.isArray(parsed.index_entries) && parsed.index_entries.length) {
+    addGeneric("색인", parsed.index_entries.map((item) => `${item.name_hanja || ""}${item.page_ref ? ` (${item.page_ref.raw || ""})` : ""}`).filter(Boolean).join(" · "));
+  }
+  if (Array.isArray(parsed.annotations) && parsed.annotations.length) {
+    addGeneric("주석", parsed.annotations.map((item) => item.raw).filter(Boolean).join(" · "));
+  }
+  if (Array.isArray(parsed.page_texts) && parsed.page_texts.length) {
+    addGeneric("본문 텍스트", parsed.page_texts.map((item) => item.raw).filter(Boolean).join(" · "));
+  }
+  if (Array.isArray(parsed.generation_chars) && parsed.generation_chars.length) {
+    addGeneric("항렬", parsed.generation_chars.map((item) => `${item.generation_no ?? ""}: ${(item.chars || []).join("")}`).filter(Boolean).join(" · "));
+  }
+  if (Array.isArray(parsed.tables) && parsed.tables.length) {
+    addGeneric("표", parsed.tables.map((item) => `${item.title || "표"} (${(item.rows || []).length}행)`).join(" · "));
+  }
+  if (Array.isArray(parsed.unreadable_regions) && parsed.unreadable_regions.length) {
+    addGeneric("판독 불가", parsed.unreadable_regions.map((item) => item.reason).join(" · "));
+  }
+  if (hasGeneric) container.append(generic);
 }
 
 function setSaveState(message, tone = "") {
@@ -428,8 +739,15 @@ function resetZoom() {
 }
 
 function zoomBy(factor) {
-  const next = Math.min(6, Math.max(0.3, state.zoom * factor));
+  const next = Math.min(12, Math.max(0.2, state.zoom * factor));
   state.zoom = next;
+  applyTransform();
+}
+
+function zoomTo(value) {
+  state.zoom = Math.min(12, Math.max(0.2, value));
+  state.tx = 0;
+  state.ty = 0;
   applyTransform();
 }
 
@@ -472,9 +790,22 @@ function bindImage() {
   stage.addEventListener("pointercancel", endDrag);
   stage.addEventListener("dblclick", resetZoom);
 
-  $("#zoom-in").addEventListener("click", () => zoomBy(1.2));
-  $("#zoom-out").addEventListener("click", () => zoomBy(1 / 1.2));
+  $("#zoom-in").addEventListener("click", () => zoomBy(1.25));
+  $("#zoom-out").addEventListener("click", () => zoomBy(1 / 1.25));
+  $("#zoom-100").addEventListener("click", () => zoomTo(1));
+  $("#zoom-200").addEventListener("click", () => zoomTo(2));
+  $("#zoom-400").addEventListener("click", () => zoomTo(4));
   $("#zoom-fit").addEventListener("click", resetZoom);
+  $("#zoom-actual").addEventListener("click", () => {
+    const image = $("#page-image");
+    const stage = $("#image-stage");
+    if (!image.naturalWidth || !stage.clientWidth) {
+      zoomTo(1);
+      return;
+    }
+    const scale = Math.max(image.naturalWidth / stage.clientWidth, image.naturalHeight / stage.clientHeight);
+    zoomTo(Math.max(1, scale));
+  });
 }
 
 // ---------- events ----------
@@ -535,6 +866,19 @@ function bind() {
       return;
     }
     if (typing) return;
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomBy(1.25);
+      return;
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoomBy(1 / 1.25);
+      return;
+    } else if (event.key === "0") {
+      event.preventDefault();
+      resetZoom();
+      return;
+    }
     if (event.key === "j" || event.key === "ArrowDown") {
       event.preventDefault();
       navigate(1);
