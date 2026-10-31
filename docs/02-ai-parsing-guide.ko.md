@@ -158,7 +158,7 @@ image_height: {height}
 이미지: {image}
 ```
 
-- `{schema}`에는 이 문서 §1·§4를 바탕으로 만든 JSON Schema를 넣는다. `output.schema.json` 파일은 아직 없으므로, 만들 때까지는 §1의 출력 예시와 §4 필드 정의를 함께 붙여도 된다.
+- `{schema}`에는 `schema/page.schema.json`을 그대로 넣는다. `scripts/prompt.py`가 이 문서 §2.1·§2.2와 스키마를 합쳐 프롬프트를 만든다.
 
 ---
 
@@ -198,7 +198,7 @@ image_height: {height}
   - `notes`: 그 밖의 머리말.
 - `subjects[]`: 그 페이지의 **기준 인물**. 첫 단에서 페이지를 시작하는 인물(보통 `子`가 붙은 사람)이다. 보통 1명. 여기 넣은 인물은 `entries[]`에 다시 넣지 않는다.
   - `row`, `column`, `page_ref`, `bbox`, `confidence`, `needs_human`.
-  - 이름·자·호·생몰·묘소·배우자·자녀 등은 `entries[].person`과 같은 필드로 기록한다(`raw_name`, `name_hanja`, `name_hangul`, `prefix`, `ja`, `ho`, `generation_no`, `generation_hint`, `generation_char`, `birth`, `death`, `burial`, `offices`, `spouses[]`, `children[]`).
+  - 이름·자·호·생몰·묘소·배우자·자녀 등은 `entries[].person`과 같은 필드로 기록한다(`raw_name`, `name_hanja`, `name_hangul`, `prefix`, `aliases[]`, `generation_no`, `generation_hint`, `generation_char`, `birth`, `death`, `burial`, `offices`, `spouses[]`, `children[]`).
   - `children[]`은 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 쓰고, 페이지의 단으로 표현된 자녀는 `entries[]`에 둔다.
 
 ### `entries[]`
@@ -220,39 +220,48 @@ image_height: {height}
 - `name_hanja`: 접두어 제거.
 - `name_hangul`: 확실할 때만.
 - `prefix`: `子`, `女`, `配`, `系`, 없음 등.
-- `ja`: `字` 뒤의 값.
-- `ho`: `號` 뒤의 값.
+- `aliases[]`: `字`·`號`·이칭. `{ "type": "字"|"號"|"其他", "value": "<한자>" }`. `type`이 불확실하면 `其他`로 두고 `needs_human=true`.
 - `generation_no`: **페이지에 명시적으로 인쇄된 `世` 표기가 있을 때만** 채운다. 여백의 `世` 표기가 뒷면 비침이면 세지 않는다. `row`나 `generation_offset`으로 절대 세대수를 추정하지 않는다.
 - `generation_hint`: `世` 표기가 없을 때의 추정. `{ "value": <추정 세대>, "basis": "항렬자·1면 세대표·부모-자녀 연결", "certainty": "probable" }`처럼 근거를 함께 적고 `needs_human=true`.
 - `generation_char`: 이름에서 확인되는 항렬자. 확실할 때만.
-- `birth` / `death`: `raw`, `ganji`, `date_text`, `certainty`(`exact`|`probable`|`uncertain`|`unknown`).
-- `burial`: `raw`, `location`, `direction`, `certainty`.
+- `birth` / `death`: `raw`, `king_era`, `ganji`, `date_text`, `certainty`(`exact`|`probable`|`uncertain`|`unknown`).
+  - `king_era`: `生`/`卒` 앞에 인쇄된 연호(예: `孝宗`, `肅宗`). 없으면 `null`.
+  - `ganji`: 간지 두 글자(예: `辛卯`). 없으면 `null`.
+  - `date_text`: 간지 뒤의 월·일 원문(예: `九月二十六日`).
+- `burial`: `raw`, `location`, `orientation`, `note`, `certainty`.
+  - `location`: 묘소 소재지. 원문을 존중하되 행정구역 단위로 띄어 쓴다.
+  - `orientation`: 좌향(예: `甲坐`, `壬坐`). 없으면 `null`.
+  - `note`: `有碣`, `有表碣`, `上下封`처럼 묘비·봉분에 대한 부기.
 - `offices`: 관직/칭호 배열. 원문 유지.
 - `spouses[]`: 배우자.
-  - `raw_name`, `name_hanja`, `bonkwan`, `father`, `certainty`.
+  - `raw_name`, `name_hanja`, `bonkwan`, `father`, `relation`, `burial`, `certainty`.
   - `relation`: `wife`, `husband`, `son_in_law`, `daughter_in_law`, `unknown`.
+  - `burial`: `person.burial`과 같은 구조.
 - `children[]`: 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 채운다. 페이지의 단으로 표현된 자녀는 `entries[]`에 두고 여기에 중복해서 넣지 않는다. `raw_name`, `name_hanja`, `prefix`, `relation`, `page_ref`.
-- `page_ref`: 그 인물의 **조상(上) 또는 자손(下)** 기록 페이지. `page_refs[]`를 가리키는 `ref_index`만 두고 `raw`를 중복 저장하지 않는다.
+- `page_ref`: 그 인물의 **조상(上) 또는 자손(下)** 기록 페이지. 아래 `page_ref` 정의를 따른다. 참조가 없으면 `null`.
 - `bbox`, `confidence`, `needs_human`.
 
-### `page_refs[]`
+### `page_ref`
 
-페이지에 인쇄된 모든 `上###`·`下###` 참조의 **정본**.
+`上###`·`下###` 참조 하나를 그 자리에서 표현한다. DB 적재 시 `page_refs` 테이블로 분리한다.
 
 - `raw`: 인쇄된 그대로. 예: `上159`, `見上十三`, `下4`.
 - `direction`: `up`(조상/부모) | `down`(자손).
 - `target_section`: 기본 `genealogy`. 전편을 가리키면 `frontmatter`.
 - `target_page_no`: 정수. 한자 숫자는 변환한다(十三 → 13).
-- `source_bbox`: 참조가 인쇄된 위치.
+- `bbox`: 참조가 인쇄된 위치.
 - `confidence`: 0~1.
 
-`subjects[].page_ref`, `person.page_ref`, `children[].page_ref`는 `{ "ref_index": 0 }`처럼 `page_refs[]`의 인덱스만 가리킨다. 같은 참조를 두 번 저장하지 않는다.
+`subjects[].page_ref`, `person.page_ref`, `children[].page_ref`는 모두 이 구조를 쓴다. 같은 참조를 배열과 인물 양쪽에 중복 저장하지 않는다.
 
 ### 페이지 유형별 보조 필드
 
 - `captions[]`: `photo`의 캡션. `{ "raw": "...", "bbox": [...] }`.
 - `index_entries[]`: `index`의 색인 항목. `{ "name_hanja": "...", "name_hangul": null, "page_ref": {...} }`.
 - `annotations[]`: 한글 측주·메모. `{ "raw": "...", "bbox": [...], "kind": "note"|"address"|"burial"|"other" }`.
+- `page_texts[]`: `preface`·`colophon` 등 인물 항목이 아닌 본문. `{ "raw": "...", "bbox": [...], "kind": "body"|"heading"|"colophon"|"other" }`.
+- `generation_chars[]`: `generation_name_table`(전편 63면)의 항렬자. `{ "generation_no": 21, "position": "앞"|"가운데"|"뒤", "chars": ["基", "鍾", "洪"], "bbox": [...] }`.
+- `tables[]`: `property`·`officers`·`subscription` 등 표. `{ "title": "...", "headers": [...], "rows": [[...]], "bbox": [...] }`.
 
 ### `unreadable_regions[]`
 
@@ -286,7 +295,7 @@ image_height: {height}
 5. 단의 오른쪽 = 그 세대의 이름, 왼쪽 = 배우자·생몰·묘소·관직 등. 같은 단의 텍스트를 한 사람으로 합치지 않는다.
 6. **아래 단은 다음 세대**다. 원칙적으로 위 단 인물의 자녀는 아래 단에 있다. 다만 작은 글씨로 붙은 외손은 인쇄된 단과 실제 세대가 다를 수 있다.
 7. 딸의 자손(외손)은 딸 항목 아래에 세로로 이어질 수 있다. 단 경계와 무관하게 붙고, **앞 페이지의 딸 항목**에 붙는 경우도 있으므로 앞 페이지까지 확인한다.
-8. `上###`·`下###`·`見上###`는 `page_refs[]`에 넣는다. `T###`·`F###`는 `下###`다.
+8. `上###`·`下###`·`見上###`는 해당 인물의 `page_ref`에 넣는다. `T###`·`F###`는 `下###`다.
 9. 한글 측주/메모는 `annotations[]`에 넣고, 한자 이름과 합치지 않는다.
 10. 사진/캡션은 `captions[]`에 넣고 인물로 만들지 않는다.
 11. 페이지가 90도/180도 회전되어 있으면 `quality.rotation_degrees`에 기록하고 `needs_human=true`.
@@ -312,7 +321,7 @@ image_height: {height}
 
 - 기준 인물: `萬宜`. 
 - `萬宜` 위의 작은 글씨 `連泰`는 아버지 이름으로 보이며, `上29`는 그 조상의 기록이 있는 면을 가리킴.
-- `萬宜`의 `上29`는 `subjects[0].page_ref`로 연결하고, `page_refs[]`에 `direction=up`, `target_page_no=29`로 둔다.
+- `萬宜`의 `上29`는 `subjects[0].page_ref`에 `direction=up`, `target_page_no=29`로 둔다.
 - 마지막 단의 `澈秀` 아래에는 `下738`(스캔에는 `F738`)이 있어, 738면에 자손 기록이 이어짐을 나타냄.
 
 ### 본편 1면
@@ -336,10 +345,10 @@ image_height: {height}
 
 ## 8. 자기 검증
 
-출력 전에 다음을 확인하고 `validation`에 기록한다.
+출력 전에 다음을 확인한다.
 
-- [ ] 모든 `page_refs[].target_page_no`가 해당 섹션 범위 안에 있는가? (본편 1~938, 전편 1~93, 미수록 면 포함)
-- [ ] `page_refs[].direction`이 `up`/`down`으로 맞는가? (`上`=up, `下`·`T`·`F`=down)
+- [ ] 모든 `page_ref.target_page_no`가 해당 섹션 범위 안에 있는가? (본편 1~938, 전편 1~93, 미수록 면 포함)
+- [ ] 모든 `page_ref.direction`이 `up`/`down`으로 맞는가? (`上`=up, `下`·`T`·`F`=down)
 - [ ] `見上十三` 같은 한자 숫자를 정수로 변환했는가?
 - [ ] `name_hanja`가 비어 있어도 `raw_name`은 보존했는가?
 - [ ] `子`/`女`/`配`/`系` 접두어를 `name_hanja`에 포함하지 않았는가?
@@ -351,7 +360,7 @@ image_height: {height}
 - [ ] 작은 글씨로 붙은 외손은 `row`와 `generation_offset`이 다를 수 있음을 반영했는가?
 - [ ] `page_type`이 `genealogy`이면 `entries`가 비어 있지 않은가?
 - [ ] 그 외 유형이면 `entries`가 비어 있는가?
-- [ ] `subjects[].page_ref`/`person.page_ref`/`children[].page_ref`의 `ref_index`가 `page_refs[]`와 일치하는가?
+- [ ] `subjects[].page_ref`/`person.page_ref`/`children[].page_ref`에 `raw`·`direction`·`target_page_no`가 채워졌는가?
 - [ ] 기준 인물 위의 아버지 이름을 `page.header.father_name`에 넣었는가?
 - [ ] 여백의 `世` 표기가 뒷면 비침이 아닌지 확인했는가?
 - [ ] `confidence < 0.8`인 항목에 `needs_human=true`가 붙었는가?

@@ -86,14 +86,15 @@ frontmatter,46,46,scan/frontmatter/046.jpg,data/pages/frontmatter/0046.jpg,...,7
 frontmatter,47,47,scan/frontmatter/047.jpg,data/pages/frontmatter/0047.jpg,...,720,955,99,index,,목차
 frontmatter,52,52,scan/frontmatter/052.jpg,data/pages/frontmatter/0052.jpg,...,703,948,96,photo,,묘소 사진
 frontmatter,63,63,scan/frontmatter/063.jpg,data/pages/frontmatter/0063.jpg,...,704,940,96,generation_name_table,,항렬표
-frontmatter,48,48,,,,MISSING,,,,,,전편 48면 없음
-genealogy,53,53,,,,MISSING,,,,,,본편 53면 없음
+frontmatter,48,,,,,,,,missing,missing,MISSING: frontmatter 48면 미수록
+genealogy,53,,,,,,,,missing,missing,MISSING: genealogy 53면 미수록
 ```
 
-- `scan_seq`: 폴더 안에서의 스캔 순서.
+- `scan_seq`: 폴더 안에서의 스캔 순서. 미수록 면은 비운다.
 - `printed_page_no`: 책에 인쇄된 면번호. OCR/육안으로 확인해 채운다.
-- `page_type`: `preface`, `photo`, `genealogy`, `index`, `generation_name_table`, `property`, `officers`, `subscription`, `colophon`, `cover`, `unknown`.
-- `quality_flags`: `blur`, `bleed_through`, `rotated`, `cut_off` 등.
+- `page_type`: `preface`, `photo`, `genealogy`, `index`, `generation_name_table`, `property`, `officers`, `subscription`, `colophon`, `cover`, `missing`, `unknown`.
+- `quality_flags`: `blur`, `bleed_through`, `rotated`, `cut_off`, `missing` 등. 여러 개면 `|`로 구분한다.
+- 이 파일은 `python3 scripts/build_manifest.py`로 다시 만들 수 있다. 표지는 `data/manifests/covers.csv`에 별도로 기록한다.
 
 ---
 
@@ -114,6 +115,8 @@ genealogy,53,53,,,,MISSING,,,,,,본편 53면 없음
 | `scan/frontmatter/048.jpg`, `064.jpg` | frontmatter | 48, 64 | **없음** |
 | `scan/genealogy/025.jpg` | genealogy | 25 | 본편 25면 |
 | `scan/genealogy/217.jpg` | genealogy | 217 | 본편 217면 |
+| `scan/genealogy/932.jpg` | genealogy | 932 | 宗中財產目錄 |
+| `scan/genealogy/933.jpg` | genealogy | 933 | 宗中財產目錄 |
 | `scan/genealogy/936.jpg` | genealogy | 936 | 임원록 |
 | `scan/genealogy/937.jpg` | genealogy | 937 | 수단 |
 | `scan/genealogy/938.jpg` | genealogy | 938 | 간기 |
@@ -217,6 +220,7 @@ CREATE TABLE page_refs (
 - 전편을 가리키는 참조가 있으면 `target_section = frontmatter`.
 - `target_page_id`는 페이지 import 후 채운다.
 - `raw_ref`는 원문 그대로 보존한다.
+- AI 출력 JSON에서는 참조를 `person.page_ref`에 인라인 객체로 받고(`02` §4), 적재할 때 이 테이블로 분리한다.
 
 ### 4.5 `toc_entries`
 
@@ -244,13 +248,13 @@ CREATE TABLE toc_entries (
 | 4 | 墓所 및 祭閣·旌閭閣·積善碑 및 善德碑 | frontmatter | 49 |
 | 5 | 行列名字例 | frontmatter | 63 |
 | 6 | 早見索引 | frontmatter | 65 |
-| 7 | 昭穆錄 | frontmatter | 65 |
-| 8 | 宗中財產目錄 | frontmatter | 93 |
+| 7 | 昭穆錄 | genealogy | 1 |
+| 8 | 宗中財產目錄 | genealogy | 932 |
 | 9 | 刊行委員 및 任員錄 | genealogy | 936 |
 | 10 | 收單有司名錄 | genealogy | 937 |
 
-- 이 표의 대상 면번호는 전편 47면 목차 원문과 대조해 확정한다. `[확인 필요]`
-- 93면(宗中財產目錄)은 현재 스캔에 없으므로 `MISSING`으로 둔다.
+- 전편 47면 목차 원문과 대조해 확정했다. `昭穆錄`은 본편 1면, `宗中財產目錄`은 본편 932면이다.
+- 전편 67~93면은 스캔에 없지만, 위 항목들은 모두 본편에 있으므로 목차 대상 면이 누락된 것은 아니다.
 
 ### 4.6 `generation_chars` — 항렬표
 
@@ -303,8 +307,8 @@ CREATE TABLE generation_chars (
 
 ## 6. 마이그레이션 순서
 
-1. **인벤토리**: 현재 `scan/` 전체 파일의 hash/크기/해상도를 계산하고, 누락(전편 48·64·67~93, 본편 053·934·935)을 `MISSING`으로 표시한다.
-2. **매핑**: `pages.csv` 초안을 만들고, 인쇄 면번호를 OCR/육안으로 확인한다. 최소 20장을 샘플 검증한다.
+1. **인벤토리**: 현재 `scan/` 전체 파일의 hash/크기/해상도를 계산하고, 누락(전편 48·64·67~93, 본편 053·934·935)을 `missing`으로 표시한다.
+2. **매핑**: ~~`pages.csv` 초안을 만들고, 인쇄 면번호를 OCR/육안으로 확인한다.~~ (완료: `data/manifests/pages.csv`)
 3. **정규화 경로**: `data/pages/frontmatter`, `data/pages/genealogy`에 symlink 또는 복사본을 만든다.
 4. **DB 입력**: `sections`, `pages`, `toc_entries`를 먼저 넣는다.
 5. **페이지 분류**: `page_type`을 채운다. 전편은 `page_texts`, 본편은 `genealogy`.
@@ -323,14 +327,15 @@ CREATE TABLE generation_chars (
 | 본편 935면 | 없음 | `missing`으로 표시 |
 | 전편 48면 | 없음 | `missing`으로 표시 |
 | 전편 64면 | 없음 | `missing`으로 표시 |
-| 전편 67~93면 | 없음 | `missing`으로 표시. 93면 宗中財產目錄도 미수록 |
+| 전편 67~93면 | 없음 | `missing`으로 표시 |
 
 ---
 
 ## 8. 다음 단계
 
-1. 누락 면(전편 48·64·67~93, 본편 053·934·935)은 그대로 두고 `MISSING`으로 기록한다. (재스캔·추적 없음)
-2. `pages.csv` 초안을 실제 파일에서 생성한다.
+1. ~~누락 면(전편 48·64·67~93, 본편 053·934·935)은 그대로 두고 `missing`으로 기록한다.~~ (완료)
+2. ~~`pages.csv` 초안을 실제 파일에서 생성한다.~~ (완료: `data/manifests/pages.csv`, 1,031행)
 3. `sections`/`pages` DDL과 import 스크립트를 만든다.
 4. `scan/frontmatter/063.jpg` 항렬표를 `generation_chars`로 구조화한다.
 5. 20~30장 파일럿으로 페이지 분류/OCR/`上###`·`下###` 파싱과 단(段)=세대 모델을 검증한다.
+6. 검수 도구로 승인된 페이지만 `approved`로 내보내고, 공개용 DB에 적재한다.

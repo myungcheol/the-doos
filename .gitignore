@@ -1,0 +1,15 @@
+# generated from scan/ - rebuild with python3 scripts/link_pages.py
+data/pages/
+
+# pipeline output
+data/parsed/
+data/ocr/
+data/prompts/
+
+# local review state
+data/review/status.json
+data/review/*.bak
+
+# python
+__pycache__/
+*.pyc

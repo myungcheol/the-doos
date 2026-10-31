@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>杜陵杜氏世譜 검수</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">杜陵杜氏世譜 <span>검수 도구</span></div>
+    <div id="stats" class="stats"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="filters">
+        <select id="filter-section" aria-label="구분">
+          <option value="all">전체 구분</option>
+          <option value="genealogy">본편</option>
+          <option value="frontmatter">전편</option>
+        </select>
+        <select id="filter-status" aria-label="검수 상태">
+          <option value="all">전체 상태</option>
+          <option value="pending">대기</option>
+          <option value="in_review">검수 중</option>
+          <option value="approved">승인</option>
+          <option value="needs_fix">수정 필요</option>
+        </select>
+        <select id="filter-json" aria-label="파싱 여부">
+          <option value="all">파싱 전체</option>
+          <option value="yes">파싱 있음</option>
+          <option value="no">파싱 없음</option>
+        </select>
+        <input id="search" type="search" placeholder="면번호 · 이름 검색" autocomplete="off">
+      </div>
+      <div id="list-count" class="list-count"></div>
+      <div id="page-list" class="page-list" role="list"></div>
+    </aside>
+
+    <main class="viewer">
+      <div class="viewer-head">
+        <div class="viewer-title">
+          <strong id="page-title">페이지를 선택하세요</strong>
+          <span id="page-meta" class="muted"></span>
+        </div>
+        <div class="nav">
+          <button id="prev" title="이전 (K)">←</button>
+          <button id="next" title="다음 (J)">→</button>
+        </div>
+      </div>
+      <div id="image-stage" class="image-stage">
+        <img id="page-image" alt="" draggable="false">
+        <div id="image-empty" class="image-empty">좌측에서 페이지를 선택하세요</div>
+        <div class="zoom-controls">
+          <button id="zoom-out" title="축소">−</button>
+          <span id="zoom-label">100%</span>
+          <button id="zoom-in" title="확대">+</button>
+          <button id="zoom-fit" title="맞춤">맞춤</button>
+        </div>
+      </div>
+      <div id="quality" class="quality"></div>
+    </main>
+
+    <section class="editor">
+      <div class="tabs">
+        <button class="tab active" data-tab="json">JSON</button>
+        <button class="tab" data-tab="ocr">OCR</button>
+        <button class="tab" data-tab="notes">메모</button>
+      </div>
+
+      <div id="tab-json" class="tab-panel">
+        <div class="editor-toolbar">
+          <button id="save" class="primary">저장 <kbd>S</kbd></button>
+          <button id="format">정렬</button>
+          <span id="save-state" class="save-state"></span>
+        </div>
+        <textarea id="json-editor" spellcheck="false" placeholder="이 페이지의 파싱 결과가 없습니다."></textarea>
+        <div id="validation" class="validation"></div>
+      </div>
+
+      <div id="tab-ocr" class="tab-panel hidden">
+        <pre id="ocr-text" class="ocr-text"></pre>
+      </div>
+
+      <div id="tab-notes" class="tab-panel hidden">
+        <label class="note-label" for="note-editor">검수 메모</label>
+        <textarea id="note-editor" class="note-editor" placeholder="이 페이지에서 확인한 내용, 수정할 점, 판독 근거 등을 적으세요."></textarea>
+      </div>
+
+      <div class="review-bar">
+        <span class="review-label">검수 상태</span>
+        <button data-status="pending">대기</button>
+        <button data-status="in_review">검수 중</button>
+        <button data-status="approved">승인</button>
+        <button data-status="needs_fix">수정 필요</button>
+        <span id="review-state" class="muted"></span>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

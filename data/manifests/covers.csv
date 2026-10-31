@@ -1,0 +1,3 @@
+cover,source_path,normalized_path,sha256,width,height,dpi
+front,scan/앞표지.jpg,data/pages/covers/front.jpg,0c29e4276922c9c73c3214e92e975bcb5727e9ea8a59a89e0c271826bae728fb,716,855,
+back,scan/뒷표지.jpg,data/pages/covers/back.jpg,6f37caff072a4d9f25a31ecc18c5a390f73fe74334ae9065328a2cdd28b484ac,666,932,72
