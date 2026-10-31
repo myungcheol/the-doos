@@ -4,7 +4,34 @@
 
 ---
 
+## 0. 지금부터 할 일
+
+§1 준비는 **이미 끝났다**. `data/manifests/pages.csv`와 `data/pages/`가 이미 있으므로 다시 만들지 않는다. 스캔을 추가·교체했을 때만 §1을 다시 실행한다.
+
+현재 단계에서 사람이 직접 하는 일은 **검수**, **규칙 수정**, **진행 기록** 세 가지다. 나머지는 스크립트가 한다.
+
+| 순서 | 할 일 | 누가 | 결과가 남는 곳 |
+|---:|---|---|---|
+| 1 | 무료 API 키 설정 (§2) | 사람 | 셸 환경변수 (파일 아님) |
+| 2 | 25면 dry-run → 실제 파싱 (§3) | 스크립트 | `data/prompts/`, `data/parsed/` (로컬) |
+| 3 | 파일럿 20~30면 파싱 (§4) | 스크립트 | `data/parsed/` (로컬) |
+| 4 | 이미지와 JSON 대조 검수 (§5) | **사람** | `data/review/status.json` (로컬) |
+| 5 | 잘못된 판독 규칙 수정 | **사람** | `docs/01`, `docs/02` (커밋) |
+| 6 | 승인분 export (§5) | 스크립트 | `data/exports/approved.jsonl` (커밋) |
+| 7 | 진행 상황 갱신 | **사람** | `STATUS.md` → README 자동 반영 |
+
+**검수 루프**는 이렇게 돈다.
+
+1. `admin/server.py`를 열고 25면·62~63면·217면처럼 구조가 다른 면부터 본다.
+2. 이미지와 JSON이 맞으면 `3`(승인), 틀리면 `4`(수정 필요)로 표시하거나 JSON을 직접 고치고 `S`(저장)한다.
+3. 규칙 자체가 틀렸다면 `docs/01`·`docs/02`를 고친 뒤 `--force`로 다시 파싱한다.
+4. 승인분이 쌓이면 `python3 scripts/export_approved.py`를 실행한다.
+
+---
+
 ## 1. 준비
+
+> **이미 완료된 단계다.** 스캔 파일을 추가·교체했을 때만 다시 실행한다.
 
 필수는 **Python 3.10+** 뿐이다. 외부 패키지를 설치하지 않는다. OCR을 보조 자료로 쓰고 싶을 때만 Tesseract를 설치한다.
 
@@ -201,3 +228,28 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 - **`PAGE_AI_MODEL` 오류**: 모델 ID가 제공자에서 이미지 입력을 지원하는지 확인한다.
 - **JSON 검증 실패**: `data/parsed/.../0025.meta.json`의 `validation_errors`와 `data/prompts/...`를 확인한다. 필요하면 `--force`로 한 번 더 호출한다.
 - **미수록 페이지**: `pages.csv`에서 `page_type=missing`이다. 검수 도구에서 상태를 바꿀 수 없고, 이미지도 없다.
+
+---
+
+## 8. 무엇을 어디에 기록하나
+
+| 기록 | 어디에 | 커밋? | 언제 |
+|---|---|---|---|
+| 페이지별 검수 상태·메모 | `data/review/status.json` (검수 UI에서 자동) | 아니오 | 페이지를 볼 때마다 |
+| AI 원본 JSON | `data/parsed/` | 아니오 | 파싱할 때마다 |
+| 판독 규칙 수정 | `docs/01`, `docs/02` | 예 | 규칙 오류를 발견했을 때 |
+| 단계 진행 상황 | `STATUS.md` | 예 | 파일럿·검수·DB 단계가 끝났을 때 |
+| 승인 데이터 | `data/exports/approved.jsonl` | 예 | 승인분을 export할 때 |
+
+- `README.md`의 진행 상황 블록은 직접 고치지 않는다. `STATUS.md`를 고친 뒤 `python3 scripts/sync_status.py`를 실행한다.
+- `data/review/status.json`과 `data/parsed/`는 **작업 상태**다. 직접 편집하지 말고 검수 UI/스크립트로만 바꾼다.
+- `data/exports/approved.jsonl`도 직접 고치지 않는다. 항상 `export_approved.py`로 다시 만든다.
+
+### `data/review`와 `data/exports`의 차이
+
+| 디렉터리 | 답하는 질문 | 성격 | git |
+|---|---|---|---|
+| `data/review/` | “이 페이지를 봤나? 승인했나?” | 사람의 **작업 상태**. 페이지마다 자주 바뀌고 메모에 민감 내용이 들어갈 수 있음 | 제외 (`status.json`) |
+| `data/exports/` | “공개해도 되는 최종 데이터가 무엇인가?” | 승인된 결과만 모은 **배포 데이터** | 추적 (`approved.jsonl`) |
+
+즉 `review`는 검수 과정의 장부, `exports`는 그 결과의 출고품이다. `review`가 없으면 export할 수 없고, `review`만으로는 DB에 넣지 않는다.

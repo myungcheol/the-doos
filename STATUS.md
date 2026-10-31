@@ -31,6 +31,7 @@
 - 2026-10-31: manifest → symlink → 프롬프트 → AI 호출 → 검증 → 저장 파이프라인 초안.
 - 2026-10-31: 이미지+JSON 검수 도구 초안. 상태 저장, JSON 편집, 승인 JSONL 내보내기.
 - 2026-10-31: 추적 정책 확정. raw `data/parsed/`·`data/review/`는 로컬, 승인분 `data/exports/approved.jsonl`만 추적. `scripts/export_approved.py` 추가.
+- 2026-10-31: `docs/04`에 사람/스크립트 역할, 기록 위치, `data/review`·`data/exports` 차이 정리.
 
 ---
 
