@@ -264,20 +264,62 @@ def parse_page(
     text, usage, response_meta = call_api(messages, image, model)
     response_models = [response_meta.get("response_model", model)]
     routing_traces = [response_meta.get("omniroute", {})]
+    first_raw = text
     try:
         data = json.loads(strip_json(text))
     except json.JSONDecodeError as exc:
         # One correction attempt with the parser error.
         log(f"  JSON 파싱 실패, 교정 요청: {exc}")
+        first_raw_path = destination.with_name(destination.stem + ".raw.first.txt")
+        atomic_write_text(first_raw_path, first_raw)
+        log(f"  첫 응답 저장: {display_path(first_raw_path)}")
         messages = messages + [
             {"role": "assistant", "content": text},
-            {"role": "user", "content": f"위 출력은 JSON 파싱에 실패했다: {exc}. 설명 없이 올바른 JSON 객체만 다시 출력하라."},
+            {
+                "role": "user",
+                "content": (
+                    f"위 출력은 JSON 파싱에 실패했다: {exc}. "
+                    "설명, 마크다운, 코드펜스 없이 올바른 JSON 객체 하나만 다시 출력하라. "
+                    "문자열 안의 따옴표는 이스케이프하고, 후행 쉼표를 쓰지 마라."
+                ),
+            },
         ]
-        text, usage2, response_meta = call_api(messages, image, model)
+        try:
+            text, usage2, response_meta = call_api(messages, image, model)
+        except Exception as call_exc:
+            raise SystemExit(f"교정 호출 실패: {call_exc}")
         response_models.append(response_meta.get("response_model", model))
         routing_traces.append(response_meta.get("omniroute", {}))
         usage = {"first": usage, "second": usage2}
-        data = json.loads(strip_json(text))
+        try:
+            data = json.loads(strip_json(text))
+        except json.JSONDecodeError as exc2:
+            raw_path = destination.with_name(destination.stem + ".raw.txt")
+            atomic_write_text(raw_path, text)
+            meta = {
+                "section": section,
+                "printed_page_no": page_no,
+                "model": model,
+                "requested_model": model,
+                "response_models": response_models,
+                "omniroute": routing_traces,
+                "base_url": os.environ.get("PAGE_AI_BASE_URL", DEFAULT_BASE_URL),
+                "image": str(image.relative_to(ROOT)),
+                "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
+                "elapsed_seconds": round(time.time() - started, 2),
+                "usage": usage,
+                "json_error": str(exc2),
+                "first_json_error": str(exc),
+                "raw_output": display_path(raw_path),
+            }
+            atomic_write_json(meta_path(section, page_no), meta)
+            raise SystemExit(
+                f"JSON 파싱 실패: {exc2}\\n"
+                f"첫 응답: {display_path(first_raw_path)}\\n"
+                f"교정 응답: {display_path(raw_path)}\\n"
+                f"meta: {display_path(meta_path(section, page_no))}"
+            )
 
     errors, warnings = validate(data, section, page_no)
     if errors:
@@ -293,7 +335,33 @@ def parse_page(
         text, usage2, response_meta = call_api(messages, image, model)
         response_models.append(response_meta.get("response_model", model))
         routing_traces.append(response_meta.get("omniroute", {}))
-        data = json.loads(strip_json(text))
+        try:
+            data = json.loads(strip_json(text))
+        except json.JSONDecodeError as exc2:
+            raw_path = destination.with_name(destination.stem + ".raw.validation.txt")
+            atomic_write_text(raw_path, text)
+            meta = {
+                "section": section,
+                "printed_page_no": page_no,
+                "model": model,
+                "requested_model": model,
+                "response_models": response_models,
+                "omniroute": routing_traces,
+                "base_url": os.environ.get("PAGE_AI_BASE_URL", DEFAULT_BASE_URL),
+                "image": str(image.relative_to(ROOT)),
+                "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
+                "elapsed_seconds": round(time.time() - started, 2),
+                "usage": usage,
+                "json_error": str(exc2),
+                "raw_output": display_path(raw_path),
+            }
+            atomic_write_json(meta_path(section, page_no), meta)
+            raise SystemExit(
+                f"검증 교정 JSON 파싱 실패: {exc2}\\n"
+                f"응답: {display_path(raw_path)}\\n"
+                f"meta: {display_path(meta_path(section, page_no))}"
+            )
         usage = {"first": usage, "second": usage2}
         errors, warnings = validate(data, section, page_no)
         if errors:
