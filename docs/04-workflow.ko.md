@@ -82,6 +82,7 @@ python3 scripts/link_pages.py
 | `PAGE_AI_MAX_TOKENS` | 최대 출력 토큰, 기본 8192 |
 | `PAGE_AI_JSON_MODE` | `1`이면 `response_format=json_object` 요청 |
 | `PAGE_AI_REASONING_EFFORT` | 선택: `low` / `medium` / `high`. reasoning 모델의 내부 사고량 조절 |
+| `PAGE_AI_EXTRA_BODY` | 요청 body에 병합할 JSON. 예: `{"thinking":{"type":"disabled"}}` |
 | `PAGE_AI_EXTRA_HEADERS` | 추가 요청 헤더 JSON. OmniRoute 압축·캐시·vision bridge 제어에 사용 |
 
 예시 (Google AI Studio, 무료 티어):

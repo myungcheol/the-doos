@@ -159,6 +159,12 @@ def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, d
     reasoning_effort = os.environ.get("PAGE_AI_REASONING_EFFORT", "").strip()
     if reasoning_effort:
         body["reasoning_effort"] = reasoning_effort
+    extra_body = os.environ.get("PAGE_AI_EXTRA_BODY", "").strip()
+    if extra_body:
+        try:
+            body.update(json.loads(extra_body))
+        except json.JSONDecodeError as exc:
+            log(f"  PAGE_AI_EXTRA_BODY 무시: {exc}")
 
     headers = {
         **extra_headers(),
