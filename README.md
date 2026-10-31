@@ -112,6 +112,7 @@ the-doos/
 │  ├─ parse_page.py           # 한 페이지 AI 호출·검증·저장
 │  ├─ run_pipeline.py         # 범위/유형/개수 지정 배치
 │  ├─ validate_page.py        # 파싱 JSON 검증
+│  ├─ sync_status.py          # STATUS.md → README 진행 상황 삽입
 │  └─ common.py               # manifest·경로 공통 함수
 │
 ├─ admin/
@@ -127,14 +128,23 @@ the-doos/
 
 ### 원본과 생성물
 
-| 구분 | 경로 | git | 설명 |
+| 구분 | 경로 | git | 추적/제외 이유 |
 |---|---|---|---|
-| 원본 | `scan/` | 추적 | 절대 수정하지 않는 스캔 |
-| 고정 manifest | `data/manifests/` | 추적 | 페이지 인벤토리. 재생성 가능하지만 결과를 고정 |
-| 생성물 | `data/pages/`, `data/ocr/`, `data/prompts/`, `data/parsed/` | 제외 | 스크립트가 만드는 중간 산출물 |
-| 로컬 상태 | `data/review/status.json` | 제외 | 검수 상태·메모 |
-| 설계 | `docs/`, `schema/` | 추적 | 규칙과 계약 |
+| 원본 | `scan/` | 추적 | 절대 수정하지 않는 스캔. provenance의 기준 |
+| 고정 manifest | `data/manifests/` | 추적 | 재생성 가능하지만, 배포·검수의 기준이므로 결과를 고정 |
+| 정규화 경로 | `data/pages/` | **제외** | 머신별 symlink라 clone/OS에 따라 깨짐. `pages.csv` + `link_pages.py`로 언제든 재생성 |
+| OCR 보조 | `data/ocr/` | **제외** | Tesseract 버전에 따라 달라지는 파생물. 선택 사항이며 정본이 아님 |
+| 프롬프트 | `data/prompts/` | **제외** | `docs/02` + schema + manifest에서 결정론적으로 생성. 문서 수정 때마다 churn만 늘어남 |
+| AI 원본 | `data/parsed/` | **제외** | 모델·시행마다 달라지는 중간 산출물. 999면 전체를 커밋하면 검수 전 노이즈가 큼 |
+| 검수 상태 | `data/review/status.json` | **제외(현재)** | 생성물이 아니라 **사람의 작업 기록**. 페이지별 변경이 잦아 제외했지만, 감사·백업이 필요하면 추적 전환 |
+| 설계 | `docs/`, `schema/` | 추적 | 규칙과 JSON 계약 |
 | 도구 | `scripts/`, `admin/` | 추적 | 파이프라인과 검수 UI |
+
+`data/parsed/`와 `data/review/status.json`은 성격이 다르다.
+
+- `data/parsed/`는 **AI 중간 산출물**이다. 승인 전에는 버려질 수 있으므로 git에 넣지 않는다.
+- `data/review/status.json`은 **사람이 만든 검수 기록**이다. 재생성이 불가능하므로, 검수가 본격화되면 추적하는 편이 낫다. 대신 페이지를 볼 때마다 커밋하지 않고 검수 세션 단위로 커밋한다.
+- 승인된 최종 데이터는 `data/parsed/` 전체가 아니라 **승인분 JSONL**로 고정해 `data/exports/`에 두는 방식을 권장한다.
 
 ---
 
@@ -174,16 +184,24 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 
 ## 5. 현재 진행 상황
 
-자세한 완료/진행/다음/블로커는 **[STATUS.md](STATUS.md)** 에만 기록한다. README에는 요약만 둔다.
+<!-- STATUS:BEGIN -->
+> 이 표는 `STATUS.md`에서 자동 생성됩니다. 직접 수정하지 마세요.
+>
+> 마지막 갱신: **2026-10-31**, 기능 기준 커밋 `73f0a31`.
 
-| 영역 | 상태 |
-|---|---|
-| 스캔 정리·판독 규칙 문서화 | 완료 |
-| 페이지 인벤토리 `pages.csv` | 완료 (1,031행, 미수록 32행) |
-| 파이프라인 스크립트 | 초안 완료 |
-| 검수 도구 | 초안 완료 |
-| AI 파일럿 파싱 | 대기 (API 키 필요) |
-| DB 적재·공개 앱 | 대기 |
+| 영역 | 상태 | 근거 |
+|---|---|---|
+| 스캔 정리·판독 규칙 | 완료 | `scan/frontmatter`, `scan/genealogy`, `docs/01`, `docs/02` |
+| 페이지 인벤토리 | 완료 | `data/manifests/pages.csv` 1,031행 (미수록 32행) |
+| 정규화 경로 | 완료 | `scripts/link_pages.py` → `data/pages/` symlink 1,001개 |
+| AI 파싱 파이프라인 | 초안 완료 | `scripts/prompt.py`, `parse_page.py`, `validate_page.py`, `run_pipeline.py` |
+| OCR 보조 | 초안 완료 / 미실행 | `scripts/ocr.py` (Tesseract 미설치) |
+| 검수 도구 | 초안 완료 / 실사용 전 | `admin/server.py`, `admin/static/` |
+| AI 파일럿 파싱 | 대기 | API 키·모델 미지정 |
+| DB 적재·공개 앱 | 대기 | DDL/import 스크립트 없음 |
+<!-- STATUS:END -->
+
+자세한 완료/진행/다음/블로커와 갱신 규칙은 **[STATUS.md](STATUS.md)** 에 있다. 위 표는 `STATUS.md`에서 `python3 scripts/sync_status.py`로 생성한다.
 
 ---
 
