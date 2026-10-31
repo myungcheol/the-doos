@@ -308,7 +308,7 @@ CREATE TABLE generation_chars (
 ## 6. 마이그레이션 순서
 
 1. **인벤토리**: 현재 `scan/` 전체 파일의 hash/크기/해상도를 계산하고, 누락(전편 48·64·67~93, 본편 053·934·935)을 `missing`으로 표시한다.
-2. **매핑**: ~~`pages.csv` 초안을 만들고, 인쇄 면번호를 OCR/육안으로 확인한다.~~ (완료: `data/manifests/pages.csv`)
+2. **매핑**: `pages.csv`를 실제 파일에서 생성하고, 인쇄 면번호를 OCR/육안으로 확인한다.
 3. **정규화 경로**: `data/pages/frontmatter`, `data/pages/genealogy`에 symlink 또는 복사본을 만든다.
 4. **DB 입력**: `sections`, `pages`, `toc_entries`를 먼저 넣는다.
 5. **페이지 분류**: `page_type`을 채운다. 전편은 `page_texts`, 본편은 `genealogy`.
@@ -316,9 +316,13 @@ CREATE TABLE generation_chars (
 7. **검증**: 모든 `page_refs.target_page_id`가 존재하는지, `(section, printed_page_no)` 중복이 없는지 확인한다.
 8. **검수/발행**: `review_status`가 `approved`인 데이터만 공개한다.
 
+> 이 절은 **설계상 적재 순서**다. 실제 진행 상황은 루트 [`STATUS.md`](../STATUS.md)에만 기록한다.
+
 ---
 
-## 7. 현재 확인된 누락/불일치
+## 7. 데이터 제약: 누락 면
+
+아래 누락은 재스캔·추적 없이 **고정된 데이터 제약**으로 둔다. 진행 상황이 아니라 manifest와 앱이 지켜야 하는 전제다.
 
 | 항목 | 상태 | 처리 |
 |---|---|---|
@@ -329,13 +333,4 @@ CREATE TABLE generation_chars (
 | 전편 64면 | 없음 | `missing`으로 표시 |
 | 전편 67~93면 | 없음 | `missing`으로 표시 |
 
----
-
-## 8. 다음 단계
-
-1. ~~누락 면(전편 48·64·67~93, 본편 053·934·935)은 그대로 두고 `missing`으로 기록한다.~~ (완료)
-2. ~~`pages.csv` 초안을 실제 파일에서 생성한다.~~ (완료: `data/manifests/pages.csv`, 1,031행)
-3. `sections`/`pages` DDL과 import 스크립트를 만든다.
-4. `scan/frontmatter/063.jpg` 항렬표를 `generation_chars`로 구조화한다.
-5. 20~30장 파일럿으로 페이지 분류/OCR/`上###`·`下###` 파싱과 단(段)=세대 모델을 검증한다.
-6. 검수 도구로 승인된 페이지만 `approved`로 내보내고, 공개용 DB에 적재한다.
+> 진행 상황과 다음 단계는 루트 [`STATUS.md`](../STATUS.md)에서 관리한다. 이 문서는 데이터 구조가 바뀔 때만 수정한다.
