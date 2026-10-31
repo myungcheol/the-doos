@@ -473,6 +473,77 @@ kbd { font-family: var(--mono); font-size: 11px; opacity: .7; margin-left: 3px; 
   color: var(--muted);
 }
 
+.struct-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.struct-input-small {
+  width: 92px;
+  flex: 0 0 auto;
+}
+
+.struct-textarea-small {
+  min-height: 46px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+}
+
+.struct-field-block {
+  align-items: start;
+}
+
+.struct-field-block .struct-label {
+  padding-top: 6px;
+}
+
+.struct-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.struct-subcard {
+  background: #f7f3ea;
+  border: 1px solid #e4dbc9;
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin: 6px 0;
+}
+
+.struct-alias-row {
+  display: grid;
+  grid-template-columns: 86px 1fr 28px;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.struct-remove, .struct-add {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.struct-remove {
+  color: var(--bad);
+}
+
+.struct-add {
+  margin-top: 6px;
+}
+
 @media (max-width: 1180px) {
   .layout { grid-template-columns: 240px minmax(280px, 1fr) minmax(340px, 46%); }
 }

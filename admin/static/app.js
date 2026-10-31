@@ -338,6 +338,11 @@ const RELATION_LABEL = {
   unknown: "미상",
 };
 
+const RELATION_OPTIONS = Object.keys(RELATION_LABEL).map((value) => ({
+  value,
+  label: RELATION_LABEL[value],
+}));
+
 function text(value) {
   if (value === null || value === undefined || value === "") return null;
   return String(value);
@@ -384,7 +389,341 @@ function pageRefText(value) {
   return `${value.raw || ""} → ${value.target_section || ""} ${value.target_page_no || ""}`.trim();
 }
 
+function syncJsonFromParsed() {
+  if (!state.detail || !state.detail.parsed) return;
+  const editor = $("#json-editor");
+  editor.value = JSON.stringify(state.detail.parsed, null, 2);
+  state.dirty = true;
+  setSaveState("수정됨 (저장 필요)");
+}
+
+function makeField(container, label, value, onInput, options = {}) {
+  const row = document.createElement("div");
+  row.className = "struct-field";
+  const dt = document.createElement("span");
+  dt.className = "struct-label";
+  dt.textContent = label;
+  const input = document.createElement("input");
+  input.type = options.number ? "number" : (options.type || "text");
+  input.className = "struct-input";
+  input.value = value === null || value === undefined ? "" : value;
+  if (options.placeholder) input.placeholder = options.placeholder;
+  const update = () => {
+    let next = input.value;
+    if (options.number) next = next.trim() === "" ? null : Number(next);
+    if (options.nullable && next === "") next = null;
+    onInput(next);
+    syncJsonFromParsed();
+  };
+  input.addEventListener("input", update);
+  input.addEventListener("change", update);
+  row.append(dt, input);
+  container.append(row);
+  return input;
+}
+
+function makeSelect(container, label, value, choices, onInput) {
+  const row = document.createElement("div");
+  row.className = "struct-field";
+  const dt = document.createElement("span");
+  dt.className = "struct-label";
+  dt.textContent = label;
+  const select = document.createElement("select");
+  select.className = "struct-input";
+  for (const choice of choices) {
+    const option = document.createElement("option");
+    option.value = choice.value;
+    option.textContent = choice.label;
+    select.append(option);
+  }
+  select.value = value || choices[0].value;
+  select.addEventListener("change", () => {
+    onInput(select.value);
+    syncJsonFromParsed();
+  });
+  row.append(dt, select);
+  container.append(row);
+  return select;
+}
+
+function makeTextareaField(container, label, values, onInput, placeholder = "") {
+  const row = document.createElement("div");
+  row.className = "struct-field struct-field-block";
+  const dt = document.createElement("span");
+  dt.className = "struct-label";
+  dt.textContent = label;
+  const textarea = document.createElement("textarea");
+  textarea.className = "struct-textarea struct-textarea-small";
+  textarea.value = Array.isArray(values) ? values.join("\\n") : (values || "");
+  textarea.placeholder = placeholder;
+  const update = () => {
+    const lines = textarea.value.split("\\n").map((line) => line.trim()).filter(Boolean);
+    onInput(lines);
+    syncJsonFromParsed();
+  };
+  textarea.addEventListener("input", update);
+  textarea.addEventListener("change", update);
+  row.append(dt, textarea);
+  container.append(row);
+  return textarea;
+}
+
+function renderAliasesEditor(container, person) {
+  if (!Array.isArray(person.aliases)) person.aliases = [];
+  const wrap = document.createElement("div");
+  wrap.className = "struct-sublist";
+  const label = document.createElement("div");
+  label.className = "struct-subtitle";
+  label.textContent = "자/호";
+  wrap.append(label);
+  const list = document.createElement("div");
+  wrap.append(list);
+  const rebuild = () => {
+    list.replaceChildren();
+    person.aliases.forEach((alias, index) => {
+      const row = document.createElement("div");
+      row.className = "struct-alias-row";
+      const typeSelect = document.createElement("select");
+      typeSelect.className = "struct-input struct-input-small";
+      for (const type of ["字", "號", "其他"]) {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = type;
+        typeSelect.append(option);
+      }
+      typeSelect.value = alias.type || "字";
+      typeSelect.addEventListener("change", () => {
+        alias.type = typeSelect.value;
+        syncJsonFromParsed();
+      });
+      const valueInput = document.createElement("input");
+      valueInput.type = "text";
+      valueInput.className = "struct-input";
+      valueInput.value = alias.value || "";
+      valueInput.addEventListener("input", () => {
+        alias.value = valueInput.value;
+        syncJsonFromParsed();
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "struct-remove";
+      remove.textContent = "×";
+      remove.addEventListener("click", () => {
+        person.aliases.splice(index, 1);
+        rebuild();
+        syncJsonFromParsed();
+      });
+      row.append(typeSelect, valueInput, remove);
+      list.append(row);
+    });
+  };
+  rebuild();
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "struct-add";
+  add.textContent = "+ 자/호";
+  add.addEventListener("click", () => {
+    person.aliases.push({ type: "字", value: "" });
+    rebuild();
+    syncJsonFromParsed();
+  });
+  wrap.append(add);
+  container.append(wrap);
+}
+
+function renderSpousesEditor(container, person) {
+  if (!Array.isArray(person.spouses)) person.spouses = [];
+  const wrap = document.createElement("div");
+  wrap.className = "struct-sublist";
+  const label = document.createElement("div");
+  label.className = "struct-subtitle";
+  label.textContent = "배우자";
+  wrap.append(label);
+  const list = document.createElement("div");
+  wrap.append(list);
+  const rebuild = () => {
+    list.replaceChildren();
+    person.spouses.forEach((spouse, index) => {
+      if (!spouse || typeof spouse !== "object") person.spouses[index] = { raw_name: "" };
+      const s = person.spouses[index];
+      const card = document.createElement("div");
+      card.className = "struct-subcard";
+      makeField(card, "이름", s.raw_name, (v) => { s.raw_name = v; }, { nullable: true });
+      makeField(card, "한자", s.name_hanja, (v) => { s.name_hanja = v; }, { nullable: true });
+      makeField(card, "본관", s.bonkwan, (v) => { s.bonkwan = v; }, { nullable: true });
+      makeField(card, "부", s.father, (v) => { s.father = v; }, { nullable: true });
+      makeSelect(card, "관계", s.relation || "wife", [
+        { value: "wife", label: "wife" },
+        { value: "husband", label: "husband" },
+        { value: "son_in_law", label: "son_in_law" },
+        { value: "daughter_in_law", label: "daughter_in_law" },
+        { value: "unknown", label: "unknown" },
+      ], (v) => { s.relation = v; });
+      if (!s.burial || typeof s.burial !== "object") s.burial = { raw: null };
+      makeField(card, "묘 원문", s.burial.raw, (v) => { s.burial.raw = v; }, { nullable: true });
+      makeField(card, "묘 위치", s.burial.location, (v) => { s.burial.location = v; }, { nullable: true });
+      makeField(card, "묘 방향", s.burial.orientation, (v) => { s.burial.orientation = v; }, { nullable: true });
+      makeField(card, "묘 비고", s.burial.note, (v) => { s.burial.note = v; }, { nullable: true });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "struct-remove";
+      remove.textContent = "삭제";
+      remove.addEventListener("click", () => {
+        person.spouses.splice(index, 1);
+        rebuild();
+        syncJsonFromParsed();
+      });
+      card.append(remove);
+      list.append(card);
+    });
+  };
+  rebuild();
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "struct-add";
+  add.textContent = "+ 배우자";
+  add.addEventListener("click", () => {
+    person.spouses.push({ raw_name: "", relation: "wife" });
+    rebuild();
+    syncJsonFromParsed();
+  });
+  wrap.append(add);
+  container.append(wrap);
+}
+
+function renderChildrenEditor(container, person) {
+  if (!Array.isArray(person.children)) person.children = [];
+  const wrap = document.createElement("div");
+  wrap.className = "struct-sublist";
+  const label = document.createElement("div");
+  label.className = "struct-subtitle";
+  label.textContent = "자녀";
+  wrap.append(label);
+  const list = document.createElement("div");
+  wrap.append(list);
+  const rebuild = () => {
+    list.replaceChildren();
+    person.children.forEach((child, index) => {
+      if (!child || typeof child !== "object") person.children[index] = { raw_name: "" };
+      const c = person.children[index];
+      const card = document.createElement("div");
+      card.className = "struct-subcard";
+      makeField(card, "이름", c.raw_name, (v) => { c.raw_name = v; }, { nullable: true });
+      makeField(card, "한자", c.name_hanja, (v) => { c.name_hanja = v; }, { nullable: true });
+      makeField(card, "접두", c.prefix, (v) => { c.prefix = v; }, { nullable: true });
+      makeSelect(card, "관계", c.relation || "son", [
+        { value: "son", label: "son" },
+        { value: "daughter", label: "daughter" },
+        { value: "adopted_son", label: "adopted_son" },
+        { value: "unknown", label: "unknown" },
+      ], (v) => { c.relation = v; });
+      if (!c.page_ref || typeof c.page_ref !== "object") c.page_ref = null;
+      makeField(card, "페이지 참조", c.page_ref ? c.page_ref.raw : null, (v) => {
+        if (!v) { c.page_ref = null; return; }
+        if (!c.page_ref) c.page_ref = { raw: v, direction: "down", target_section: "genealogy", target_page_no: 1 };
+        else c.page_ref.raw = v;
+      }, { nullable: true });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "struct-remove";
+      remove.textContent = "삭제";
+      remove.addEventListener("click", () => {
+        person.children.splice(index, 1);
+        rebuild();
+        syncJsonFromParsed();
+      });
+      card.append(remove);
+      list.append(card);
+    });
+  };
+  rebuild();
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "struct-add";
+  add.textContent = "+ 자녀";
+  add.addEventListener("click", () => {
+    person.children.push({ raw_name: "", relation: "son" });
+    rebuild();
+    syncJsonFromParsed();
+  });
+  wrap.append(add);
+  container.append(wrap);
+}
+
 function renderPersonCard(container, person, embedded = false) {
+  if (!person || typeof person !== "object") return;
+  const card = embedded ? container : document.createElement("article");
+  if (!embedded) card.className = "struct-card";
+
+  if (!embedded) {
+    const title = document.createElement("div");
+    title.className = "struct-card-title";
+    title.textContent = person.raw_name || "(이름 없음)";
+    if (person.needs_human) {
+      const badge = document.createElement("span");
+      badge.className = "struct-badge bad";
+      badge.textContent = "확인 필요";
+      title.append(badge);
+    }
+    card.append(title);
+  }
+
+  makeField(card, "이름", person.raw_name, (v) => { person.raw_name = v; });
+  makeField(card, "한자", person.name_hanja, (v) => { person.name_hanja = v; }, { nullable: true });
+  makeField(card, "한글", person.name_hangul, (v) => { person.name_hangul = v; }, { nullable: true });
+  makeField(card, "접두", person.prefix, (v) => { person.prefix = v; }, { nullable: true });
+  makeField(card, "세대", person.generation_no, (v) => { person.generation_no = v; }, { number: true, nullable: true });
+  makeField(card, "항렬자", person.generation_char, (v) => { person.generation_char = v; }, { nullable: true });
+
+  renderAliasesEditor(card, person);
+
+  if (!person.birth || typeof person.birth !== "object") person.birth = { raw: null };
+  makeField(card, "생 원문", person.birth.raw, (v) => { person.birth.raw = v; }, { nullable: true });
+  makeField(card, "생 간지", person.birth.ganji, (v) => { person.birth.ganji = v; }, { nullable: true });
+  makeField(card, "생 날짜", person.birth.date_text, (v) => { person.birth.date_text = v; }, { nullable: true });
+  makeField(card, "생 연호", person.birth.king_era, (v) => { person.birth.king_era = v; }, { nullable: true });
+
+  if (!person.death || typeof person.death !== "object") person.death = { raw: null };
+  makeField(card, "졸 원문", person.death.raw, (v) => { person.death.raw = v; }, { nullable: true });
+  makeField(card, "졸 간지", person.death.ganji, (v) => { person.death.ganji = v; }, { nullable: true });
+  makeField(card, "졸 날짜", person.death.date_text, (v) => { person.death.date_text = v; }, { nullable: true });
+  makeField(card, "졸 연호", person.death.king_era, (v) => { person.death.king_era = v; }, { nullable: true });
+
+  if (!person.burial || typeof person.burial !== "object") person.burial = { raw: null };
+  makeField(card, "묘 원문", person.burial.raw, (v) => { person.burial.raw = v; }, { nullable: true });
+  makeField(card, "묘 위치", person.burial.location, (v) => { person.burial.location = v; }, { nullable: true });
+  makeField(card, "묘 방향", person.burial.orientation, (v) => { person.burial.orientation = v; }, { nullable: true });
+  makeField(card, "묘 비고", person.burial.note, (v) => { person.burial.note = v; }, { nullable: true });
+
+  makeTextareaField(card, "관직", person.offices, (v) => { person.offices = v.length ? v : null; }, "한 줄에 하나");
+  makeTextareaField(card, "메모", person.notes, (v) => { person.notes = v.length ? v : null; }, "한 줄에 하나");
+
+  if (!person.page_ref || typeof person.page_ref !== "object") person.page_ref = null;
+  makeField(card, "페이지 참조", person.page_ref ? person.page_ref.raw : null, (v) => {
+    if (!v) { person.page_ref = null; return; }
+    if (!person.page_ref) person.page_ref = { raw: v, direction: "down", target_section: "genealogy", target_page_no: 1 };
+    else person.page_ref.raw = v;
+  }, { nullable: true });
+
+  const needs = document.createElement("label");
+  needs.className = "struct-checkbox";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = !!person.needs_human;
+  checkbox.addEventListener("change", () => {
+    person.needs_human = checkbox.checked;
+    syncJsonFromParsed();
+  });
+  needs.append(checkbox, document.createTextNode(" 사람 확인 필요"));
+  card.append(needs);
+
+  renderSpousesEditor(card, person);
+  renderChildrenEditor(card, person);
+
+  if (!embedded) container.append(card);
+}
+
+function renderStructure(parsed) {
   const card = embedded ? container : document.createElement("article");
   if (!embedded) card.className = "struct-card";
 
@@ -530,7 +869,26 @@ function renderStructure(parsed) {
     const heading = document.createElement("h3");
     heading.textContent = "기준 인물";
     section.append(heading);
-    for (const subject of parsed.subjects) renderPersonCard(section, subject);
+    for (const subject of parsed.subjects) {
+      const card = document.createElement("article");
+      card.className = "struct-card";
+      const title = document.createElement("div");
+      title.className = "struct-card-title";
+      title.textContent = subject.raw_name || "(기준 인물)";
+      if (subject.needs_human) {
+        const badge = document.createElement("span");
+        badge.className = "struct-badge bad";
+        badge.textContent = "확인 필요";
+        title.append(badge);
+      }
+      card.append(title);
+      makeField(card, "단(row)", subject.row, (v) => { subject.row = v; }, { number: true, nullable: true });
+      makeField(card, "열(column)", subject.column, (v) => { subject.column = v; }, { number: true, nullable: true });
+      makeSelect(card, "관계", subject.relation_to_subject || "self", RELATION_OPTIONS, (v) => { subject.relation_to_subject = v; });
+      makeField(card, "세대 차이", subject.generation_offset, (v) => { subject.generation_offset = v; }, { number: true, nullable: true });
+      renderPersonCard(card, subject, true);
+      section.append(card);
+    }
     container.append(section);
   }
 
@@ -570,7 +928,23 @@ function renderStructure(parsed) {
           title.append(warn);
         }
         card.append(title);
-        appendField(card, "세대 차이", entry.generation_offset === undefined ? null : entry.generation_offset);
+        makeField(card, "단(row)", entry.row, (v) => { entry.row = v; }, { number: true, nullable: true });
+        makeField(card, "열(column)", entry.column, (v) => { entry.column = v; }, { number: true, nullable: true });
+        makeSelect(card, "관계", entry.relation_to_subject || "unknown", RELATION_OPTIONS, (v) => { entry.relation_to_subject = v; });
+        makeField(card, "세대 차이", entry.generation_offset, (v) => { entry.generation_offset = v; }, { number: true, nullable: true });
+
+        const needs = document.createElement("label");
+        needs.className = "struct-checkbox";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = !!entry.needs_human;
+        checkbox.addEventListener("change", () => {
+          entry.needs_human = checkbox.checked;
+          syncJsonFromParsed();
+        });
+        needs.append(checkbox, document.createTextNode(" 사람 확인 필요"));
+        card.append(needs);
+
         renderPersonCard(card, entry.person || {}, true);
         // remove duplicate title by not rendering raw_name again? person card already has title; keep compact by hiding nested title? We'll leave as nested card.
         group.append(card);
@@ -790,8 +1164,38 @@ function bindImage() {
   stage.addEventListener("pointercancel", endDrag);
   stage.addEventListener("dblclick", resetZoom);
 
-  $("#zoom-in").addEventListener("click", () => zoomBy(1.25));
-  $("#zoom-out").addEventListener("click", () => zoomBy(1 / 1.25));
+  function bindRepeatZoom(button, factor) {
+    let timer = null;
+    let interval = null;
+    let repeated = false;
+    const action = () => zoomBy(factor);
+    button.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      repeated = false;
+      action();
+      timer = setTimeout(() => {
+        repeated = true;
+        interval = setInterval(action, 110);
+      }, 260);
+    });
+    const stop = () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      timer = null;
+      interval = null;
+    };
+    button.addEventListener("pointerup", stop);
+    button.addEventListener("pointerleave", stop);
+    button.addEventListener("pointercancel", stop);
+    button.addEventListener("click", (event) => {
+      if (repeated) {
+        repeated = false;
+        event.preventDefault();
+      }
+    });
+  }
+  bindRepeatZoom($("#zoom-in"), 1.2);
+  bindRepeatZoom($("#zoom-out"), 1 / 1.2);
   $("#zoom-100").addEventListener("click", () => zoomTo(1));
   $("#zoom-200").addEventListener("click", () => zoomTo(2));
   $("#zoom-400").addEventListener("click", () => zoomTo(4));
