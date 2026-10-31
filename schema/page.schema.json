@@ -216,10 +216,10 @@
     },
     "spouse": {
       "type": "object",
-      "required": ["raw_name"],
+      "required": ["as_printed"],
       "additionalProperties": true,
       "properties": {
-        "raw_name": { "type": "string" },
+        "as_printed": { "type": "string" },
         "name_hanja": { "type": ["string", "null"] },
         "bonkwan": { "type": ["string", "null"] },
         "father": { "type": ["string", "null"] },
@@ -230,10 +230,10 @@
     },
     "child": {
       "type": "object",
-      "required": ["raw_name"],
+      "required": ["as_printed"],
       "additionalProperties": true,
       "properties": {
-        "raw_name": { "type": "string" },
+        "as_printed": { "type": "string" },
         "name_hanja": { "type": ["string", "null"] },
         "prefix": { "type": ["string", "null"] },
         "relation": { "enum": ["son", "daughter", "adopted_son", "unknown"] },
@@ -242,10 +242,10 @@
     },
     "person": {
       "type": "object",
-      "required": ["raw_name"],
+      "required": ["as_printed"],
       "additionalProperties": true,
       "properties": {
-        "raw_name": { "type": "string" },
+        "as_printed": { "type": "string" },
         "name_hanja": { "type": ["string", "null"] },
         "name_hangul": { "type": ["string", "null"] },
         "prefix": { "type": ["string", "null"] },

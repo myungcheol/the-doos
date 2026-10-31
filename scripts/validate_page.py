@@ -109,8 +109,9 @@ def _check_person(person: Any, where: str, errors: list[str]) -> None:
     if not isinstance(person, dict):
         errors.append(f"{where}: person이 객체가 아닙니다.")
         return
-    if not person.get("raw_name"):
-        errors.append(f"{where}: person.raw_name이 비었습니다.")
+    printed_name = person.get("as_printed") or person.get("raw_name")
+    if not printed_name:
+        errors.append(f"{where}: person.as_printed이 비었습니다.")
     aliases = person.get("aliases")
     if aliases is not None:
         if not isinstance(aliases, list):
@@ -130,8 +131,8 @@ def _check_person(person: Any, where: str, errors: list[str]) -> None:
             errors.append(f"{where}: spouses는 배열이어야 합니다.")
         else:
             for index, spouse in enumerate(spouses):
-                if not isinstance(spouse, dict) or not spouse.get("raw_name"):
-                    errors.append(f"{where}.spouses[{index}]: raw_name이 필요합니다.")
+                if not isinstance(spouse, dict) or not (spouse.get("as_printed") or spouse.get("raw_name")):
+                    errors.append(f"{where}.spouses[{index}]: as_printed이 필요합니다.")
                     continue
                 _check_burial(spouse.get("burial"), f"{where}.spouses[{index}].burial", errors)
                 if spouse.get("relation") not in {None, "wife", "husband", "son_in_law", "daughter_in_law", "unknown"}:

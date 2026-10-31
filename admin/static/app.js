@@ -189,12 +189,26 @@ function writeHash(section, page) {
   history.replaceState(null, "", `#${section}/${page}`);
 }
 
+function migrateRawName(value) {
+  if (Array.isArray(value)) {
+    value.forEach(migrateRawName);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (Object.prototype.hasOwnProperty.call(value, "raw_name") && !Object.prototype.hasOwnProperty.call(value, "as_printed")) {
+    value.as_printed = value.raw_name;
+    delete value.raw_name;
+  }
+  for (const key of Object.keys(value)) migrateRawName(value[key]);
+}
+
 async function loadPage(section, pageNo) {
   if (state.loading) return;
   if (state.dirty && !confirm("저장하지 않은 JSON이 있습니다. 이동할까요?")) return;
   state.loading = true;
   try {
     const detail = await api(`/api/pages/${section}/${pageNo}`);
+    migrateRawName(detail.parsed);
     state.current = { section, page: pageNo };
     state.detail = detail;
     state.dirty = false;
@@ -544,11 +558,11 @@ function renderSpousesEditor(container, person) {
   const rebuild = () => {
     list.replaceChildren();
     person.spouses.forEach((spouse, index) => {
-      if (!spouse || typeof spouse !== "object") person.spouses[index] = { raw_name: "" };
+      if (!spouse || typeof spouse !== "object") person.spouses[index] = { as_printed: "" };
       const s = person.spouses[index];
       const card = document.createElement("div");
       card.className = "struct-subcard";
-      makeField(card, "이름", s.raw_name, (v) => { s.raw_name = v; }, { nullable: true });
+      makeField(card, "이름", s.as_printed, (v) => { s.as_printed = v; }, { nullable: true });
       makeField(card, "한자", s.name_hanja, (v) => { s.name_hanja = v; }, { nullable: true });
       makeField(card, "본관", s.bonkwan, (v) => { s.bonkwan = v; }, { nullable: true });
       makeField(card, "부", s.father, (v) => { s.father = v; }, { nullable: true });
@@ -583,7 +597,7 @@ function renderSpousesEditor(container, person) {
   add.className = "struct-add";
   add.textContent = "+ 배우자";
   add.addEventListener("click", () => {
-    person.spouses.push({ raw_name: "", relation: "wife" });
+    person.spouses.push({ as_printed: "", relation: "wife" });
     rebuild();
     syncJsonFromParsed();
   });
@@ -604,11 +618,11 @@ function renderChildrenEditor(container, person) {
   const rebuild = () => {
     list.replaceChildren();
     person.children.forEach((child, index) => {
-      if (!child || typeof child !== "object") person.children[index] = { raw_name: "" };
+      if (!child || typeof child !== "object") person.children[index] = { as_printed: "" };
       const c = person.children[index];
       const card = document.createElement("div");
       card.className = "struct-subcard";
-      makeField(card, "이름", c.raw_name, (v) => { c.raw_name = v; }, { nullable: true });
+      makeField(card, "이름", c.as_printed, (v) => { c.as_printed = v; }, { nullable: true });
       makeField(card, "한자", c.name_hanja, (v) => { c.name_hanja = v; }, { nullable: true });
       makeField(card, "접두", c.prefix, (v) => { c.prefix = v; }, { nullable: true });
       makeSelect(card, "관계", c.relation || "son", [
@@ -642,7 +656,7 @@ function renderChildrenEditor(container, person) {
   add.className = "struct-add";
   add.textContent = "+ 자녀";
   add.addEventListener("click", () => {
-    person.children.push({ raw_name: "", relation: "son" });
+    person.children.push({ as_printed: "", relation: "son" });
     rebuild();
     syncJsonFromParsed();
   });
@@ -658,7 +672,7 @@ function renderPersonCard(container, person, embedded = false) {
   if (!embedded) {
     const title = document.createElement("div");
     title.className = "struct-card-title";
-    title.textContent = person.raw_name || "(이름 없음)";
+    title.textContent = person.as_printed || "(이름 없음)";
     if (person.needs_human) {
       const badge = document.createElement("span");
       badge.className = "struct-badge bad";
@@ -668,7 +682,7 @@ function renderPersonCard(container, person, embedded = false) {
     card.append(title);
   }
 
-  makeField(card, "이름", person.raw_name, (v) => { person.raw_name = v; });
+  makeField(card, "이름", person.as_printed, (v) => { person.as_printed = v; });
   makeField(card, "한자", person.name_hanja, (v) => { person.name_hanja = v; }, { nullable: true });
   makeField(card, "한글", person.name_hangul, (v) => { person.name_hangul = v; }, { nullable: true });
   makeField(card, "접두", person.prefix, (v) => { person.prefix = v; }, { nullable: true });
@@ -730,7 +744,7 @@ function renderStructure(parsed) {
   if (!embedded) {
     const title = document.createElement("div");
     title.className = "struct-card-title";
-    title.textContent = person && person.raw_name ? person.raw_name : "(이름 없음)";
+    title.textContent = person && person.as_printed ? person.as_printed : "(이름 없음)";
     if (person && person.needs_human) {
       const badge = document.createElement("span");
       badge.className = "struct-badge bad";
@@ -777,7 +791,7 @@ function renderStructure(parsed) {
     for (const spouse of person.spouses) {
       const item = document.createElement("div");
       item.className = "struct-subitem";
-      const name = spouse.raw_name || spouse.name_hanja || "(배우자)";
+      const name = spouse.as_printed || spouse.name_hanja || "(배우자)";
       item.textContent = name;
       const details = [];
       if (spouse.bonkwan) details.push(`본관 ${spouse.bonkwan}`);
@@ -809,7 +823,7 @@ function renderStructure(parsed) {
     for (const child of person.children) {
       const item = document.createElement("div");
       item.className = "struct-subitem";
-      item.textContent = child.raw_name || child.name_hanja || "(자녀)";
+      item.textContent = child.as_printed || child.name_hanja || "(자녀)";
       const details = [];
       if (child.relation) details.push(child.relation);
       if (child.prefix) details.push(child.prefix);
@@ -874,7 +888,7 @@ function renderStructure(parsed) {
       card.className = "struct-card";
       const title = document.createElement("div");
       title.className = "struct-card-title";
-      title.textContent = subject.raw_name || "(기준 인물)";
+      title.textContent = subject.as_printed || "(기준 인물)";
       if (subject.needs_human) {
         const badge = document.createElement("span");
         badge.className = "struct-badge bad";
@@ -916,7 +930,7 @@ function renderStructure(parsed) {
         card.className = "struct-card";
         const title = document.createElement("div");
         title.className = "struct-card-title";
-        title.textContent = (entry.person && entry.person.raw_name) || "(이름 없음)";
+        title.textContent = (entry.person && entry.person.as_printed) || "(이름 없음)";
         const badge = document.createElement("span");
         badge.className = "struct-badge";
         badge.textContent = `${RELATION_LABEL[entry.relation_to_subject] || entry.relation_to_subject || "미상"} · 열 ${entry.column || "?"}`;
@@ -946,7 +960,7 @@ function renderStructure(parsed) {
         card.append(needs);
 
         renderPersonCard(card, entry.person || {}, true);
-        // remove duplicate title by not rendering raw_name again? person card already has title; keep compact by hiding nested title? We'll leave as nested card.
+        // remove duplicate title by not rendering as_printed again? person card already has title; keep compact by hiding nested title? We'll leave as nested card.
         group.append(card);
       }
       section.append(group);

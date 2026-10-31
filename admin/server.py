@@ -89,7 +89,7 @@ def parsed_summary(path: Path) -> dict:
         for person in people:
             if person.get("needs_human"):
                 summary["needs_human"] += 1
-            name = person.get("name_hanja") or person.get("raw_name")
+            name = person.get("name_hanja") or person.get("as_printed") or person.get("raw_name")
             if name and name not in summary["names"]:
                 summary["names"].append(str(name))
         summary["names"] = summary["names"][:4]

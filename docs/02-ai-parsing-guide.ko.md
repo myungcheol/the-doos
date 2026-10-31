@@ -48,7 +48,7 @@
       "generation_offset": 1,
       "relation_to_subject": "son",
       "person": {
-        "raw_name": "子時興",
+        "as_printed": "子時興",
         "name_hanja": "時興",
         "prefix": "子",
         "page_ref": null,
@@ -77,7 +77,7 @@
         "offices": [],
         "spouses": [
           {
-            "raw_name": "配全州柳氏",
+            "as_printed": "配全州柳氏",
             "name_hanja": "柳氏",
             "bonkwan": "全州",
             "father": null,
@@ -90,7 +90,7 @@
             "relation": "wife"
           },
           {
-            "raw_name": "配晉州姜氏",
+            "as_printed": "配晉州姜氏",
             "name_hanja": "姜氏",
             "bonkwan": "晉州",
             "father": "錫琪",
@@ -198,7 +198,7 @@ image_height: {height}
   - `notes`: 그 밖의 머리말.
 - `subjects[]`: 그 페이지의 **기준 인물**. 첫 단에서 페이지를 시작하는 인물(보통 `子`가 붙은 사람)이다. 보통 1명. 여기 넣은 인물은 `entries[]`에 다시 넣지 않는다.
   - `row`, `column`, `page_ref`, `bbox`, `confidence`, `needs_human`.
-  - 이름·자·호·생몰·묘소·배우자·자녀 등은 `entries[].person`과 같은 필드로 기록한다(`raw_name`, `name_hanja`, `name_hangul`, `prefix`, `aliases[]`, `generation_no`, `generation_hint`, `generation_char`, `birth`, `death`, `burial`, `offices`, `spouses[]`, `children[]`).
+  - 이름·자·호·생몰·묘소·배우자·자녀 등은 `entries[].person`과 같은 필드로 기록한다(`as_printed`, `name_hanja`, `name_hangul`, `prefix`, `aliases[]`, `generation_no`, `generation_hint`, `generation_char`, `birth`, `death`, `burial`, `offices`, `spouses[]`, `children[]`).
   - `children[]`은 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 쓰고, 페이지의 단으로 표현된 자녀는 `entries[]`에 둔다.
 
 ### `entries[]`
@@ -216,7 +216,7 @@ image_height: {height}
 
 ### `person`
 
-- `raw_name`: 인쇄된 그대로.
+- `as_printed`: 인쇄된 그대로.
 - `name_hanja`: 접두어 제거.
 - `name_hangul`: 확실할 때만.
 - `prefix`: `子`, `女`, `配`, `系`, 없음 등.
@@ -234,10 +234,10 @@ image_height: {height}
   - `note`: `有碣`, `有表碣`, `上下封`처럼 묘비·봉분에 대한 부기.
 - `offices`: 관직/칭호 배열. 원문 유지.
 - `spouses[]`: 배우자.
-  - `raw_name`, `name_hanja`, `bonkwan`, `father`, `relation`, `burial`, `certainty`.
+  - `as_printed`, `name_hanja`, `bonkwan`, `father`, `relation`, `burial`, `certainty`.
   - `relation`: `wife`, `husband`, `son_in_law`, `daughter_in_law`, `unknown`.
   - `burial`: `person.burial`과 같은 구조.
-- `children[]`: 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 채운다. 페이지의 단으로 표현된 자녀는 `entries[]`에 두고 여기에 중복해서 넣지 않는다. `raw_name`, `name_hanja`, `prefix`, `relation`, `page_ref`.
+- `children[]`: 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 채운다. 페이지의 단으로 표현된 자녀는 `entries[]`에 두고 여기에 중복해서 넣지 않는다. `as_printed`, `name_hanja`, `prefix`, `relation`, `page_ref`.
 - `page_ref`: 그 인물의 **조상(上) 또는 자손(下)** 기록 페이지. 아래 `page_ref` 정의를 따른다. 참조가 없으면 `null`.
 - `bbox`, `confidence`, `needs_human`.
 
@@ -277,7 +277,7 @@ image_height: {height}
 
 1. `女` 항목의 `relation_to_subject`는 기준 인물과의 관계로 정한다. 기준 인물과 같은 세대면 `sister`/`sibling`, 한 세대 아래면 `daughter`, 그 아래면 `descendant`다.
 2. `person.name_hanja`는 **딸의 이름이 인쇄되어 있으면** 그 값을 넣고, 아니면 `null`.
-3. 뒤에 나오는 남성 이름은 `person.spouses[]`에 `son_in_law`로 넣는다. 예: `spouse.raw_name = "崔欽祖"`, `spouse.relation = "son_in_law"`, `spouse.bonkwan = "晋州"`.
+3. 뒤에 나오는 남성 이름은 `person.spouses[]`에 `son_in_law`로 넣는다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "son_in_law"`, `spouse.bonkwan = "晋州"`.
 4. 딸의 이름과 사위의 이름이 모두 있는지, 사위만 있는지 확실하지 않으면 `needs_human=true`.
 5. `女` 항목을 아들의 배우자로 해석하지 않는다.
 6. `女` 뒤 이름이 여성 이름으로 보이면 딸의 이름일 수 있다. 이때도 사위 이름과 분리하고 `needs_human=true`로 둔다.
@@ -350,7 +350,7 @@ image_height: {height}
 - [ ] 모든 `page_ref.target_page_no`가 해당 섹션 범위 안에 있는가? (본편 1~938, 전편 1~93, 미수록 면 포함)
 - [ ] 모든 `page_ref.direction`이 `up`/`down`으로 맞는가? (`上`=up, `下`·`T`·`F`=down)
 - [ ] `見上十三` 같은 한자 숫자를 정수로 변환했는가?
-- [ ] `name_hanja`가 비어 있어도 `raw_name`은 보존했는가?
+- [ ] `name_hanja`가 비어 있어도 `as_printed`은 보존했는가?
 - [ ] `子`/`女`/`配`/`系` 접두어를 `name_hanja`에 포함하지 않았는가?
 - [ ] `女` 항목의 이름을 사위 이름으로 잘못 넣지 않았는가? (또는 그 반대)
 - [ ] **같은 단의 인물을 같은 `row`로 묶었는가?**
