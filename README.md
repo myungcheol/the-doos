@@ -190,7 +190,7 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 <!-- STATUS:BEGIN -->
 > 이 표는 `STATUS.md`에서 자동 생성됩니다. 직접 수정하지 마세요.
 >
-> 마지막 갱신: **2026-10-31**, 기능 기준 커밋 `73f0a31`.
+> 마지막 갱신: **2026-10-31**, 기능 기준 커밋 `9828d3f`.
 
 | 영역 | 상태 | 근거 |
 |---|---|---|
