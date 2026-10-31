@@ -33,6 +33,7 @@
 - 2026-10-31: 추적 정책 확정. raw `data/parsed/`·`data/review/`는 로컬, 승인분 `data/exports/approved.jsonl`만 추적. `scripts/export_approved.py` 추가.
 - 2026-10-31: `docs/04`에 사람/스크립트 역할, 기록 위치, `data/review`·`data/exports` 차이 정리.
 - 2026-10-31: OmniRoute combo 대응. `PAGE_AI_MAX_TOKENS`·`PAGE_AI_EXTRA_HEADERS` 추가, 실제 응답 모델과 라우팅 헤더를 `*.meta.json`에 기록.
+- 2026-10-31: 루트 `.env` 파일 자동 로드 지원. `.env.example` 제공, `.env`는 git 제외.
 
 ---
 
