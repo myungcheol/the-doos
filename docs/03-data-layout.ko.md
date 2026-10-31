@@ -66,6 +66,10 @@ data/
     covers/
       front.jpg
       back.jpg
+  exports/
+    approved.jsonl       # 승인분만 모은 배포용 JSONL (git 추적)
+  review/
+    status.json          # 검수 상태·메모 (로컬, git 제외)
   manifests/
     pages.csv
 ```
@@ -73,6 +77,7 @@ data/
 - `frontmatter`는 전편 1~93면을 대상으로 한다. 현재 스캔은 1~47, 49~63, 65~66면이 있고, 48·64·67~93면은 `missing`으로 기록한다.
 - `genealogy`는 본편 1~938면을 대상으로 한다. 현재 053, 934, 935가 없다.
 - `data/pages`는 원본의 symlink여도 되고, 복사본이어도 된다. 원본은 절대 수정하지 않는다.
+- `data/exports/approved.jsonl`은 `approved` 페이지만 모은 배포용 데이터다. `data/parsed/`와 `data/review/status.json`은 로컬 중간 산출물로 두고, 이 파일만 git에 추적한다.
 - 원본이 3자리(`scan/genealogy/025.jpg`)이고 정규화 경로가 4자리(`data/pages/genealogy/0025.jpg`)이므로, manifest가 둘을 연결한다.
 
 ### 2.3 `pages.csv` manifest

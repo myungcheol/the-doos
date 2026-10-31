@@ -15,6 +15,7 @@
 | AI 파싱 파이프라인 | 초안 완료 | `scripts/prompt.py`, `parse_page.py`, `validate_page.py`, `run_pipeline.py` |
 | OCR 보조 | 초안 완료 / 미실행 | `scripts/ocr.py` (Tesseract 미설치) |
 | 검수 도구 | 초안 완료 / 실사용 전 | `admin/server.py`, `admin/static/` |
+| 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 대기 | API 키·모델 미지정 |
 | DB 적재·공개 앱 | 대기 | DDL/import 스크립트 없음 |
 
@@ -29,6 +30,7 @@
 - 2026-10-31: `pages.csv` 생성. 전편 1~93 + 본편 1~938, 미수록 32행.
 - 2026-10-31: manifest → symlink → 프롬프트 → AI 호출 → 검증 → 저장 파이프라인 초안.
 - 2026-10-31: 이미지+JSON 검수 도구 초안. 상태 저장, JSON 편집, 승인 JSONL 내보내기.
+- 2026-10-31: 추적 정책 확정. raw `data/parsed/`·`data/review/`는 로컬, 승인분 `data/exports/approved.jsonl`만 추적. `scripts/export_approved.py` 추가.
 
 ---
 
@@ -50,6 +52,7 @@
 2. **검수 도구로 파일럿 검수**
    - 이미지와 JSON을 나란히 보고 25면·62~63면·217면의 단/세대 해석이 맞는지 확인.
    - 잘못된 예시는 `docs/01`·`docs/02`에 즉시 반영한다.
+   - 승인분은 `python3 scripts/export_approved.py`로 `data/exports/approved.jsonl`에 고정한다.
 3. **모델·프롬프트 확정**
    - 페이지 유형별로 프롬프트가 충분한지 확인.
    - 필요하면 `schema/page.schema.json`과 `docs/02` §4를 함께 수정한다.

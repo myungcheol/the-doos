@@ -74,7 +74,7 @@ scan/*.jpg
 | ⑤ | AI 파싱 | 이미지 + 프롬프트 (+ OCR) | Vision 모델이 단·인물·관계·`上`/`下` 참조를 JSON으로 구조화 | `data/parsed/<section>/<4digit>.json`, `.meta.json` | `scripts/parse_page.py` |
 | ⑥ | 자동 검증 | 파싱 JSON | 필수 필드, `(row, column)` 중복, `page_ref`, 날짜·묘소 구조 검사 | 오류/경고 목록, `needs_human` 표시 | `scripts/validate_page.py` |
 | ⑦ | 사람 검수 | 이미지 + JSON | 이미지와 파싱 결과를 나란히 보고 수정·승인 | `data/review/status.json` | `admin/server.py` |
-| ⑧ | 내보내기 | `approved` 페이지 | 승인된 페이지만 JSONL로 묶어 DB 적재·공개 | `approved.jsonl` → PostgreSQL → 웹앱 | `/api/export` |
+| ⑧ | 내보내기 | `approved` 페이지 | 승인된 페이지만 JSONL로 묶어 DB 적재·공개 | `data/exports/approved.jsonl` → PostgreSQL → 웹앱 | `scripts/export_approved.py` |
 
 > ⑤~⑧은 아직 실제 데이터로 완주하지 않았다. 현재 상태는 [STATUS.md](STATUS.md)를 본다.
 
@@ -99,7 +99,8 @@ the-doos/
 │  ├─ ocr/                    # OCR 보조 텍스트 (생성물, git 제외)
 │  ├─ prompts/                # dry-run 프롬프트 (생성물, git 제외)
 │  ├─ parsed/                 # 페이지별 JSON + meta (생성물, git 제외)
-│  └─ review/status.json      # 검수 상태·메모 (로컬, git 제외)
+│  ├─ review/                 # 검수 상태·메모 (status.json은 로컬, README만 추적)
+│  └─ exports/                # 승인 데이터 (approved.jsonl만 추적)
 │
 ├─ schema/
 │  └─ page.schema.json        # AI 출력 JSON Schema
@@ -112,6 +113,7 @@ the-doos/
 │  ├─ parse_page.py           # 한 페이지 AI 호출·검증·저장
 │  ├─ run_pipeline.py         # 범위/유형/개수 지정 배치
 │  ├─ validate_page.py        # 파싱 JSON 검증
+│  ├─ export_approved.py      # 승인분 → data/exports/approved.jsonl
 │  ├─ sync_status.py          # STATUS.md → README 진행 상황 삽입
 │  └─ common.py               # manifest·경로 공통 함수
 │
@@ -136,15 +138,16 @@ the-doos/
 | OCR 보조 | `data/ocr/` | **제외** | Tesseract 버전에 따라 달라지는 파생물. 선택 사항이며 정본이 아님 |
 | 프롬프트 | `data/prompts/` | **제외** | `docs/02` + schema + manifest에서 결정론적으로 생성. 문서 수정 때마다 churn만 늘어남 |
 | AI 원본 | `data/parsed/` | **제외** | 모델·시행마다 달라지는 중간 산출물. 999면 전체를 커밋하면 검수 전 노이즈가 큼 |
-| 검수 상태 | `data/review/status.json` | **제외(현재)** | 생성물이 아니라 **사람의 작업 기록**. 페이지별 변경이 잦아 제외했지만, 감사·백업이 필요하면 추적 전환 |
+| 검수 상태 | `data/review/status.json` | **제외(현재)** | 생성물이 아니라 **사람의 작업 기록**. 페이지별 변경이 잦고 메모에 민감 정보가 들어갈 수 있음 |
+| 승인 데이터 | `data/exports/approved.jsonl` | **추적** | 사람이 승인한 페이지만 모은 배포용 데이터. `sync`가 아니라 `export_approved.py`로 생성 |
 | 설계 | `docs/`, `schema/` | 추적 | 규칙과 JSON 계약 |
 | 도구 | `scripts/`, `admin/` | 추적 | 파이프라인과 검수 UI |
 
 `data/parsed/`와 `data/review/status.json`은 성격이 다르다.
 
 - `data/parsed/`는 **AI 중간 산출물**이다. 승인 전에는 버려질 수 있으므로 git에 넣지 않는다.
-- `data/review/status.json`은 **사람이 만든 검수 기록**이다. 재생성이 불가능하므로, 검수가 본격화되면 추적하는 편이 낫다. 대신 페이지를 볼 때마다 커밋하지 않고 검수 세션 단위로 커밋한다.
-- 승인된 최종 데이터는 `data/parsed/` 전체가 아니라 **승인분 JSONL**로 고정해 `data/exports/`에 두는 방식을 권장한다.
+- `data/review/status.json`은 **사람이 만든 검수 기록**이지만, 아직은 로컬에 둔다. 페이지별 churn과 민감 메모 때문이다. 감사·백업이 필요해지면 검수 세션 단위로 커밋하거나, 메모를 분리한 `summary.json`만 추적한다.
+- 최종 데이터는 `data/exports/approved.jsonl`로 고정한다. **승인된 페이지만** 들어가며, raw `data/parsed/` 전체를 커밋하지 않는다.
 
 ---
 
@@ -197,6 +200,7 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 | AI 파싱 파이프라인 | 초안 완료 | `scripts/prompt.py`, `parse_page.py`, `validate_page.py`, `run_pipeline.py` |
 | OCR 보조 | 초안 완료 / 미실행 | `scripts/ocr.py` (Tesseract 미설치) |
 | 검수 도구 | 초안 완료 / 실사용 전 | `admin/server.py`, `admin/static/` |
+| 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 대기 | API 키·모델 미지정 |
 | DB 적재·공개 앱 | 대기 | DDL/import 스크립트 없음 |
 <!-- STATUS:END -->

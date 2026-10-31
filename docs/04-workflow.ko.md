@@ -167,6 +167,16 @@ python3 admin/server.py --port 8765
 승인 데이터 내보내기:
 
 ```bash
+python3 scripts/export_approved.py
+# data/exports/approved.jsonl 생성 (git 추적)
+python3 scripts/export_approved.py --check
+```
+
+`approved` 상태이면서 `data/parsed/`에 JSON이 있는 페이지만 들어간다. 검증 오류가 있는 승인 페이지가 있으면 export를 중단한다. **masking은 아직 자동이 아니므로**, 공개 커밋 전에 `data/exports/README.md`의 주의사항을 확인한다.
+
+검수 서버에서 바로 받고 싶으면 다음도 쓸 수 있다.
+
+```bash
 curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 ```
 

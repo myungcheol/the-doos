@@ -10,6 +10,10 @@ data/prompts/
 data/review/status.json
 data/review/*.bak
 
+# export temp files (approved.jsonl is tracked)
+data/exports/*.tmp
+data/exports/*.bak
+
 # python
 __pycache__/
 *.pyc
