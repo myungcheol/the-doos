@@ -201,7 +201,7 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 | OCR 보조 | 초안 완료 / 미실행 | `scripts/ocr.py` (Tesseract 미설치) |
 | 검수 도구 | 초안 완료 / 실사용 전 | `admin/server.py`, `admin/static/` |
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
-| AI 파일럿 파싱 | 대기 | API 키·모델 미지정 |
+| AI 파일럿 파싱 | 준비 완료 / 첫 호출 전 | API 키 발급 완료, 25면 호출 대기 |
 | DB 적재·공개 앱 | 대기 | DDL/import 스크립트 없음 |
 <!-- STATUS:END -->
 

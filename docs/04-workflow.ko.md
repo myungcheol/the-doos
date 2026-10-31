@@ -242,6 +242,8 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 | 승인 데이터 | `data/exports/approved.jsonl` | 예 | 승인분을 export할 때 |
 
 - `README.md`의 진행 상황 블록은 직접 고치지 않는다. `STATUS.md`를 고친 뒤 `python3 scripts/sync_status.py`를 실행한다.
+- `STATUS.md`는 **페이지마다 고치지 않는다.** 파일럿·검수·DB 적재 같은 단계가 끝났을 때만 갱신한다. 페이지별 상태는 검수 UI가 `data/review/status.json`에 쓴다.
+- API 키는 `STATUS.md`에 적지 않는다. 키 발급·폐기 같은 블로커 변화만 한 줄로 기록한다.
 - `data/review/status.json`과 `data/parsed/`는 **작업 상태**다. 직접 편집하지 말고 검수 UI/스크립트로만 바꾼다.
 - `data/exports/approved.jsonl`도 직접 고치지 않는다. 항상 `export_approved.py`로 다시 만든다.
 
