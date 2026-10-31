@@ -10,7 +10,12 @@ Environment:
     PAGE_AI_API_KEY    required for hosted providers
     PAGE_AI_MODEL      required, e.g. gemini-2.5-flash or a free OpenRouter model
     PAGE_AI_TIMEOUT    seconds, default 180
+    PAGE_AI_MAX_TOKENS max output tokens, default 8192
     PAGE_AI_JSON_MODE  set to 1 to request response_format=json_object
+    PAGE_AI_EXTRA_HEADERS
+                       optional JSON object of extra request headers.
+                       Example for OmniRoute:
+                       {"x-omniroute-compression":"off","X-OmniRoute-No-Cache":"true"}
 
 Usage:
     python3 scripts/parse_page.py --section genealogy --page 25
@@ -55,6 +60,13 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
+def display_path(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def mime_for(path: Path) -> str:
     return "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
 
@@ -79,6 +91,32 @@ def strip_json(text: str) -> str:
     return text
 
 
+def env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        log(f"  {name} 값이 정수가 아닙니다: {raw!r}. 기본값 {default} 사용")
+        return default
+
+
+def extra_headers() -> dict[str, str]:
+    raw = os.environ.get("PAGE_AI_EXTRA_HEADERS", "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        log(f"  PAGE_AI_EXTRA_HEADERS 무시: {exc}")
+        return {}
+    if not isinstance(data, dict):
+        log("  PAGE_AI_EXTRA_HEADERS 무시: JSON 객체가 아닙니다.")
+        return {}
+    return {str(key): str(value) for key, value in data.items()}
+
+
 def content_text(content: object) -> str:
     if isinstance(content, str):
         return content
@@ -94,10 +132,11 @@ def content_text(content: object) -> str:
     return str(content)
 
 
-def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, dict]:
+def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, dict, dict]:
     base_url = os.environ.get("PAGE_AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     api_key = os.environ.get("PAGE_AI_API_KEY", "")
     timeout = float(os.environ.get("PAGE_AI_TIMEOUT", "180"))
+    max_tokens = env_int("PAGE_AI_MAX_TOKENS", 8192)
 
     # Inject the image into the user message for providers with vision support.
     prepared = [dict(message) for message in messages]
@@ -113,18 +152,22 @@ def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, d
         "model": model,
         "messages": prepared,
         "temperature": 0,
-        "max_tokens": 8192,
+        "max_tokens": max_tokens,
     }
     if os.environ.get("PAGE_AI_JSON_MODE") == "1":
         body["response_format"] = {"type": "json_object"}
 
+    headers = {
+        **extra_headers(),
+        "Content-Type": "application/json",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
     request = urllib.request.Request(
         f"{base_url}/chat/completions",
         data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
-        },
+        headers=headers,
         method="POST",
     )
 
@@ -133,10 +176,19 @@ def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, d
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+                route_headers = {
+                    key.lower(): value
+                    for key, value in response.headers.items()
+                    if key.lower().startswith("x-omniroute-")
+                }
             message = payload["choices"][0]["message"]
             text = content_text(message.get("content"))
             usage = payload.get("usage", {})
-            return text, usage
+            response_meta = {
+                "response_model": payload.get("model") or model,
+                "omniroute": route_headers,
+            }
+            return text, usage, response_meta
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:800]
             last_error = RuntimeError(f"HTTP {exc.code}: {detail}")
@@ -169,7 +221,7 @@ def parse_page(
 
     destination = out or parsed_path(section, page_no)
     if destination.exists() and not force and not dry_run:
-        log(f"SKIP {section} {page_no}: 이미 {destination.relative_to(ROOT)}가 있습니다. --force로 덮어쓰세요.")
+        log(f"SKIP {section} {page_no}: 이미 {display_path(destination)}가 있습니다. --force로 덮어쓰세요.")
         existing = load_json(destination)
         return existing if isinstance(existing, dict) else None
 
@@ -209,7 +261,9 @@ def parse_page(
 
     log(f"AI   {section} {page_no}: {image.relative_to(ROOT)} ({model})")
     started = time.time()
-    text, usage = call_api(messages, image, model)
+    text, usage, response_meta = call_api(messages, image, model)
+    response_models = [response_meta.get("response_model", model)]
+    routing_traces = [response_meta.get("omniroute", {})]
     try:
         data = json.loads(strip_json(text))
     except json.JSONDecodeError as exc:
@@ -219,7 +273,9 @@ def parse_page(
             {"role": "assistant", "content": text},
             {"role": "user", "content": f"위 출력은 JSON 파싱에 실패했다: {exc}. 설명 없이 올바른 JSON 객체만 다시 출력하라."},
         ]
-        text, usage2 = call_api(messages, image, model)
+        text, usage2, response_meta = call_api(messages, image, model)
+        response_models.append(response_meta.get("response_model", model))
+        routing_traces.append(response_meta.get("omniroute", {}))
         usage = {"first": usage, "second": usage2}
         data = json.loads(strip_json(text))
 
@@ -234,7 +290,9 @@ def parse_page(
                 + "\n- ".join(errors),
             },
         ]
-        text, usage2 = call_api(messages, image, model)
+        text, usage2, response_meta = call_api(messages, image, model)
+        response_models.append(response_meta.get("response_model", model))
+        routing_traces.append(response_meta.get("omniroute", {}))
         data = json.loads(strip_json(text))
         usage = {"first": usage, "second": usage2}
         errors, warnings = validate(data, section, page_no)
@@ -253,6 +311,9 @@ def parse_page(
         "section": section,
         "printed_page_no": page_no,
         "model": model,
+        "requested_model": model,
+        "response_models": response_models,
+        "omniroute": routing_traces,
         "base_url": os.environ.get("PAGE_AI_BASE_URL", DEFAULT_BASE_URL),
         "image": str(image.relative_to(ROOT)),
         "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
@@ -264,7 +325,7 @@ def parse_page(
         "validation_warnings": warnings,
     }
     atomic_write_json(meta_path(section, page_no), meta)
-    log(f"SAVE {section} {page_no}: {destination.relative_to(ROOT)}")
+    log(f"SAVE {section} {page_no}: {display_path(destination)}")
     return data
 
 

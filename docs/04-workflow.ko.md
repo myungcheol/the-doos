@@ -75,9 +75,11 @@ python3 scripts/link_pages.py
 |---|---|
 | `PAGE_AI_BASE_URL` | 제공자 주소. 기본값은 Google AI Studio의 OpenAI 호환 엔드포인트 |
 | `PAGE_AI_API_KEY` | API 키. 로컬 서버면 더미 값 가능 |
-| `PAGE_AI_MODEL` | 모델 ID. **필수** |
-| `PAGE_AI_TIMEOUT` | 초 단위, 기본 180 |
+| `PAGE_AI_MODEL` | 모델 ID 또는 combo 이름. **필수** |
+| `PAGE_AI_TIMEOUT` | 초 단위, 기본 180. failover가 길면 600 권장 |
+| `PAGE_AI_MAX_TOKENS` | 최대 출력 토큰, 기본 8192 |
 | `PAGE_AI_JSON_MODE` | `1`이면 `response_format=json_object` 요청 |
+| `PAGE_AI_EXTRA_HEADERS` | 추가 요청 헤더 JSON. OmniRoute 압축·캐시 제어에 사용 |
 
 예시 (Google AI Studio, 무료 티어):
 
@@ -94,6 +96,29 @@ export PAGE_AI_BASE_URL="https://openrouter.ai/api/v1"
 export PAGE_AI_API_KEY="<YOUR_KEY>"
 export PAGE_AI_MODEL="<무료 이미지 모델 ID>"
 ```
+
+예시 (OmniRoute combo, 로컬 게이트웨이):
+
+```bash
+export PAGE_AI_BASE_URL="http://localhost:20128/v1"
+export PAGE_AI_API_KEY="<OMNIROUTE_API_KEY>"
+export PAGE_AI_MODEL="<combo 이름 또는 auto/vision>"
+
+# failover로 여러 제공자를 거치므로 넉넉하게
+export PAGE_AI_TIMEOUT="600"
+
+# OCR 정확도를 위해 압축·캐시·메모리 주입을 끈다
+export PAGE_AI_EXTRA_HEADERS='{"x-omniroute-compression":"off","X-OmniRoute-No-Cache":"true","x-omniroute-no-memory":"true"}'
+```
+
+OmniRoute를 쓸 때 주의할 점:
+
+- **combo에는 이미지 지원 모델만 넣는다.** 텍스트 전용 모델로 failover되면 OmniRoute가 이미지를 설명문으로 바꿔버릴 수 있다. 세보처럼 글자가 빽빽한 이미지는 설명문으로는 정확도가 떨어진다. `auto/vision`을 쓰거나 combo를 vision 모델만으로 구성한다.
+- **압축은 끈다.** 기본 압축이 켜져 있으면 프롬프트나 이미지 URL이 변형될 수 있다. 위 `x-omniroute-compression: off`를 사용한다.
+- **JSON 모드는 신중히 켠다.** combo의 모든 모델이 `response_format=json_object`를 지원하지 않으면 `PAGE_AI_JSON_MODE`를 비워둔다. 기본값은 꺼짐이다.
+- **실제로 어떤 모델이 답했는지 확인한다.** `data/parsed/<section>/<4digit>.meta.json`의 `response_models`와 `omniroute`에 실제 모델·provider·fallback 횟수가 기록된다.
+- **400/404는 자동 재시도하지 않는다.** 이미지 미지원, 잘못된 모델명, 권한 오류는 재시도해도 해결되지 않는다. OmniRoute 대시보드의 요청 로그를 확인한다.
+- **429/5xx는 3회 재시도한다.** 모든 무료 토큰이 소진된 뒤에는 재시도해도 실패할 수 있다. 이때는 다른 combo나 다음 날 쿼터를 기다린다.
 
 모델 ID와 무료 정책은 자주 바뀐다. 실행 전에 제공자 콘솔에서 이미지 입력 지원 여부와 무료 한도를 확인한다.
 

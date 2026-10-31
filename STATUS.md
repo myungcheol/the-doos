@@ -32,6 +32,7 @@
 - 2026-10-31: 이미지+JSON 검수 도구 초안. 상태 저장, JSON 편집, 승인 JSONL 내보내기.
 - 2026-10-31: 추적 정책 확정. raw `data/parsed/`·`data/review/`는 로컬, 승인분 `data/exports/approved.jsonl`만 추적. `scripts/export_approved.py` 추가.
 - 2026-10-31: `docs/04`에 사람/스크립트 역할, 기록 위치, `data/review`·`data/exports` 차이 정리.
+- 2026-10-31: OmniRoute combo 대응. `PAGE_AI_MAX_TOKENS`·`PAGE_AI_EXTRA_HEADERS` 추가, 실제 응답 모델과 라우팅 헤더를 `*.meta.json`에 기록.
 
 ---
 
@@ -73,7 +74,8 @@
 
 | 항목 | 상태 | 필요한 결정 |
 |---|---|---|
-| AI 제공자·API 키 | 키 발급 완료 | 25면 첫 호출로 무료 이미지 모델과 한도 확인 |
+| AI 제공자·API 키 | OmniRoute 키 발급 완료 | 25면 첫 호출로 무료 이미지 모델과 한도 확인 |
+| OmniRoute combo | 확인 필요 | vision 모델만으로 구성, 압축 off, 25면 결과 확인 |
 | Tesseract | 미설치 | OCR 보조가 필요한지, vision 전용으로 갈지 |
 | 검수 범위 | 미정 | 전수 검수 vs 표본 검수 |
 | 민감 정보 공개 | 미정 | 생존자·주소·묘소 좌표 masking 여부 |
