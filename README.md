@@ -190,7 +190,7 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 <!-- STATUS:BEGIN -->
 > 이 표는 `STATUS.md`에서 자동 생성됩니다. 직접 수정하지 마세요.
 >
-> 마지막 갱신: **2026-10-31**, 기능 기준 커밋 `9828d3f`.
+> 마지막 갱신: **2026-11-02**, 기능 기준 커밋 `ad89c97`.
 
 | 영역 | 상태 | 근거 |
 |---|---|---|
@@ -199,9 +199,9 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 | 정규화 경로 | 완료 | `scripts/link_pages.py` → `data/pages/` symlink 1,001개 |
 | AI 파싱 파이프라인 | 초안 완료 | `scripts/prompt.py`, `parse_page.py`, `validate_page.py`, `run_pipeline.py` |
 | OCR 보조 | 초안 완료 / 미실행 | `scripts/ocr.py` (Tesseract 미설치) |
-| 검수 도구 | 초안 완료 / 실사용 전 | `admin/server.py`, `admin/static/` |
+| 검수 도구 | 초안 완료 / 25면 검수 대기 | `admin/server.py`, `admin/static/` |
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
-| AI 파일럿 파싱 | 준비 완료 / 첫 호출 전 | API 키 발급 완료, 25면 호출 대기 |
+| AI 파일럿 파싱 | 진행 중 / 25면 1차 결과 | `data/parsed/genealogy/0025.json` (로컬) |
 | DB 적재·공개 앱 | 대기 | DDL/import 스크립트 없음 |
 <!-- STATUS:END -->
 
