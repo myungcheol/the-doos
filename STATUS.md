@@ -33,7 +33,8 @@
 - 2026-10-31: 추적 정책 확정. raw `data/parsed/`·`data/review/`는 로컬, 승인분 `data/exports/approved.jsonl`만 추적. `scripts/export_approved.py` 추가.
 - 2026-10-31: `docs/04`에 사람/스크립트 역할, 기록 위치, `data/review`·`data/exports` 차이 정리.
 - 2026-10-31: 필드명 `raw_name` → `as_printed`로 변경. 마이그레이션 스크립트 `scripts/migrate_raw_name.py` 추가.
-- 2026-11-02: 판독 규칙 반영. `女` + 성씨가 붙은 남성 이름은 사위로 처리, `配`는 성별에 따라 wife/husband/concubine, 기준 인물은 `subjects[]`에만 기록하고 `entries[]` 중복을 검증 경고로 표시.
+- 2026-11-02: 판독 규칙 반영. `女` + 성씨+이름은 사위(배우자 `husband`)로 처리, `配`는 성별에 따라 wife/husband/concubine, 기준 인물은 `subjects[]`에만 기록하고 `entries[]` 중복을 검증 경고로 표시.
+- 2026-11-02: `docs/01`·`docs/02`와 `schema/page.schema.json` 대조. `subjects[]`를 최상위 필드로 정리, `entries[].relation_to_subject`에서 `self` 제거, spouse `birth`/`death` 스키마 추가, `person.notes`·`children[].relation` 문서화, `validate_page.py`를 스키마 수준으로 강화.
 - 2026-10-31: OmniRoute combo 대응. `PAGE_AI_MAX_TOKENS`·`PAGE_AI_EXTRA_HEADERS` 추가, 실제 응답 모델과 라우팅 헤더를 `*.meta.json`에 기록.
 - 2026-10-31: 루트 `.env` 파일 자동 로드 지원. `.env.example` 제공, `.env`는 git 제외.
 

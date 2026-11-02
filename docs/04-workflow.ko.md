@@ -81,7 +81,7 @@ python3 scripts/link_pages.py
 | `PAGE_AI_TIMEOUT` | 초 단위, 기본 180. failover가 길면 600 권장 |
 | `PAGE_AI_MAX_TOKENS` | 최대 출력 토큰, 기본 8192 |
 | `PAGE_AI_JSON_MODE` | `1`이면 `response_format=json_object` 요청 |
-| `PAGE_AI_REASONING_EFFORT` | 선택: `low` / `medium` / `high`. reasoning 모델의 내부 사고량 조절 |
+| `PAGE_AI_REASONING_EFFORT` | 선택: `none` / `low` / `medium` / `high`. reasoning 모델의 내부 사고량 조절. OCR처럼 정답이 정해진 작업은 `none` 또는 `low` 권장 |
 | `PAGE_AI_EXTRA_BODY` | 요청 body에 병합할 JSON. 예: `{"thinking":{"type":"disabled"}}` |
 | `PAGE_AI_EXTRA_HEADERS` | 추가 요청 헤더 JSON. OmniRoute 압축·캐시·vision bridge 제어에 사용 |
 
@@ -213,7 +213,7 @@ python3 admin/server.py --port 8765
 
 - 왼쪽: 페이지 목록. 구분/상태/파싱 여부/검색으로 필터.
 - 가운데: 스캔 이미지. 휠·버튼 확대, 드래그 이동, 더블클릭 초기화.
-- 오른쪽: JSON 편집기, OCR 텍스트, 검수 메모.
+- 오른쪽: 「구조」 탭(스캔과 나란히 보는 편집 가능한 필드), JSON 편집기, OCR 텍스트, 검수 메모.
 - 아래: `대기 / 검수 중 / 승인 / 수정 필요` 상태.
 
 단축키:

@@ -9,10 +9,12 @@
     "page": { "$ref": "#/$defs/page" },
     "subjects": {
       "type": "array",
+      "description": "페이지의 기준 인물. 기준 인물의 모든 정보를 여기에 넣고 entries[]에 중복하지 않는다. 보통 1명이다.",
       "items": { "$ref": "#/$defs/subject" }
     },
     "entries": {
       "type": "array",
+      "description": "기준 인물을 제외한 페이지의 인물 항목. 기준 인물은 subjects[]에만 넣는다.",
       "items": { "$ref": "#/$defs/entry" }
     },
     "captions": {
@@ -125,9 +127,13 @@
       "required": ["section", "printed_page_no", "page_type"],
       "additionalProperties": true,
       "properties": {
-        "section": { "enum": ["frontmatter", "genealogy"] },
+        "section": {
+          "description": "frontmatter=전편, genealogy=본편.",
+          "enum": ["frontmatter", "genealogy"]
+        },
         "printed_page_no": { "type": "integer", "minimum": 1 },
         "page_type": {
+          "description": "페이지 유형. genealogy가 아니면 entries를 비우고 해당 보조 필드를 쓴다.",
           "enum": [
             "genealogy",
             "preface",
@@ -143,7 +149,7 @@
           ]
         },
         "quality": {
-          "type": "object",
+          "type": ["object", "null"],
           "additionalProperties": true,
           "properties": {
             "rotation_degrees": { "type": ["number", "null"] },
@@ -153,7 +159,7 @@
           }
         },
         "header": {
-          "type": "object",
+          "type": ["object", "null"],
           "additionalProperties": true,
           "properties": {
             "running_head": { "type": ["string", "null"] },
@@ -171,9 +177,18 @@
           "required": ["raw", "direction", "target_section", "target_page_no"],
           "additionalProperties": true,
           "properties": {
-            "raw": { "type": "string" },
-            "direction": { "enum": ["up", "down"] },
-            "target_section": { "enum": ["frontmatter", "genealogy"] },
+            "raw": {
+              "description": "인쇄된 참조 원문. 예: 上159, 見上十三, 下4. 스캔에서 T/F로 보여도 下###로 정규화한다.",
+              "type": "string"
+            },
+            "direction": {
+              "description": "up=上(조상/부모), down=下(자손).",
+              "enum": ["up", "down"]
+            },
+            "target_section": {
+              "description": "본편이면 genealogy, 전편이면 frontmatter. 항상 채운다.",
+              "enum": ["frontmatter", "genealogy"]
+            },
             "target_page_no": { "type": "integer", "minimum": 1 },
             "bbox": { "$ref": "#/$defs/bbox" },
             "confidence": { "$ref": "#/$defs/confidence" }
@@ -191,7 +206,7 @@
       }
     },
     "date_block": {
-      "type": "object",
+      "type": ["object", "null"],
       "required": ["raw"],
       "additionalProperties": true,
       "properties": {
@@ -203,7 +218,7 @@
       }
     },
     "burial": {
-      "type": "object",
+      "type": ["object", "null"],
       "required": ["raw"],
       "additionalProperties": true,
       "properties": {
@@ -223,7 +238,12 @@
         "name_hanja": { "type": ["string", "null"] },
         "bonkwan": { "type": ["string", "null"] },
         "father": { "type": ["string", "null"] },
-        "relation": { "enum": ["wife", "husband", "concubine", "unknown"] },
+        "relation": {
+          "description": "이 인물과 배우자의 관계. 남자 인물의 배우자는 wife, 여자 인물의 배우자는 husband. 女 뒤 성씨+이름으로 인쇄된 사위도 husband다.",
+          "enum": ["wife", "husband", "concubine", "unknown"]
+        },
+        "birth": { "$ref": "#/$defs/date_block" },
+        "death": { "$ref": "#/$defs/date_block" },
         "burial": { "$ref": "#/$defs/burial" },
         "certainty": { "$ref": "#/$defs/certainty" }
       }
@@ -236,7 +256,10 @@
         "as_printed": { "type": "string" },
         "name_hanja": { "type": ["string", "null"] },
         "prefix": { "type": ["string", "null"] },
-        "relation": { "enum": ["son", "daughter", "adopted_son", "unknown"] },
+        "relation": {
+          "description": "그 인물 항목 안에 함께 인쇄된 자녀의 관계.",
+          "enum": ["son", "daughter", "adopted_son", "unknown"]
+        },
         "page_ref": { "$ref": "#/$defs/page_ref" }
       }
     },
@@ -271,7 +294,11 @@
         "bbox": { "$ref": "#/$defs/bbox" },
         "confidence": { "$ref": "#/$defs/confidence" },
         "needs_human": { "type": "boolean" },
-        "notes": { "type": "array", "items": { "type": "string" } }
+        "notes": {
+          "description": "그 인물에 붙은 설명·부기. 한 줄에 하나.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "placement": {
@@ -281,8 +308,13 @@
       "properties": {
         "row": { "type": "integer", "minimum": 1 },
         "column": { "type": "integer", "minimum": 1 },
-        "generation_offset": { "type": "integer", "minimum": 0 },
+        "generation_offset": {
+          "description": "기준 인물 기준 상대 세대. subjects[]에서는 0.",
+          "type": "integer",
+          "minimum": 0
+        },
         "relation_to_subject": {
+          "description": "기준 인물과의 관계. subjects[]에서는 self.",
           "enum": [
             "self",
             "son",
@@ -305,14 +337,16 @@
       }
     },
     "subject": {
+      "description": "페이지의 기준 인물. row/column은 인쇄된 위치, generation_offset은 0, relation_to_subject는 self다. 기준 인물의 생몰·묘소·배우자·자녀 등 모든 정보를 여기에 넣는다.",
       "allOf": [
         { "$ref": "#/$defs/placement" },
         { "$ref": "#/$defs/person" }
       ]
     },
     "entry": {
+      "description": "기준 인물을 제외한 인물 항목. 기준 인물을 다시 넣지 않으므로 relation_to_subject에 self를 쓰지 않는다.",
       "type": "object",
-      "required": ["row", "column", "person"],
+      "required": ["row", "column", "relation_to_subject", "person"],
       "additionalProperties": true,
       "properties": {
         "row": { "type": "integer", "minimum": 1 },
@@ -320,7 +354,6 @@
         "generation_offset": { "type": "integer", "minimum": 0 },
         "relation_to_subject": {
           "enum": [
-            "self",
             "son",
             "daughter",
             "brother",

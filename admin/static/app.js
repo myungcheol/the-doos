@@ -356,6 +356,8 @@ const RELATION_OPTIONS = Object.keys(RELATION_LABEL).map((value) => ({
   value,
   label: RELATION_LABEL[value],
 }));
+// 기준 인물은 subjects[]에만 두므로 entries에는 self를 허용하지 않는다.
+const ENTRY_RELATION_OPTIONS = RELATION_OPTIONS.filter((option) => option.value !== "self");
 
 function text(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -572,6 +574,16 @@ function renderSpousesEditor(container, person) {
         { value: "concubine", label: "concubine" },
         { value: "unknown", label: "unknown" },
       ], (v) => { s.relation = v; });
+      if (!s.birth || typeof s.birth !== "object") s.birth = { raw: null };
+      makeField(card, "생 원문", s.birth.raw, (v) => { s.birth.raw = v; }, { nullable: true });
+      makeField(card, "생 간지", s.birth.ganji, (v) => { s.birth.ganji = v; }, { nullable: true });
+      makeField(card, "생 날짜", s.birth.date_text, (v) => { s.birth.date_text = v; }, { nullable: true });
+      makeField(card, "생 연호", s.birth.king_era, (v) => { s.birth.king_era = v; }, { nullable: true });
+      if (!s.death || typeof s.death !== "object") s.death = { raw: null };
+      makeField(card, "졸 원문", s.death.raw, (v) => { s.death.raw = v; }, { nullable: true });
+      makeField(card, "졸 간지", s.death.ganji, (v) => { s.death.ganji = v; }, { nullable: true });
+      makeField(card, "졸 날짜", s.death.date_text, (v) => { s.death.date_text = v; }, { nullable: true });
+      makeField(card, "졸 연호", s.death.king_era, (v) => { s.death.king_era = v; }, { nullable: true });
       if (!s.burial || typeof s.burial !== "object") s.burial = { raw: null };
       makeField(card, "묘 원문", s.burial.raw, (v) => { s.burial.raw = v; }, { nullable: true });
       makeField(card, "묘 위치", s.burial.location, (v) => { s.burial.location = v; }, { nullable: true });
@@ -708,8 +720,8 @@ function renderPersonCard(container, person, embedded = false) {
   makeField(card, "묘 방향", person.burial.orientation, (v) => { person.burial.orientation = v; }, { nullable: true });
   makeField(card, "묘 비고", person.burial.note, (v) => { person.burial.note = v; }, { nullable: true });
 
-  makeTextareaField(card, "관직", person.offices, (v) => { person.offices = v.length ? v : null; }, "한 줄에 하나");
-  makeTextareaField(card, "메모", person.notes, (v) => { person.notes = v.length ? v : null; }, "한 줄에 하나");
+  makeTextareaField(card, "관직", person.offices, (v) => { person.offices = v; }, "한 줄에 하나");
+  makeTextareaField(card, "메모", person.notes, (v) => { person.notes = v; }, "한 줄에 하나");
 
   if (!person.page_ref || typeof person.page_ref !== "object") person.page_ref = null;
   makeField(card, "페이지 참조", person.page_ref ? person.page_ref.raw : null, (v) => {
@@ -732,110 +744,6 @@ function renderPersonCard(container, person, embedded = false) {
 
   renderSpousesEditor(card, person);
   renderChildrenEditor(card, person);
-
-  if (!embedded) container.append(card);
-}
-
-function renderStructure(parsed) {
-  const card = embedded ? container : document.createElement("article");
-  if (!embedded) card.className = "struct-card";
-
-  if (!embedded) {
-    const title = document.createElement("div");
-    title.className = "struct-card-title";
-    title.textContent = person && person.as_printed ? person.as_printed : "(이름 없음)";
-    if (person && person.needs_human) {
-      const badge = document.createElement("span");
-      badge.className = "struct-badge bad";
-      badge.textContent = "확인 필요";
-      title.append(badge);
-    }
-    card.append(title);
-  }
-
-  appendField(card, "한자", person.name_hanja);
-  appendField(card, "한글", person.name_hangul);
-  appendField(card, "접두", person.prefix);
-  if (Array.isArray(person.aliases) && person.aliases.length) {
-    appendField(card, "자/호", person.aliases.map((alias) => `${alias.type || ""} ${alias.value || ""}`.trim()).join(" · "));
-  }
-  appendField(card, "세대", person.generation_no);
-  if (person.generation_hint) {
-    appendField(card, "세대 힌트", `${person.generation_hint.value} (${person.generation_hint.basis || ""})`);
-  }
-  appendField(card, "항렬자", person.generation_char);
-  appendField(card, "생", dateText(person.birth));
-  appendField(card, "졸", dateText(person.death));
-  appendField(card, "묘", burialText(person.burial));
-  appendField(card, "관직", Array.isArray(person.offices) ? person.offices.join(" · ") : null);
-  appendField(card, "페이지 참조", pageRefText(person.page_ref));
-  if (Array.isArray(person.notes) && person.notes.length) {
-    const list = document.createElement("ul");
-    list.className = "struct-list";
-    for (const note of person.notes) {
-      const li = document.createElement("li");
-      li.textContent = note;
-      list.append(li);
-    }
-    card.append(list);
-  }
-
-  if (Array.isArray(person.spouses) && person.spouses.length) {
-    const wrap = document.createElement("div");
-    wrap.className = "struct-sublist";
-    const label = document.createElement("div");
-    label.className = "struct-subtitle";
-    label.textContent = "배우자";
-    wrap.append(label);
-    for (const spouse of person.spouses) {
-      const item = document.createElement("div");
-      item.className = "struct-subitem";
-      const name = spouse.as_printed || spouse.name_hanja || "(배우자)";
-      item.textContent = name;
-      const details = [];
-      if (spouse.bonkwan) details.push(`본관 ${spouse.bonkwan}`);
-      if (spouse.father) details.push(`부 ${spouse.father}`);
-      if (spouse.relation) details.push(spouse.relation);
-      if (details.length) {
-        const small = document.createElement("small");
-        small.textContent = ` (${details.join(", ")})`;
-        item.append(small);
-      }
-      const extra = [dateText(spouse.birth), dateText(spouse.death), burialText(spouse.burial)].filter(Boolean);
-      if (extra.length) {
-        const small = document.createElement("small");
-        small.textContent = ` — ${extra.join(" / ")}`;
-        item.append(small);
-      }
-      wrap.append(item);
-    }
-    card.append(wrap);
-  }
-
-  if (Array.isArray(person.children) && person.children.length) {
-    const wrap = document.createElement("div");
-    wrap.className = "struct-sublist";
-    const label = document.createElement("div");
-    label.className = "struct-subtitle";
-    label.textContent = "자녀";
-    wrap.append(label);
-    for (const child of person.children) {
-      const item = document.createElement("div");
-      item.className = "struct-subitem";
-      item.textContent = child.as_printed || child.name_hanja || "(자녀)";
-      const details = [];
-      if (child.relation) details.push(child.relation);
-      if (child.prefix) details.push(child.prefix);
-      if (child.page_ref) details.push(pageRefText(child.page_ref));
-      if (details.length) {
-        const small = document.createElement("small");
-        small.textContent = ` (${details.join(", ")})`;
-        item.append(small);
-      }
-      wrap.append(item);
-    }
-    card.append(wrap);
-  }
 
   if (!embedded) container.append(card);
 }
@@ -943,7 +851,7 @@ function renderStructure(parsed) {
         card.append(title);
         makeField(card, "단(row)", entry.row, (v) => { entry.row = v; }, { number: true, nullable: true });
         makeField(card, "열(column)", entry.column, (v) => { entry.column = v; }, { number: true, nullable: true });
-        makeSelect(card, "관계", entry.relation_to_subject || "unknown", RELATION_OPTIONS, (v) => { entry.relation_to_subject = v; });
+        makeSelect(card, "관계", entry.relation_to_subject || "unknown", ENTRY_RELATION_OPTIONS, (v) => { entry.relation_to_subject = v; });
         makeField(card, "세대 차이", entry.generation_offset, (v) => { entry.generation_offset = v; }, { number: true, nullable: true });
 
         const needs = document.createElement("label");

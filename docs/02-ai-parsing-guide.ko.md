@@ -32,7 +32,7 @@
 
 **JSON만 출력한다.** 마크다운 코드블록, 설명 문장, 인사말을 붙이지 않는다.
 
-아래는 본편 25면을 축약한 예시다. 전체 필드 정의는 §4를 따른다. `subjects[]`도 `entries[].person`과 같은 필드를 가질 수 있지만, 예시에서는 이름만 남겼다.
+아래는 본편 25면을 축약한 예시다. 전체 필드 정의는 §4를 따른다. `subjects[]`는 그 페이지의 기준 인물이고, `entries[].person`과 같은 필드를 쓴다. 기준 인물은 `subjects[]`에만 넣고 `entries[]`에는 다시 넣지 않는다. 예시에서는 2단 오른쪽의 두 `女` 항목을 생략했으므로 `子時興`의 `column`이 3이다.
 
 ```json
 {
@@ -41,10 +41,24 @@
     "printed_page_no": 25,
     "page_type": "genealogy"
   },
-  "entries": [
+  "subjects": [
     {
       "row": 1,
       "column": 1,
+      "relation_to_subject": "self",
+      "generation_offset": 0,
+      "as_printed": "子仁居",
+      "name_hanja": "仁居",
+      "prefix": "子",
+      "birth": { "raw": "丁卯八月十八日" },
+      "aliases": [{ "type": "字", "value": "義由" }],
+      "notes": ["早喪庭訓克修詩禮敦行孝悌", "隱居林泉不求聞達"]
+    }
+  ],
+  "entries": [
+    {
+      "row": 2,
+      "column": 3,
       "generation_offset": 1,
       "relation_to_subject": "son",
       "person": {
@@ -131,7 +145,7 @@
 4. **단(段) = 세대**: 페이지를 가로로 나눈 줄이 단이다. **원칙적으로 같은 단 = 같은 세대**이고, 한 단 안에서는 **오른쪽→왼쪽**(아들 형제는 장남→차남)으로 읽는다. 딸(`女`) 항목의 위치는 페이지마다 다를 수 있으므로 `女` 표시로 구분한다. **원칙적으로 바로 아래 단은 다음 세대**다. 한 줄을 “한 사람의 자녀 목록”으로 읽지 않는다. 아래 단을 손자로 건너뛰지도 않는다. 다만 딸의 자손(외손)이 작은 글씨로 딸 항목 아래에 붙는 경우, **인쇄된 단과 실제 세대가 다를 수 있으므로** 단 경계만으로 세대를 단정하지 않는다.
 5. **`上###`·`下###`는 페이지 참조**: `上###`은 “본편 ###면에 부모(조상)의 기록이 있다”, `下###`은 “본편 ###면에 자손의 기록이 이어진다”는 뜻이다. `見上十三`처럼 `見上`이 붙거나 숫자가 한자일 수 있다. 스캔에서 `T###`·`F###`로 보이는 것은 `下###`의 오독이다. 이름·숫자·직함으로 해석하지 않는다.
 6. **`子`·`女`·`配`·`系`**: `子`는 아들, `女`는 딸(뒤에 사위 이름이 올 수 있음), `配`는 배우자, `系`는 양자다.
-7. **`女` 뒤에 성씨가 붙은 남성 이름이 오면 사위로 읽는다**: `女` 뒤 이름이 남성 이름이면 그 이름은 딸의 이름이 아니라 사위(남편)다. 이 경우 딸의 이름이 따로 인쇄되지 않았으면 `person.name_hanja`는 `null`로 두고, 사위는 `person.spouses[]`에 넣는다. spouse의 `relation`은 해당 인물과 배우자의 관계이므로 **`husband`**로 둔다. `son_in_law`는 `entries[].relation_to_subject`에서 기준 인물과의 관계를 나타낼 때만 쓴다. `女` 뒤에 여성 이름만 오면 딸의 이름으로 둔다. 확실하지 않으면 `needs_human=true`.
+7. **`女` 뒤에 성씨가 붙은 이름이 오면 사위로 읽는다**: `女` 뒤 이름이 **성씨+이름**이면 그 이름은 딸의 이름이 아니라 사위(남편)다. 이 경우 딸의 이름이 따로 인쇄되지 않았으면 `person.name_hanja`는 `null`로 두고, 사위는 `person.spouses[]`에 넣는다. spouse의 `relation`은 해당 인물과 배우자의 관계이므로 **`husband`**로 둔다. `女` 뒤에 **성이 없고 이름만** 오면 딸의 이름으로 둔다. `entries[].relation_to_subject`는 그 항목 자체(딸)와 기준 인물의 관계이므로 `daughter`/`sister`/`sibling`/`descendant` 중 하나로 두고, 사위라는 이유로 `son_in_law`로 바꾸지 않는다.
 8. **혼동하기 쉬운 글자**: `子`와 `字`, `女`와 `汝`, `配`와 `妃`, `墓`와 `基`, `上`/`下`와 `T`/`F`, `杜`와 `社`, `慶`과 `廣`, `寧`과 `靈`, `喆`과 `哲`, `鎭`과 `鎮`을 구분한다.
 9. **생몰**: `生`/`卒` 뒤의 간지 원문을 유지한다. 명시적 서기 연도가 없으면 임의로 환산하지 않는다.
 10. **관계 단정 금지**: `配`, `子`, `女`, `上`, `下` 등 명시적 표기가 있을 때만 관계를 단정한다. 단 위치만으로 부모를 특정하지 않는다. 위 단에 한 명뿐이면 그 사람의 자녀로 볼 수 있지만, 여러 명이면 `descendant`로 두고 `needs_human=true`. 표기가 없으면 `unknown`.
@@ -196,10 +210,17 @@ image_height: {height}
   - `running_head`: 페이지 가장자리에 인쇄된 큰 이름표(없으면 `null`). 인물 항목과 혼동하지 않는다.
   - `father_name`: 기준 인물 위에 작은 글씨로 붙은 아버지 이름(없으면 `null`).
   - `notes`: 그 밖의 머리말.
-- `subjects[]`: 그 페이지의 **기준 인물**. 첫 단에서 페이지를 시작하는 인물(보통 `子`가 붙은 사람)이다. 보통 1명. 여기 넣은 인물은 `entries[]`에 다시 넣지 않는다. **기준 인물의 모든 정보는 `subjects[]`에만 넣고, `entries[]`에는 넣지 않는다.**
-  - `row`, `column`, `page_ref`, `bbox`, `confidence`, `needs_human`.
-  - 이름·자·호·생몰·묘소·배우자·자녀 등은 `entries[].person`과 같은 필드로 기록한다(`as_printed`, `name_hanja`, `name_hangul`, `prefix`, `aliases[]`, `generation_no`, `generation_hint`, `generation_char`, `birth`, `death`, `burial`, `offices`, `spouses[]`, `children[]`).
-  - `children[]`은 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 쓰고, 페이지의 단으로 표현된 자녀는 `entries[]`에 둔다.
+
+### `subjects[]`
+
+그 페이지의 **기준 인물**. 첫 단에서 페이지를 시작하는 인물(보통 `子`가 붙은 사람)이다. 보통 1명. 여기 넣은 인물은 `entries[]`에 다시 넣지 않는다. **기준 인물의 모든 정보는 `subjects[]`에만 넣고, `entries[]`에는 넣지 않는다.**
+
+- `row`, `column`: 기준 인물이 인쇄된 단과 그 안의 위치.
+- `generation_offset`: 기준 인물이므로 항상 `0`.
+- `relation_to_subject`: 기준 인물이므로 항상 `self`.
+- `page_ref`, `bbox`, `confidence`, `needs_human`.
+- 이름·자·호·생몰·묘소·배우자·자녀 등은 `entries[].person`과 같은 필드로 기록한다(`as_printed`, `name_hanja`, `name_hangul`, `prefix`, `aliases[]`, `generation_no`, `generation_hint`, `generation_char`, `birth`, `death`, `burial`, `offices`, `spouses[]`, `children[]`, `notes[]`).
+- `children[]`은 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 쓰고, 페이지의 단으로 표현된 자녀는 `entries[]`에 둔다.
 
 ### `entries[]`
 
@@ -208,7 +229,7 @@ image_height: {height}
 - `row`: **단 번호**. 맨 위 단이 1. 같은 단의 인물은 같은 `row` 값을 쓴다.
 - `column`: 단 안에서 **오른쪽부터** 1, 2, 3… (오른쪽이 1).
 - `generation_offset`: **기준 인물 기준** 실제 상대 세대. 0=기준 인물과 같은 세대, 1=한 세대 아래, 2=두 세대 아래… **절대 세대수가 아니다.** 보통은 단 차이와 같지만, 외손이 작은 글씨로 붙은 경우 `row`(인쇄된 단)와 다를 수 있다. `row` 번호로 세대수를 추정하지 않는다.
-- `relation_to_subject`: 기준 인물과의 관계. `self`, `son`, `daughter`, `brother`, `sister`, `sibling`, `grandson`, `granddaughter`, `descendant`, `spouse`, `son_in_law`, `daughter_in_law`, `unknown`. 기준 인물과 같은 세대면 `self`/`brother`/`sister`/`sibling`/`spouse`, 한 세대 아래이고 부모가 특정되면 `son`/`daughter`, 두 세대 아래이고 관계가 분명하면 `grandson`/`granddaughter`, 그 외에는 `descendant`로 둔다. **같은 단의 형제·자매 관계는 `row`가 같다는 사실로도 표현된다.**
+- `relation_to_subject`: 기준 인물과의 관계. `son`, `daughter`, `brother`, `sister`, `sibling`, `grandson`, `granddaughter`, `descendant`, `spouse`, `son_in_law`, `daughter_in_law`, `unknown`. **기준 인물은 `subjects[]`에만 넣으므로 `entries[]`에는 `self`를 쓰지 않는다.** 기준 인물과 같은 세대면 `brother`/`sister`/`sibling`/`spouse`, 한 세대 아래이고 부모가 특정되면 `son`/`daughter`, 두 세대 아래이고 관계가 분명하면 `grandson`/`granddaughter`, 그 외에는 `descendant`로 둔다. **같은 단의 형제·자매 관계는 `row`가 같다는 사실로도 표현된다.**
 - `person`: 아래 필드.
 - `bbox`: 그 인물 항목 전체.
 - `confidence`: 0~1.
@@ -233,11 +254,13 @@ image_height: {height}
   - `orientation`: 좌향(예: `甲坐`, `壬坐`). 없으면 `null`.
   - `note`: `有碣`, `有表碣`, `上下封`처럼 묘비·봉분에 대한 부기.
 - `offices`: 관직/칭호 배열. 원문 유지.
+- `notes`: 그 인물에 붙은 설명·부기 배열. 한 줄에 하나.
 - `spouses[]`: 배우자.
-  - `as_printed`, `name_hanja`, `bonkwan`, `father`, `relation`, `burial`, `certainty`.
+  - `as_printed`, `name_hanja`, `bonkwan`, `father`, `relation`, `birth`, `death`, `burial`, `certainty`.
   - `relation`: `wife`, `husband`, `concubine`, `unknown`. (`son_in_law`/`daughter_in_law`는 `entries[].relation_to_subject`에서만 쓴다.)
+  - `birth` / `death`: `person.birth`/`person.death`와 같은 구조.
   - `burial`: `person.burial`과 같은 구조.
-- `children[]`: 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 채운다. 페이지의 단으로 표현된 자녀는 `entries[]`에 두고 여기에 중복해서 넣지 않는다. `as_printed`, `name_hanja`, `prefix`, `relation`, `page_ref`.
+- `children[]`: 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 채운다. 페이지의 단으로 표현된 자녀는 `entries[]`에 두고 여기에 중복해서 넣지 않는다. `as_printed`, `name_hanja`, `prefix`, `relation`(`son`|`daughter`|`adopted_son`|`unknown`), `page_ref`.
 - `page_ref`: 그 인물의 **조상(上) 또는 자손(下)** 기록 페이지. 아래 `page_ref` 정의를 따른다. 참조가 없으면 `null`.
 - `bbox`, `confidence`, `needs_human`.
 
@@ -247,7 +270,7 @@ image_height: {height}
 
 - `raw`: 인쇄된 그대로. 예: `上159`, `見上十三`, `下4`.
 - `direction`: `up`(조상/부모) | `down`(자손).
-- `target_section`: 기본 `genealogy`. 전편을 가리키면 `frontmatter`.
+- `target_section`: `genealogy` | `frontmatter`. **출력에는 항상 채운다.** 생략하지 말고, 본편을 가리키면 `genealogy`, 전편을 가리키면 `frontmatter`로 둔다.
 - `target_page_no`: 정수. 한자 숫자는 변환한다(十三 → 13).
 - `bbox`: 참조가 인쇄된 위치.
 - `confidence`: 0~1.
@@ -275,11 +298,13 @@ image_height: {height}
 
 따라서 다음 원칙을 적용한다.
 
-1. `女` 항목의 `relation_to_subject`는 기준 인물과의 관계로 정한다. 기준 인물과 같은 세대면 `sister`/`sibling`, 한 세대 아래면 `daughter`, 그 아래면 `descendant`다.
-2. `person.name_hanja`는 **딸의 이름이 인쇄되어 있으면** 그 값을 넣고, 사위 이름만 인쇄되었거나 확실하지 않으면 `null`로 둔다.
-3. `女` 뒤에 성씨가 붙은 이름이 오면 `person.spouses[]`에 넣는다. spouse의 `relation`은 **`husband`**로 둔다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "husband"`, `spouse.bonkwan = "晋州"`. `女` 뒤에 성이 없고 이름만 있으면 `person.name_hanja`에 딸 이름을 넣는다. `son_in_law`는 `entries[].relation_to_subject`에서 기준 인물과의 관계를 나타낼 때만 쓴다.
-4. 딸의 이름과 사위의 이름이 모두 있는지, 사위만 있는지 확실하지 않으면 `needs_human=true`.
-5. `女` 항목을 아들의 배우자로 해석하지 않는다.
+1. **`女` 항목 자체는 딸이다.** `entries[].relation_to_subject`는 기준 인물과의 관계로 정한다. 기준 인물과 같은 세대면 `sister`/`sibling`, 한 세대 아래면 `daughter`, 그 아래면 `descendant`다. 사위라는 이유로 `son_in_law`를 쓰지 않는다.
+2. **`女` 뒤에 성씨가 붙은 이름이 오면 그 이름은 사위(남편)다.** `person.name_hanja`는 딸의 이름이 따로 인쇄되지 않았으면 `null`로 둔다.
+3. 사위는 `person.spouses[]`에 넣는다. spouse의 `relation`은 **`husband`**로 둔다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "husband"`, `spouse.bonkwan = "晋州"`.
+4. **`女` 뒤에 성이 없고 이름만 오면 딸의 이름**이다. 그 값을 `person.name_hanja`에 넣는다.
+5. 딸의 이름과 사위의 이름이 모두 있는 경우, 딸은 `person.name_hanja`, 사위는 `person.spouses[]`로 나눠 기록한다.
+6. 사위 이름이 인쇄되었는지, 딸 이름이 인쇄되었는지 확실하지 않으면 `needs_human=true`.
+7. `女` 항목을 아들의 배우자로 해석하지 않는다.
 
 `配`는 배우자다. 해당 인물이 남자면 `wife`, 여자면 `husband`로 둔다. 첩/후실이 명시된 경우 `concubine`으로 둔다. `配` 뒤에는 처가의 본관/성씨/아버지 이름이 올 수 있다.
 
@@ -308,7 +333,7 @@ image_height: {height}
 
 - 페이지는 **5개의 단**으로 되어 있다.
 - 1단: `子仁居`(맨 오른쪽).
-- 2단: `女美海擎`, `女崔欽祖`, `子時興` → 仁居의 자녀 세대. `女` 항목은 딸이고, `崔欽祖`처럼 성씨가 붙은 남성 이름은 사위다. `美海擎`은 딸 이름인지 사위 이름인지 확실하지 않으므로 `needs_human=true`.
+- 2단: `女姜海擧`, `女崔欽祖`, `子時興` → 仁居의 자녀 세대. `女` 항목 자체는 딸이다. `姜海擧`·`崔欽祖`는 성씨+이름이므로 각각 사위(남편)다. 두 `女` 항목 모두 딸의 이름은 인쇄되지 않았으므로 `person.name_hanja`는 `null`로 두고, 사위를 `person.spouses[]`에 `relation: "husband"`로 넣는다.
 - 3단: `子榮茂` → 다음 세대.
 - 4단: `子連泰` → 다음 세대.
 - 5단: `子萬元`, `子萬迪`, `子萬純`, `子萬成`, `子萬益`, `子萬大`, `子萬赫` → 다시 다음 세대.
@@ -333,9 +358,9 @@ image_height: {height}
 
 - 기준 인물: `萬元` (1단, `上15`로 조상 확인).
 - 6개의 단으로 구성.
-- 2단: `女金日長`, `女田權五`, `女姜仁豐`, `子碩喆` → `萬元`의 자녀 세대.
-- 3단: `女金東赫`, `子光林` → `碩喆`의 자녀 세대.
-- 4단: `子金容琯`(오른쪽 작은 글씨), `女高錫萬`(가운데), `子德巖`(왼쪽) → `德巖`과 `女高錫萬` 항목(딸)은 `光林`의 자녀 세대다. 다만 오른쪽 작은 글씨 `子金容琯`은 앞 페이지 `062.jpg` 4단 가장 왼쪽의 딸(`女金仁斗`)의 아들, 즉 `光林`의 **손자(외손)**다. 인쇄된 단은 4단이지만 4단의 명목 세대(光林의 자녀)보다 한 세대 아래이므로 `needs_human=true`.
+- 2단: `女金日長`, `女田權五`, `女姜仁豐`, `子碩喆` → `萬元`의 자녀 세대. `女` 뒤의 `金日長`·`田權五`·`姜仁豐`은 모두 성씨+이름이므로 사위(남편)이고, 각 항목 자체는 딸이다.
+- 3단: `女金東赫`, `子光林` → `碩喆`의 자녀 세대. `金東赫`은 사위다.
+- 4단: `子金容琯`(오른쪽 작은 글씨), `女高錫萬`(가운데), `子德巖`(왼쪽) → `德巖`과 `女高錫萬` 항목(딸)은 `光林`의 자녀 세대다. `高錫萬`은 성씨+이름이므로 사위다. 다만 오른쪽 작은 글씨 `子金容琯`은 앞 페이지 `062.jpg` 4단 가장 왼쪽의 딸 항목(`女金仁斗`; 인쇄된 이름은 사위 金仁斗)의 아들, 즉 `光林`의 **손자(외손)**다. 인쇄된 단은 4단이지만 4단의 명목 세대(光林의 자녀)보다 한 세대 아래이므로 `needs_human=true`.
 - 5단: `子永眞` → `德巖`의 자녀 세대.
 - 6단: `子洪良` → `永眞`의 자녀 세대.
 - `碩喆`부터 `洪良`까지 `萬元` 기준 `generation_offset=1~5`이고, `金容琯`은 4단에 인쇄되었지만 `generation_offset=4`다.
@@ -351,7 +376,10 @@ image_height: {height}
 - [ ] `見上十三` 같은 한자 숫자를 정수로 변환했는가?
 - [ ] `name_hanja`가 비어 있어도 `as_printed`은 보존했는가?
 - [ ] `子`/`女`/`配`/`系` 접두어를 `name_hanja`에 포함하지 않았는가?
-- [ ] `女` 항목의 이름을 사위 이름으로 잘못 넣지 않았는가? (또는 그 반대)
+- [ ] `女` 뒤에 성씨가 붙은 이름은 `person.spouses[]`에 `relation: "husband"`로 넣고, `person.name_hanja`에는 딸 이름만 넣었는가?
+- [ ] `女` 뒤에 성이 없는 이름만 있으면 그것을 딸 이름으로 넣었는가?
+- [ ] 기준 인물을 `subjects[]`에만 넣고 `entries[]`에 중복하지 않았는가?
+- [ ] `entries[].relation_to_subject`에 `self`를 쓰지 않았는가?
 - [ ] **같은 단의 인물을 같은 `row`로 묶었는가?**
 - [ ] **원칙적으로 바로 아래 단을 다음 세대로 처리했는가?** (손자로 건너뛰지 않았는가)
 - [ ] `generation_offset`이 **기준 인물** 기준인가? (기준 인물은 첫 단에서 페이지를 시작하는 인물이므로 0이다)

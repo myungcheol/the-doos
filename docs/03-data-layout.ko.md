@@ -155,6 +155,8 @@ CREATE TABLE sections (
 | genealogy | 본편(세보) | 1 | 938 | independent |
 | covers | 표지 | null | null | none |
 
+> AI 파싱 출력의 `page.section`은 `frontmatter`/`genealogy`만 쓴다. `covers`는 manifest·DB 전용 구분이다.
+
 ### 4.2 `pages`
 
 ```sql
@@ -177,7 +179,7 @@ CREATE TABLE pages (
 ```
 
 - `printed_page_no`는 **섹션 안에서만** unique하다.
-- `page_type`은 3.2의 enum을 사용한다.
+- `page_type`은 3.2의 enum을 사용한다. `missing`은 `pages.csv` 전용 값이고, AI 출력 `schema/page.schema.json`의 `page_type`에는 쓰지 않는다.
 - `image_path`는 `data/pages/...` 정규화 경로.
 - `image_sha256`으로 중복/변경을 감지한다.
 - `ocr_status`: `pending`, `queued`, `processing`, `done`, `failed`, `skipped`.
@@ -277,6 +279,8 @@ CREATE TABLE generation_chars (
   note           text
 );
 ```
+
+> AI 출력(`schema/page.schema.json`)의 `generation_chars[].position`은 `앞`/`가운데`/`뒤`/`null`이다. 적재할 때 `first`/`middle`/`last`/`any`로 매핑한다.
 
 ### 4.7 인물/관계 테이블
 
