@@ -10,7 +10,7 @@ Environment:
     PAGE_AI_API_KEY    required for hosted providers
     PAGE_AI_MODEL      required, e.g. gemini-2.5-flash or a free OpenRouter model
     PAGE_AI_TIMEOUT    seconds, default 180
-    PAGE_AI_MAX_TOKENS max output tokens, default 8192
+    PAGE_AI_MAX_TOKENS max output tokens, default 32768
     PAGE_AI_JSON_MODE  set to 1 to request response_format=json_object
     PAGE_AI_EXTRA_HEADERS
                        optional JSON object of extra request headers.
@@ -136,7 +136,7 @@ def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, d
     base_url = os.environ.get("PAGE_AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     api_key = os.environ.get("PAGE_AI_API_KEY", "")
     timeout = float(os.environ.get("PAGE_AI_TIMEOUT", "180"))
-    max_tokens = env_int("PAGE_AI_MAX_TOKENS", 8192)
+    max_tokens = env_int("PAGE_AI_MAX_TOKENS", 32768)
 
     # Inject the image into the user message for providers with vision support.
     prepared = [dict(message) for message in messages]

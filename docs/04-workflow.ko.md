@@ -79,7 +79,7 @@ python3 scripts/link_pages.py
 | `PAGE_AI_API_KEY` | API 키. 로컬 서버면 더미 값 가능 |
 | `PAGE_AI_MODEL` | 모델 ID 또는 combo 이름. **필수** |
 | `PAGE_AI_TIMEOUT` | 초 단위, 기본 180. failover가 길면 600 권장 |
-| `PAGE_AI_MAX_TOKENS` | 최대 출력 토큰, 기본 8192 |
+| `PAGE_AI_MAX_TOKENS` | 최대 출력 토큰, 기본 32768. reasoning 모델은 내부 사고 토큰도 여기에 포함되므로 넉넉히 둔다 |
 | `PAGE_AI_JSON_MODE` | `1`이면 `response_format=json_object` 요청 |
 | `PAGE_AI_REASONING_EFFORT` | 선택: `none` / `low` / `medium` / `high`. reasoning 모델의 내부 사고량 조절. OCR처럼 정답이 정해진 작업은 `none` 또는 `low` 권장 |
 | `PAGE_AI_EXTRA_BODY` | 요청 body에 병합할 JSON. 예: `{"thinking":{"type":"disabled"}}` |
@@ -117,14 +117,14 @@ export PAGE_AI_EXTRA_HEADERS='{"x-omniroute-compression":"off","X-OmniRoute-No-C
 
 # reasoning 모델이 사고에 토큰을 과도하게 쓰지 않도록
 export PAGE_AI_REASONING_EFFORT="low"
-export PAGE_AI_MAX_TOKENS="16384"
+export PAGE_AI_MAX_TOKENS="32768"
 ```
 
 OmniRoute를 쓸 때 주의할 점:
 
 - **combo에는 이미지 지원 모델만 넣는다.** 텍스트 전용 모델로 failover되면 OmniRoute가 이미지를 설명문으로 바꿔버릴 수 있다. 세보처럼 글자가 빽빽한 이미지는 설명문으로는 정확도가 떨어진다. `auto/vision`을 쓰거나 combo를 vision 모델만으로 구성한다.
 - **`x-omniroute-modality-bridge: image->text`가 보이면 실패한 것이다.** 이미지가 텍스트 설명으로 바뀐 것이므로 세보 판독이 부정확해진다. `x-omniroute-disabled-guardrails: vision-bridge`로 끄고, combo를 vision 모델만으로 구성한다.
-- **reasoning 토큰이 출력 토큰을 잠식할 수 있다.** `completion_tokens_details.reasoning_tokens`가 크면 `PAGE_AI_REASONING_EFFORT=low`와 `PAGE_AI_MAX_TOKENS=16384`를 사용한다.
+- **reasoning 토큰이 출력 토큰을 잠식할 수 있다.** `completion_tokens_details.reasoning_tokens`가 크면 `PAGE_AI_REASONING_EFFORT=low`와 `PAGE_AI_MAX_TOKENS=32768` 이상을 사용한다. reasoning을 끌 수 없는 모델은 `gemini-3.1-flash-lite`처럼 사고 토큰이 적은 모델을 우선한다.
 - **압축은 끈다.** 기본 압축이 켜져 있으면 프롬프트나 이미지 URL이 변형될 수 있다. 위 `x-omniroute-compression: off`를 사용한다.
 - **JSON 모드는 신중히 켠다.** combo의 모든 모델이 `response_format=json_object`를 지원하지 않으면 `PAGE_AI_JSON_MODE`를 비워둔다. 기본값은 꺼짐이다.
 - **실제로 어떤 모델이 답했는지 확인한다.** `data/parsed/<section>/<4digit>.meta.json`의 `response_models`와 `omniroute`에 실제 모델·provider·fallback 횟수가 기록된다.
@@ -214,6 +214,8 @@ python3 admin/server.py --port 8765
 - 왼쪽: 페이지 목록. 구분/상태/파싱 여부/검색으로 필터.
 - 가운데: 스캔 이미지. 휠·버튼 확대, 드래그 이동, 더블클릭 초기화.
 - 오른쪽: 「구조」 탭(스캔과 나란히 보는 편집 가능한 필드), JSON 편집기, OCR 텍스트, 검수 메모.
+  - 인물·기준 인물 카드의 `×`로 잘못 들어온 항목을 삭제할 수 있다.
+  - `페이지 참조`는 원문(`raw`)뿐 아니라 `direction`(`up`/`down`), `target_section`, `target_page_no`도 함께 고친다.
 - 아래: `대기 / 검수 중 / 승인 / 수정 필요` 상태.
 
 단축키:

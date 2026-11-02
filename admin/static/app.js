@@ -729,6 +729,17 @@ function renderPersonCard(container, person, embedded = false) {
     if (!person.page_ref) person.page_ref = { raw: v, direction: "down", target_section: "genealogy", target_page_no: 1 };
     else person.page_ref.raw = v;
   }, { nullable: true });
+  if (person.page_ref) {
+    makeSelect(card, "참조 방향", person.page_ref.direction || "down", [
+      { value: "up", label: "up (上)" },
+      { value: "down", label: "down (下)" },
+    ], (v) => { person.page_ref.direction = v; });
+    makeSelect(card, "참조 구분", person.page_ref.target_section || "genealogy", [
+      { value: "genealogy", label: "본편" },
+      { value: "frontmatter", label: "전편" },
+    ], (v) => { person.page_ref.target_section = v; });
+    makeField(card, "참조 면", person.page_ref.target_page_no, (v) => { person.page_ref.target_page_no = v; }, { number: true, nullable: true });
+  }
 
   const needs = document.createElement("label");
   needs.className = "struct-checkbox";
@@ -790,7 +801,7 @@ function renderStructure(parsed) {
     const heading = document.createElement("h3");
     heading.textContent = "기준 인물";
     section.append(heading);
-    for (const subject of parsed.subjects) {
+    for (const [index, subject] of parsed.subjects.entries()) {
       const card = document.createElement("article");
       card.className = "struct-card";
       const title = document.createElement("div");
@@ -802,6 +813,17 @@ function renderStructure(parsed) {
         badge.textContent = "확인 필요";
         title.append(badge);
       }
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "struct-remove";
+      remove.textContent = "×";
+      remove.title = "기준 인물 삭제";
+      remove.addEventListener("click", () => {
+        parsed.subjects.splice(index, 1);
+        renderStructure(parsed);
+        syncJsonFromParsed();
+      });
+      title.append(remove);
       card.append(title);
       makeField(card, "단(row)", subject.row, (v) => { subject.row = v; }, { number: true, nullable: true });
       makeField(card, "열(column)", subject.column, (v) => { subject.column = v; }, { number: true, nullable: true });
@@ -848,6 +870,18 @@ function renderStructure(parsed) {
           warn.textContent = "확인 필요";
           title.append(warn);
         }
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "struct-remove";
+        remove.textContent = "×";
+        remove.title = "이 인물 항목 삭제";
+        remove.addEventListener("click", () => {
+          const index = parsed.entries.indexOf(entry);
+          if (index >= 0) parsed.entries.splice(index, 1);
+          renderStructure(parsed);
+          syncJsonFromParsed();
+        });
+        title.append(remove);
         card.append(title);
         makeField(card, "단(row)", entry.row, (v) => { entry.row = v; }, { number: true, nullable: true });
         makeField(card, "열(column)", entry.column, (v) => { entry.column = v; }, { number: true, nullable: true });
