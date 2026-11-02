@@ -367,6 +367,7 @@ WHERE people.id = gen.id;
 4. **DB 입력**: `sections`, `pages`, `toc_entries`를 먼저 넣는다.
 5. **페이지 분류**: `page_type`을 채운다. 전편은 `page_texts`, 본편은 `genealogy`.
 6. **OCR/파싱**: 본편부터 `people`/`page_refs`를 만든다. 전편은 서문/사진/색인/항렬표를 별도 처리한다.
+7. **세대 계산**: `scripts/compute_generations.py`로 `person.father` 연결을 풀어 `people.generation_no`를 채운다. 런타임 조회에서는 재귀 쿼리를 돌리지 않는다.
 7. **검증**: 모든 `page_refs.target_page_id`가 존재하는지, `(section, printed_page_no)` 중복이 없는지 확인한다.
 8. **검수/발행**: `review_status`가 `approved`인 데이터만 공개한다.
 
