@@ -76,7 +76,7 @@
         "required": ["chars"],
         "additionalProperties": true,
         "properties": {
-          "generation_no": { "type": ["integer", "null"] },
+          "generation_no": { "type": "integer" },
           "position": { "enum": ["앞", "가운데", "뒤", null] },
           "chars": { "type": "array", "items": { "type": "string" } },
           "bbox": { "$ref": "#/$defs/bbox" }
@@ -306,7 +306,10 @@
         "name_hangul": { "type": ["string", "null"] },
         "prefix": { "type": ["string", "null"] },
         "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } },
-        "generation_no": { "type": ["integer", "null"] },
+        "generation_no": {
+          "description": "페이지에 명시적으로 인쇄된 世 표기가 있을 때만 채운다. 검수 시 스캔의 世 표기를 보고 보완할 수 있다.",
+          "type": ["integer", "null"]
+        },
         "generation_hint": {
           "type": ["object", "null"],
           "additionalProperties": true,
@@ -346,7 +349,7 @@
         "row": { "type": "integer", "minimum": 1 },
         "column": { "type": "integer", "minimum": 1 },
         "generation_offset": {
-          "description": "기준 인물 기준 상대 세대. subjects[]에서는 0.",
+          "description": "기준 인물 기준 상대 세대. subjects[]에서는 0. 女 entry는 1이다. 절대 세대수가 아니다.",
           "type": "integer",
           "minimum": 0
         },
