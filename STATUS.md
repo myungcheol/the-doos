@@ -1,7 +1,7 @@
 # 진행 상황
 
 > 이 파일이 프로젝트 진행 상황의 **단일 기록**이다. 설계 문서(`docs/01`~`04`)에는 “현재 어디까지 했는지”를 쓰지 않는다.
-> 마지막 갱신: **2026-11-02**, 기능 기준 커밋 `ad89c97`.
+> 마지막 갱신: **2026-11-02**, 기능 기준 커밋 `284c35e`.
 
 ---
 
@@ -37,6 +37,7 @@
 - 2026-11-02: `docs/01`·`docs/02`와 `schema/page.schema.json` 대조. `subjects[]`를 최상위 필드로 정리, `entries[].relation_to_subject`에서 `self` 제거, spouse `birth`/`death` 스키마 추가, `person.notes`·`children[].relation` 문서화, `validate_page.py`를 스키마 수준으로 강화.
 - 2026-11-02: 25면 AI 1차 호출. OmniRoute `free-image-combo`(gemini-3-flash-preview, gemini-3.1-flash-lite) 결과를 `data/parsed/genealogy/0025.json`에 보관. reasoning 토큰이 출력 한도를 잠식해 첫 호출은 JSON이 잘렸고, 이후 flash-lite로 JSON을 확보했다. 현재 결과에는 기준 인물 중복(`self`)과 `F###` 표기 오류가 남아 있다.
 - 2026-11-02: `PAGE_AI_MAX_TOKENS` 기본값을 32768로 상향. 구조 탭에서 기준 인물·인물 항목 삭제와 `page_ref`의 방향·구분·면 편집 지원.
+- 2026-11-02: 인물별 아버지 연결(`person.father`) 추가. 계보의 정본은 `people.father_id`로 하고, `relation_to_subject`는 페이지 안 참고값으로 재정의. `grandson`은 father 연결로 확실할 때만 사용. 검증기와 관리자 구조 탭에 father 편집을 추가.
 - 2026-10-31: OmniRoute combo 대응. `PAGE_AI_MAX_TOKENS`·`PAGE_AI_EXTRA_HEADERS` 추가, 실제 응답 모델과 라우팅 헤더를 `*.meta.json`에 기록.
 - 2026-10-31: 루트 `.env` 파일 자동 로드 지원. `.env.example` 제공, `.env`는 git 제외.
 
