@@ -253,7 +253,7 @@ image_height: {height}
 - `name_hangul`: 확실할 때만.
 - `prefix`: `子`, `女`, `配`, `系`, 없음 등.
 - `aliases[]`: `字`·`號`·이칭. `{ "type": "字"|"號"|"其他", "value": "<한자>" }`. `type`이 불확실하면 `其他`로 두고 `needs_human=true`.
-- `generation_no`: **페이지에 명시적으로 인쇄된 `世` 표기가 있을 때만** 채운다. 여백의 `世` 표기가 뒷면 비침이면 세지 않는다. `row`나 `generation_offset`으로 절대 세대수를 추정하지 않는다.
+- `generation_no`: **페이지에 명시적으로 인쇄된 `世` 표기가 있을 때만** 채운다. 여백의 `世` 표기가 뒷면 비침이면 세지 않는다. `row`나 `generation_offset`으로 절대 세대수를 추정하지 않는다. 검수 시 스캔의 `世` 표기를 보고 보완할 수 있다.
 - `generation_hint`: `世` 표기가 없을 때의 추정. `{ "value": <추정 세대>, "basis": "항렬자·1면 세대표·부모-자녀 연결", "certainty": "probable" }`처럼 근거를 함께 적고 `needs_human=true`.
 - `generation_char`: 이름에서 확인되는 항렬자. 확실할 때만.
 - `birth` / `death`: `raw`, `king_era`, `ganji`, `date_text`, `certainty`(`exact`|`probable`|`uncertain`|`unknown`).
