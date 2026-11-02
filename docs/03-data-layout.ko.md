@@ -316,29 +316,10 @@ generation_no      integer,                          -- father_id 체인으로 �
   - `inferred`: 바로 위 단의 위치로 추정했다.
   - `reviewed`: 사람이 검수에서 확정했다.
   - `unknown`: 모른다.
-- `generation_no`는 적재 시 `father_id` 체인을 따라 계산하여 `people.generation_no`에 **저장**한다. 조회할 때는 이 저장된 값을 읽는다. `relation_to_subject`나 `generation_offset`을 절대 세대수로 쓰지 않는다.
-- 계산 방법: 시조(`father_id IS NULL`)를 1세로 두고, 자녀는 아버지 세대 +1. 이 계산은 적재(import) 단계에서 한 번 수행하고 컬럼에 저장한다. 런타임 조회에서는 재귀 쿼리를 돌리지 않는다.
-
-```sql
--- 적재 시 사용하는 계산 (런타임 조회 아님)
-WITH RECURSIVE gen AS (
-  SELECT id, 1 AS generation_no
-  FROM people
-  WHERE father_id IS NULL AND is_founder
-  UNION ALL
-  SELECT p.id, g.generation_no + 1
-  FROM people p
-  JOIN gen g ON p.father_id = g.id
-)
-UPDATE people
-SET generation_no = gen.generation_no
-FROM gen
-WHERE people.id = gen.id;
-```
-
-- `relation_to_subject`는 `people.page_relation` 같은 검수용 컬럼에만 보존한다. 계보 탐색·세대 계산에는 쓰지 않는다.
+- `generation_no`는 **페이지에 명시적으로 인쇄된 `世` 표기가 있을 때만** AI 출력에서 가져온다(`docs/02` §4). 검수 시 스캔을 보고 보완할 수 있다. `father_id` 체인으로 세대를 계산하지 않는다.
+- `relation_to_subject`는 `people.page_relation` 같은 검수용 컬럼에만 보존한다. 계보 탐색에는 쓰지 않는다.
 - `relations` 테이블은 양자·사위·며느리처럼 `father_id`로 표현할 수 없는 관계에 쓴다. 직계 부자 관계를 `people.father_id`와 `relations`에 중복 저장하지 않는다.
-- 위로 시조까지 올라가는 조회와 아래로 자손을 찾는 조회는 `people.father_id`를 쓴다. `generation_no`는 저장된 값을 읽는다.
+- 위로 시조까지 올라가는 조회와 아래로 자손을 찾는 조회는 `people.father_id`를 쓴다. 세대 표시는 저장된 `generation_no`를 읽는다.
 
 ---
 
@@ -367,9 +348,8 @@ WHERE people.id = gen.id;
 4. **DB 입력**: `sections`, `pages`, `toc_entries`를 먼저 넣는다.
 5. **페이지 분류**: `page_type`을 채운다. 전편은 `page_texts`, 본편은 `genealogy`.
 6. **OCR/파싱**: 본편부터 `people`/`page_refs`를 만든다. 전편은 서문/사진/색인/항렬표를 별도 처리한다.
-7. **세대 계산**: `scripts/compute_generations.py`로 `person.father` 연결을 풀어 `people.generation_no`를 채운다. 런타임 조회에서는 재귀 쿼리를 돌리지 않는다.
 7. **검증**: 모든 `page_refs.target_page_id`가 존재하는지, `(section, printed_page_no)` 중복이 없는지 확인한다.
-8. **검수/발행**: `review_status`가 `approved`인 데이터만 공개한다.
+8. **검수/발행**: `review_status`가 `approved`인 데이터만 공개한다. 검수 시 `generation_no`가 비어 있는 인물은 스캔의 `世` 표기를 보고 채운다.
 
 > 이 절은 **설계상 적재 순서**다. 실제 진행 상황은 루트 [`STATUS.md`](../STATUS.md)에만 기록한다.
 
