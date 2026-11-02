@@ -277,10 +277,9 @@ image_height: {height}
 
 1. `女` 항목의 `relation_to_subject`는 기준 인물과의 관계로 정한다. 기준 인물과 같은 세대면 `sister`/`sibling`, 한 세대 아래면 `daughter`, 그 아래면 `descendant`다.
 2. `person.name_hanja`는 **딸의 이름이 인쇄되어 있으면** 그 값을 넣고, 사위 이름만 인쇄되었거나 확실하지 않으면 `null`로 둔다.
-3. `女` 뒤에 성씨가 붙은 남성 이름이 오면 `person.spouses[]`에 넣는다. spouse의 `relation`은 **`husband`**로 둔다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "husband"`, `spouse.bonkwan = "晋州"`. 딸 이름이 따로 있으면 `person.name_hanja`에 딸 이름을 넣는다. `son_in_law`는 `entries[].relation_to_subject`에서 기준 인물과의 관계를 나타낼 때만 쓴다.
+3. `女` 뒤에 성씨가 붙은 이름이 오면 `person.spouses[]`에 넣는다. spouse의 `relation`은 **`husband`**로 둔다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "husband"`, `spouse.bonkwan = "晋州"`. `女` 뒤에 성이 없고 이름만 있으면 `person.name_hanja`에 딸 이름을 넣는다. `son_in_law`는 `entries[].relation_to_subject`에서 기준 인물과의 관계를 나타낼 때만 쓴다.
 4. 딸의 이름과 사위의 이름이 모두 있는지, 사위만 있는지 확실하지 않으면 `needs_human=true`.
 5. `女` 항목을 아들의 배우자로 해석하지 않는다.
-6. `女` 뒤 이름이 여성 이름으로 보이면 딸의 이름일 수 있다. 이때도 사위 이름과 분리하고 `needs_human=true`로 둔다.
 
 `配`는 배우자다. 해당 인물이 남자면 `wife`, 여자면 `husband`로 둔다. 첩/후실이 명시된 경우 `concubine`으로 둔다. `配` 뒤에는 처가의 본관/성씨/아버지 이름이 올 수 있다.
 
