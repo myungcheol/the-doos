@@ -50,6 +50,7 @@ RELATIONS = {
 ENTRY_RELATIONS = RELATIONS - {"self"}
 SPOUSE_RELATIONS = {"wife", "husband", "concubine", "unknown"}
 CHILD_RELATIONS = {"son", "daughter", "adopted_son", "unknown"}
+FATHER_RELATIONS = {"father", "adoptive_father", "unknown"}
 CERTAINTY = {"exact", "probable", "uncertain", "unknown"}
 DIRECTIONS = {"up", "down"}
 MAX_PAGE = {"frontmatter": 93, "genealogy": 938}
@@ -194,6 +195,28 @@ def _check_child(value: Any, where: str, errors: list[str], warnings: list[str])
     _check_page_ref(value.get("page_ref"), where, errors, warnings)
 
 
+def _check_father(value: Any, where: str, errors: list[str], warnings: list[str]) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        errors.append(f"{where}: father는 객체 또는 null이어야 합니다.")
+        return
+    _check_string(value.get("as_printed"), f"{where}.as_printed", errors, nullable=False)
+    _check_string(value.get("name_hanja"), f"{where}.name_hanja", errors)
+    row, column = value.get("row"), value.get("column")
+    for field, item in (("row", row), ("column", column)):
+        if item is not None and (not _is_int(item) or item < 1):
+            errors.append(f"{where}.{field}: 1 이상의 정수 또는 null이어야 합니다.")
+    if (row is None) != (column is None):
+        errors.append(f"{where}: row와 column은 함께 채우거나 함께 비워야 합니다.")
+    if value.get("relation") is not None and value.get("relation") not in FATHER_RELATIONS:
+        errors.append(f"{where}.relation: father/adoptive_father/unknown이어야 합니다.")
+    _check_page_ref(value.get("page_ref"), where, errors, warnings)
+    _check_confidence(value.get("confidence"), where, errors)
+    if "needs_human" in value and not isinstance(value.get("needs_human"), bool):
+        errors.append(f"{where}.needs_human: true/false여야 합니다.")
+
+
 def _check_person(
     person: Any,
     where: str,
@@ -245,6 +268,8 @@ def _check_person(
     if "notes" in person:
         _check_string_list(person.get("notes"), f"{where}.notes", errors)
 
+    _check_father(person.get("father"), f"{where}.father", errors, warnings)
+
     spouses = person.get("spouses")
     if spouses is not None:
         if not isinstance(spouses, list):
@@ -266,6 +291,46 @@ def _check_person(
     _check_confidence(person.get("confidence"), where, errors)
     if "needs_human" in person and not isinstance(person.get("needs_human"), bool):
         errors.append(f"{where}.needs_human: true/false여야 합니다.")
+
+
+def _check_father_link(
+    person: Any,
+    row: Any,
+    column: Any,
+    positions: set[tuple[int, int]],
+    where: str,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    if not isinstance(person, dict):
+        return
+    father = person.get("father")
+    relation = person.get("relation_to_subject")
+    if father is None:
+        if relation in {"son", "daughter"}:
+            warnings.append(f"{where}: 아버지 연결(father)이 없습니다.")
+        return
+    if not isinstance(father, dict):
+        return
+    father_row, father_column = father.get("row"), father.get("column")
+    page_ref = father.get("page_ref")
+    if father_row is not None and father_column is not None:
+        if _is_int(row) and _is_int(column) and (father_row, father_column) == (row, column):
+            errors.append(f"{where}.father: 자기 자신을 아버지로 가리킵니다.")
+        elif (father_row, father_column) not in positions:
+            warnings.append(
+                f"{where}.father: 같은 페이지에 (row={father_row}, column={father_column}) 인물이 없습니다."
+            )
+        elif _is_int(row) and father_row >= row:
+            warnings.append(
+                f"{where}.father: 아버지 row({father_row})가 자녀 row({row})보다 위가 아닙니다."
+            )
+    elif not isinstance(page_ref, dict):
+        warnings.append(
+            f"{where}.father: 같은 페이지 위치(row/column)나 page_ref가 없어 연결 대상을 특정할 수 없습니다."
+        )
+    if isinstance(page_ref, dict) and page_ref.get("direction") != "up":
+        warnings.append(f"{where}.father.page_ref: 아버지 참조는 direction=up이어야 합니다.")
 
 
 def _check_page(page: Any, errors: list[str]) -> None:
@@ -475,6 +540,29 @@ def validate(
                 if key in seen:
                     errors.append(f"{where}: entries와 (row={row}, column={column})가 중복됩니다.")
                 seen.add(key)
+
+    for index, entry in enumerate(entries):
+        if isinstance(entry, dict):
+            _check_father_link(
+                entry.get("person"),
+                entry.get("row"),
+                entry.get("column"),
+                seen,
+                f"entries[{index}].person",
+                errors,
+                warnings,
+            )
+    for index, subject in enumerate(subjects):
+        if isinstance(subject, dict):
+            _check_father_link(
+                subject,
+                subject.get("row"),
+                subject.get("column"),
+                seen,
+                f"subjects[{index}]",
+                errors,
+                warnings,
+            )
 
     subject_names = {
         (subject.get("as_printed") or subject.get("raw_name"))

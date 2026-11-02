@@ -263,6 +263,39 @@
         "page_ref": { "$ref": "#/$defs/page_ref" }
       }
     },
+    "father_ref": {
+      "description": "아버지 연결. 같은 페이지에 아버지가 있으면 row/column으로 가리키고, 다른 페이지면 page_ref(上###)를 쓴다. 모르면 null이고 needs_human=true로 둔다. DB 적재 시 people.father_id로 변환한다.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["as_printed"],
+          "additionalProperties": true,
+          "properties": {
+            "as_printed": {
+              "description": "아버지 이름(인쇄된 그대로).",
+              "type": "string"
+            },
+            "name_hanja": { "type": ["string", "null"] },
+            "row": {
+              "description": "같은 페이지에 아버지가 있으면 그 단 번호.",
+              "type": ["integer", "null"]
+            },
+            "column": {
+              "description": "같은 페이지에 아버지가 있으면 그 열 번호.",
+              "type": ["integer", "null"]
+            },
+            "page_ref": { "$ref": "#/$defs/page_ref" },
+            "relation": {
+              "description": "아버지 관계. 양자로 표시된 경우 adoptive_father.",
+              "enum": ["father", "adoptive_father", "unknown"]
+            },
+            "confidence": { "$ref": "#/$defs/confidence" },
+            "needs_human": { "type": "boolean" }
+          }
+        }
+      ]
+    },
     "person": {
       "type": "object",
       "required": ["as_printed"],
@@ -288,6 +321,10 @@
         "death": { "$ref": "#/$defs/date_block" },
         "burial": { "$ref": "#/$defs/burial" },
         "offices": { "type": "array", "items": { "type": "string" } },
+        "father": {
+          "description": "아버지 연결. 계보의 정본은 이 연결이며, relation_to_subject는 페이지 안의 참고값이다.",
+          "$ref": "#/$defs/father_ref"
+        },
         "spouses": { "type": "array", "items": { "$ref": "#/$defs/spouse" } },
         "children": { "type": "array", "items": { "$ref": "#/$defs/child" } },
         "page_ref": { "$ref": "#/$defs/page_ref" },
@@ -314,7 +351,7 @@
           "minimum": 0
         },
         "relation_to_subject": {
-          "description": "기준 인물과의 관계. subjects[]에서는 self.",
+          "description": "기준 인물과의 페이지 안 관계. 계보의 정본이 아니라 검수용 힌트다. 세대는 person.father 연결로 계산한다. subjects[]에서는 self.",
           "enum": [
             "self",
             "son",

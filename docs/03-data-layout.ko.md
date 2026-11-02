@@ -11,7 +11,7 @@
 2. 페이지 키는 `(section, printed_page_no)` 복합 키다. `page_no` 단일 unique는 금지한다.
 3. 원본은 `scan/`에 그대로 두고, 앱이 읽는 정규화 경로를 `data/pages/`에 만든다. 원본 파일명·해시는 manifest에 보존한다.
 4. `上###`·`下###`는 인물 텍스트가 아니라 **페이지 참조**이므로 `page_refs` 테이블로 분리하고, `direction`(`up`/`down`)을 함께 저장한다.
-5. 전편은 `page_texts`/`toc_entries`/`captions` 중심, 본편은 `people`/`relations` 중심으로 저장한다.
+5. 전편은 `page_texts`/`toc_entries`/`captions` 중심, 본편은 `people`(`father_id` 포함)/`relations` 중심으로 저장한다. **계보의 정본은 인물별 아버지 연결(`people.father_id`)이고, `relation_to_subject`는 검수용 참고값이다.**
 6. 전편 63면 항렬표(`scan/frontmatter/063.jpg`)는 `generation_chars` 테이블로 저장한다.
 7. 원본 `scan/`은 3자리 zero-pad(`frontmatter/047.jpg`), 앱 정규화 경로 `data/pages/`는 4자리(`frontmatter/0047.jpg`)를 쓴다.
 8. 폴더 이름은 `frontmatter`(전편) / `genealogy`(본편)로 확정한다. 표지는 `scan/` 루트에 둔다.
@@ -294,6 +294,46 @@ CREATE TABLE generation_chars (
 - 같은 단(`row_no`)의 인물은 원칙적으로 같은 세대다. 다만 작은 글씨로 붙은 외손은 인쇄된 단과 실제 세대가 다를 수 있다. `row_no`만으로 절대 세대수를 확정하지 않는다.
 - `relations.source_page_id`, `relations.bbox`
 - `marriages.source_page_id`, `marriages.bbox`
+
+#### 아버지 연결 (`people.father_id`)
+
+**계보의 정본은 `relation_to_subject`가 아니라 아버지 연결이다.** 각 인물은 직계 아버지를 하나 가리킨다.
+
+```sql
+-- people 테이블의 핵심 컬럼 (전체 DDL은 인물 스키마 문서에서 확정)
+father_id          bigint REFERENCES people(id),
+father_source      text NOT NULL DEFAULT 'unknown', -- printed | inferred | reviewed | unknown
+father_confidence  numeric(4,3),
+generation_no      integer,                          -- father_id 체인으로 계산한 캐시
+```
+
+- AI 출력의 `person.father`를 `people.father_id`로 변환한다.
+  - 같은 페이지: `(source_page_id, row_no, column_no)`로 아버지를 찾는다.
+  - 다른 페이지: `father.page_ref`(`上###`)와 `father.as_printed`로 찾는다. 페이지 import 후 채운다.
+  - `father: null`이면 `father_id = NULL`, `father_source = 'unknown'`, `needs_human = true`.
+- `father_source` 값:
+  - `printed`: 페이지 머리의 `father_name`이나 `上###`처럼 인쇄된 근거가 있다.
+  - `inferred`: 바로 위 단의 위치로 추정했다.
+  - `reviewed`: 사람이 검수에서 확정했다.
+  - `unknown`: 모른다.
+- `generation_no`는 `father_id`를 따라 올라가 계산한다. `relation_to_subject`나 `generation_offset`을 절대 세대수로 쓰지 않는다.
+
+```sql
+WITH RECURSIVE gen AS (
+  SELECT id, 1 AS generation_no
+  FROM people
+  WHERE father_id IS NULL AND is_founder
+  UNION ALL
+  SELECT p.id, g.generation_no + 1
+  FROM people p
+  JOIN gen g ON p.father_id = g.id
+)
+SELECT * FROM gen;
+```
+
+- `relation_to_subject`는 `people.page_relation` 같은 검수용 컬럼에만 보존한다. 계보 탐색·세대 계산에는 쓰지 않는다.
+- `relations` 테이블은 양자·사위·며느리처럼 `father_id`로 표현할 수 없는 관계에 쓴다. 직계 부자 관계를 `people.father_id`와 `relations`에 중복 저장하지 않는다.
+- 위로 시조까지 올라가는 조회는 `father_id` 재귀 CTE, 아래로 자손을 찾는 조회는 `father_id` 역방향 조회로 한다.
 
 ---
 

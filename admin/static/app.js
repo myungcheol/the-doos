@@ -723,6 +723,22 @@ function renderPersonCard(container, person, embedded = false) {
   makeTextareaField(card, "관직", person.offices, (v) => { person.offices = v; }, "한 줄에 하나");
   makeTextareaField(card, "메모", person.notes, (v) => { person.notes = v; }, "한 줄에 하나");
 
+  if (!person.father || typeof person.father !== "object") person.father = null;
+  makeField(card, "아버지", person.father ? person.father.as_printed : null, (v) => {
+    if (!v) { person.father = null; return; }
+    if (!person.father) person.father = { as_printed: v, name_hanja: v, row: null, column: null, page_ref: null, relation: "father" };
+    else person.father.as_printed = v;
+  }, { nullable: true });
+  if (person.father) {
+    makeField(card, "아버지 단", person.father.row, (v) => { person.father.row = v; }, { number: true, nullable: true });
+    makeField(card, "아버지 열", person.father.column, (v) => { person.father.column = v; }, { number: true, nullable: true });
+    makeField(card, "아버지 참조", person.father.page_ref ? person.father.page_ref.raw : null, (v) => {
+      if (!v) { person.father.page_ref = null; return; }
+      if (!person.father.page_ref) person.father.page_ref = { raw: v, direction: "up", target_section: "genealogy", target_page_no: 1 };
+      else person.father.page_ref.raw = v;
+    }, { nullable: true });
+  }
+
   if (!person.page_ref || typeof person.page_ref !== "object") person.page_ref = null;
   makeField(card, "페이지 참조", person.page_ref ? person.page_ref.raw : null, (v) => {
     if (!v) { person.page_ref = null; return; }
