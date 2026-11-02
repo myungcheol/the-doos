@@ -316,9 +316,11 @@ generation_no      integer,                          -- father_id 체인으로 �
   - `inferred`: 바로 위 단의 위치로 추정했다.
   - `reviewed`: 사람이 검수에서 확정했다.
   - `unknown`: 모른다.
-- `generation_no`는 `father_id`를 따라 올라가 계산한다. `relation_to_subject`나 `generation_offset`을 절대 세대수로 쓰지 않는다.
+- `generation_no`는 적재 시 `father_id` 체인을 따라 계산하여 `people.generation_no`에 **저장**한다. 조회할 때는 이 저장된 값을 읽는다. `relation_to_subject`나 `generation_offset`을 절대 세대수로 쓰지 않는다.
+- 계산 방법: 시조(`father_id IS NULL`)를 1세로 두고, 자녀는 아버지 세대 +1. 이 계산은 적재(import) 단계에서 한 번 수행하고 컬럼에 저장한다. 런타임 조회에서는 재귀 쿼리를 돌리지 않는다.
 
 ```sql
+-- 적재 시 사용하는 계산 (런타임 조회 아님)
 WITH RECURSIVE gen AS (
   SELECT id, 1 AS generation_no
   FROM people
@@ -328,12 +330,15 @@ WITH RECURSIVE gen AS (
   FROM people p
   JOIN gen g ON p.father_id = g.id
 )
-SELECT * FROM gen;
+UPDATE people
+SET generation_no = gen.generation_no
+FROM gen
+WHERE people.id = gen.id;
 ```
 
 - `relation_to_subject`는 `people.page_relation` 같은 검수용 컬럼에만 보존한다. 계보 탐색·세대 계산에는 쓰지 않는다.
 - `relations` 테이블은 양자·사위·며느리처럼 `father_id`로 표현할 수 없는 관계에 쓴다. 직계 부자 관계를 `people.father_id`와 `relations`에 중복 저장하지 않는다.
-- 위로 시조까지 올라가는 조회는 `father_id` 재귀 CTE, 아래로 자손을 찾는 조회는 `father_id` 역방향 조회로 한다.
+- 위로 시조까지 올라가는 조회와 아래로 자손을 찾는 조회는 `people.father_id`를 쓴다. `generation_no`는 저장된 값을 읽는다.
 
 ---
 
