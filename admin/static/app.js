@@ -569,6 +569,7 @@ function renderSpousesEditor(container, person) {
       makeSelect(card, "관계", s.relation || "wife", [
         { value: "wife", label: "wife" },
         { value: "husband", label: "husband" },
+        { value: "concubine", label: "concubine" },
         { value: "son_in_law", label: "son_in_law" },
         { value: "daughter_in_law", label: "daughter_in_law" },
         { value: "unknown", label: "unknown" },

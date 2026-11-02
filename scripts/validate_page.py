@@ -135,7 +135,7 @@ def _check_person(person: Any, where: str, errors: list[str]) -> None:
                     errors.append(f"{where}.spouses[{index}]: as_printed이 필요합니다.")
                     continue
                 _check_burial(spouse.get("burial"), f"{where}.spouses[{index}].burial", errors)
-                if spouse.get("relation") not in {None, "wife", "husband", "son_in_law", "daughter_in_law", "unknown"}:
+                if spouse.get("relation") not in {None, "wife", "husband", "concubine", "son_in_law", "daughter_in_law", "unknown"}:
                     errors.append(f"{where}.spouses[{index}]: relation 값이 올바르지 않습니다.")
     children = person.get("children")
     if children is not None and not isinstance(children, list):
@@ -212,6 +212,19 @@ def validate(
                     continue
                 _check_person(subject, where, errors)
                 _check_page_ref(subject.get("page_ref"), where, errors)
+
+    subject_names = {
+        (subject.get("as_printed") or subject.get("raw_name"))
+        for subject in (subjects or [])
+        if isinstance(subject, dict)
+    }
+    subject_names.discard(None)
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict) or not isinstance(entry.get("person"), dict):
+            continue
+        person_name = entry["person"].get("as_printed") or entry["person"].get("raw_name")
+        if person_name and person_name in subject_names:
+            warnings.append(f"entries[{index}]: 기준 인물이 entries에 중복되었습니다: {person_name}")
 
     if page and page.get("page_type") != "genealogy" and entries:
         warnings.append("genealogy가 아닌 페이지에 entries가 있습니다. 보조 필드 사용을 검토하세요.")

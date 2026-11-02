@@ -223,7 +223,7 @@
         "name_hanja": { "type": ["string", "null"] },
         "bonkwan": { "type": ["string", "null"] },
         "father": { "type": ["string", "null"] },
-        "relation": { "enum": ["wife", "husband", "son_in_law", "daughter_in_law", "unknown"] },
+        "relation": { "enum": ["wife", "husband", "concubine", "son_in_law", "daughter_in_law", "unknown"] },
         "burial": { "$ref": "#/$defs/burial" },
         "certainty": { "$ref": "#/$defs/certainty" }
       }
