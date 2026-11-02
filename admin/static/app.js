@@ -570,8 +570,6 @@ function renderSpousesEditor(container, person) {
         { value: "wife", label: "wife" },
         { value: "husband", label: "husband" },
         { value: "concubine", label: "concubine" },
-        { value: "son_in_law", label: "son_in_law" },
-        { value: "daughter_in_law", label: "daughter_in_law" },
         { value: "unknown", label: "unknown" },
       ], (v) => { s.relation = v; });
       if (!s.burial || typeof s.burial !== "object") s.burial = { raw: null };

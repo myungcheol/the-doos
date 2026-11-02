@@ -135,7 +135,7 @@ def _check_person(person: Any, where: str, errors: list[str]) -> None:
                     errors.append(f"{where}.spouses[{index}]: as_printed이 필요합니다.")
                     continue
                 _check_burial(spouse.get("burial"), f"{where}.spouses[{index}].burial", errors)
-                if spouse.get("relation") not in {None, "wife", "husband", "concubine", "son_in_law", "daughter_in_law", "unknown"}:
+                if spouse.get("relation") not in {None, "wife", "husband", "concubine", "unknown"}:
                     errors.append(f"{where}.spouses[{index}]: relation 값이 올바르지 않습니다.")
     children = person.get("children")
     if children is not None and not isinstance(children, list):

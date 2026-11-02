@@ -131,7 +131,7 @@
 4. **단(段) = 세대**: 페이지를 가로로 나눈 줄이 단이다. **원칙적으로 같은 단 = 같은 세대**이고, 한 단 안에서는 **오른쪽→왼쪽**(아들 형제는 장남→차남)으로 읽는다. 딸(`女`) 항목의 위치는 페이지마다 다를 수 있으므로 `女` 표시로 구분한다. **원칙적으로 바로 아래 단은 다음 세대**다. 한 줄을 “한 사람의 자녀 목록”으로 읽지 않는다. 아래 단을 손자로 건너뛰지도 않는다. 다만 딸의 자손(외손)이 작은 글씨로 딸 항목 아래에 붙는 경우, **인쇄된 단과 실제 세대가 다를 수 있으므로** 단 경계만으로 세대를 단정하지 않는다.
 5. **`上###`·`下###`는 페이지 참조**: `上###`은 “본편 ###면에 부모(조상)의 기록이 있다”, `下###`은 “본편 ###면에 자손의 기록이 이어진다”는 뜻이다. `見上十三`처럼 `見上`이 붙거나 숫자가 한자일 수 있다. 스캔에서 `T###`·`F###`로 보이는 것은 `下###`의 오독이다. 이름·숫자·직함으로 해석하지 않는다.
 6. **`子`·`女`·`配`·`系`**: `子`는 아들, `女`는 딸(뒤에 사위 이름이 올 수 있음), `配`는 배우자, `系`는 양자다.
-7. **`女` 뒤에 성씨가 붙은 남성 이름이 오면 사위로 읽는다**: `女` 뒤 이름이 남성 이름이면 그 이름은 딸의 이름이 아니라 사위(남편)다. 이 경우 딸의 이름이 따로 인쇄되지 않았으면 `person.name_hanja`는 `null`로 두고, 사위는 `person.spouses[]`에 `relation: "son_in_law"`로 넣는다. `女` 뒤에 여성 이름만 오면 딸의 이름으로 둔다. 확실하지 않으면 `needs_human=true`.
+7. **`女` 뒤에 성씨가 붙은 남성 이름이 오면 사위로 읽는다**: `女` 뒤 이름이 남성 이름이면 그 이름은 딸의 이름이 아니라 사위(남편)다. 이 경우 딸의 이름이 따로 인쇄되지 않았으면 `person.name_hanja`는 `null`로 두고, 사위는 `person.spouses[]`에 넣는다. spouse의 `relation`은 해당 인물과 배우자의 관계이므로 **`husband`**로 둔다. `son_in_law`는 `entries[].relation_to_subject`에서 기준 인물과의 관계를 나타낼 때만 쓴다. `女` 뒤에 여성 이름만 오면 딸의 이름으로 둔다. 확실하지 않으면 `needs_human=true`.
 8. **혼동하기 쉬운 글자**: `子`와 `字`, `女`와 `汝`, `配`와 `妃`, `墓`와 `基`, `上`/`下`와 `T`/`F`, `杜`와 `社`, `慶`과 `廣`, `寧`과 `靈`, `喆`과 `哲`, `鎭`과 `鎮`을 구분한다.
 9. **생몰**: `生`/`卒` 뒤의 간지 원문을 유지한다. 명시적 서기 연도가 없으면 임의로 환산하지 않는다.
 10. **관계 단정 금지**: `配`, `子`, `女`, `上`, `下` 등 명시적 표기가 있을 때만 관계를 단정한다. 단 위치만으로 부모를 특정하지 않는다. 위 단에 한 명뿐이면 그 사람의 자녀로 볼 수 있지만, 여러 명이면 `descendant`로 두고 `needs_human=true`. 표기가 없으면 `unknown`.
@@ -235,7 +235,7 @@ image_height: {height}
 - `offices`: 관직/칭호 배열. 원문 유지.
 - `spouses[]`: 배우자.
   - `as_printed`, `name_hanja`, `bonkwan`, `father`, `relation`, `burial`, `certainty`.
-  - `relation`: `wife`, `husband`, `son_in_law`, `daughter_in_law`, `unknown`.
+  - `relation`: `wife`, `husband`, `concubine`, `unknown`. (`son_in_law`/`daughter_in_law`는 `entries[].relation_to_subject`에서만 쓴다.)
   - `burial`: `person.burial`과 같은 구조.
 - `children[]`: 그 인물 항목 안에 자녀 이름이 함께 인쇄된 경우에만 채운다. 페이지의 단으로 표현된 자녀는 `entries[]`에 두고 여기에 중복해서 넣지 않는다. `as_printed`, `name_hanja`, `prefix`, `relation`, `page_ref`.
 - `page_ref`: 그 인물의 **조상(上) 또는 자손(下)** 기록 페이지. 아래 `page_ref` 정의를 따른다. 참조가 없으면 `null`.
@@ -277,7 +277,7 @@ image_height: {height}
 
 1. `女` 항목의 `relation_to_subject`는 기준 인물과의 관계로 정한다. 기준 인물과 같은 세대면 `sister`/`sibling`, 한 세대 아래면 `daughter`, 그 아래면 `descendant`다.
 2. `person.name_hanja`는 **딸의 이름이 인쇄되어 있으면** 그 값을 넣고, 사위 이름만 인쇄되었거나 확실하지 않으면 `null`로 둔다.
-3. `女` 뒤에 성씨가 붙은 남성 이름이 오면 `person.spouses[]`에 `son_in_law`로 넣는다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "son_in_law"`, `spouse.bonkwan = "晋州"`. 딸 이름이 따로 있으면 `person.name_hanja`에 딸 이름을 넣는다.
+3. `女` 뒤에 성씨가 붙은 남성 이름이 오면 `person.spouses[]`에 넣는다. spouse의 `relation`은 **`husband`**로 둔다. 예: `spouse.as_printed = "崔欽祖"`, `spouse.relation = "husband"`, `spouse.bonkwan = "晋州"`. 딸 이름이 따로 있으면 `person.name_hanja`에 딸 이름을 넣는다. `son_in_law`는 `entries[].relation_to_subject`에서 기준 인물과의 관계를 나타낼 때만 쓴다.
 4. 딸의 이름과 사위의 이름이 모두 있는지, 사위만 있는지 확실하지 않으면 `needs_human=true`.
 5. `女` 항목을 아들의 배우자로 해석하지 않는다.
 6. `女` 뒤 이름이 여성 이름으로 보이면 딸의 이름일 수 있다. 이때도 사위 이름과 분리하고 `needs_human=true`로 둔다.
