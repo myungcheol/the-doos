@@ -290,6 +290,10 @@
               "description": "아버지 관계. 양자로 표시된 경우 adoptive_father.",
               "enum": ["father", "adoptive_father", "unknown"]
             },
+            "source": {
+              "description": "아버지 연결의 근거. printed=上### 등 인쇄된 참조, inferred=단 위치로 추정, reviewed=사람이 검수에서 확정, unknown=모름. DB의 people.father_source로 들어간다.",
+              "enum": ["printed", "inferred", "reviewed", "unknown"]
+            },
             "confidence": { "$ref": "#/$defs/confidence" },
             "needs_human": { "type": "boolean" }
           }

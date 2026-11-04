@@ -284,7 +284,7 @@ CREATE TABLE generation_chars (
 
 ### 4.7 인물/관계 테이블
 
-`people`, `person_names`, `person_events`, `burials`, `relations`, `marriages`는 별도 스키마 문서에서 다룬다. 페이지와의 연결은 다음 필드로 한다.
+DDL은 [`db/schema.sql`](../db/schema.sql)이 정본이다. 아래는 그 DDL과 `scripts/import_db.py`가 따르는 규칙을 요약한다. 페이지와의 연결은 다음 필드로 한다.
 
 - `people.source_page_id` → `pages.id`
 - `people.row_no` = 단(段) 번호, `people.column_no` = 단 안 오른쪽부터의 순서, `people.bbox`
@@ -316,10 +316,30 @@ generation_no      integer,                          -- father_id 체인으로 �
   - `inferred`: 바로 위 단의 위치로 추정했다.
   - `reviewed`: 사람이 검수에서 확정했다.
   - `unknown`: 모른다.
+- AI 출력의 `father.source`가 있으면 그 값을 `father_source`로 쓴다. 없으면 `page_ref`는 `printed`, 같은 페이지 `row`/`column`은 `inferred`로 둔다.
 - `generation_no`는 **페이지에 명시적으로 인쇄된 `世` 표기가 있을 때만** AI 출력에서 가져온다(`docs/02` §4). 검수 시 스캔을 보고 보완할 수 있다. `father_id` 체인으로 세대를 계산하지 않는다.
 - `relation_to_subject`는 `people.page_relation` 같은 검수용 컬럼에만 보존한다. 계보 탐색에는 쓰지 않는다.
 - `relations` 테이블은 양자·사위·며느리처럼 `father_id`로 표현할 수 없는 관계에 쓴다. 직계 부자 관계를 `people.father_id`와 `relations`에 중복 저장하지 않는다.
 - 위로 시조까지 올라가는 조회와 아래로 자손을 찾는 조회는 `people.father_id`를 쓴다. 세대 표시는 저장된 `generation_no`를 읽는다.
+
+#### 실제 테이블
+
+DDL은 [`db/schema.sql`](../db/schema.sql)에 있다.
+
+| 테이블 | 역할 | 핵심 컬럼 |
+|---|---|---|
+| `people` | 한 페이지의 한 인물 | `source_page_id`, `row_no`, `column_no`, `as_printed`, `generation_no`, `page_relation`, `father_id`, `father_source`, `needs_human`, `raw` |
+| `person_names` | 이름·자·호 | `kind`(`hanja`/`hangul`/`ja`/`ho`/`other`), `value` |
+| `person_events` | 생몰 | `event_type`(`birth`/`death`), `date_raw`, `king_era`, `ganji`, `date_text` |
+| `marriages` | 배우자 | `person_id`, `ordinal`, `spouse_as_printed`, `relation`(`wife`/`husband`/`concubine`/`unknown`), `birth`, `death`, `raw` |
+| `burials` | 묘소 | `person_id` 또는 `marriage_id`, `burial_raw`, `location`, `orientation` |
+| `page_refs` | `上###`/`下###` | `source_person_id`, `raw_ref`, `direction`, `target_section_id`, `target_page_no`, `target_page_id` |
+| `relations` | `children[]` 등 `father_id`로 표현할 수 없는 관계 | `from_person_id`, `to_person_id`, `to_as_printed`, `relation_type` |
+
+- `people.raw`, `marriages.raw` 등 `raw` 컬럼은 AI/검수 JSON 원문을 그대로 보존한다. 공개 앱은 `raw`를 직접 노출하지 않는다.
+- `burials`는 인물 묘소와 배우자 묘소를 모두 담는다. 둘 중 하나만 FK가 채워진다.
+- `page_refs.target_page_id`는 모든 페이지를 넣은 뒤 `(target_section_id, target_page_no)`로 채운다. 대상 면이 미수록이면 `NULL`로 남는다.
+- `approved_pages`/`approved_people` 뷰는 승인 페이지만 거르는 **내부용** 뷰다. masking 뷰가 아니다.
 
 ---
 
@@ -350,6 +370,13 @@ generation_no      integer,                          -- father_id 체인으로 �
 6. **OCR/파싱**: 본편부터 `people`/`page_refs`를 만든다. 전편은 서문/사진/색인/항렬표를 별도 처리한다.
 7. **검증**: 모든 `page_refs.target_page_id`가 존재하는지, `(section, printed_page_no)` 중복이 없는지 확인한다.
 8. **검수/발행**: `review_status`가 `approved`인 데이터만 공개한다. 검수 시 `generation_no`가 비어 있는 인물은 스캔의 `世` 표기를 보고 채운다.
+9. **DB 적재**: `db/schema.sql`로 스키마를 만들고, `scripts/import_db.py`로 `data/exports/approved.jsonl`을 PostgreSQL에 넣는다. `generation_no`는 인쇄된 `世` 값을 그대로 쓰고, `father_id`는 모든 페이지를 넣은 뒤 `person.father`로 해석한다. 재실행하면 승인 페이지의 파생 행을 지우고 다시 넣는다.
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+python3 scripts/import_db.py --include-schema --sql /tmp/doos.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
+```
 
 > 이 절은 **설계상 적재 순서**다. 실제 진행 상황은 루트 [`STATUS.md`](../STATUS.md)에만 기록한다.
 

@@ -211,6 +211,13 @@ def _check_father(value: Any, where: str, errors: list[str], warnings: list[str]
         errors.append(f"{where}: row와 column은 함께 채우거나 함께 비워야 합니다.")
     if value.get("relation") is not None and value.get("relation") not in FATHER_RELATIONS:
         errors.append(f"{where}.relation: father/adoptive_father/unknown이어야 합니다.")
+    if value.get("source") is not None and value.get("source") not in {
+        "printed",
+        "inferred",
+        "reviewed",
+        "unknown",
+    }:
+        errors.append(f"{where}.source: printed/inferred/reviewed/unknown이어야 합니다.")
     _check_page_ref(value.get("page_ref"), where, errors, warnings)
     _check_confidence(value.get("confidence"), where, errors)
     if "needs_human" in value and not isinstance(value.get("needs_human"), bool):
@@ -301,11 +308,11 @@ def _check_father_link(
     where: str,
     errors: list[str],
     warnings: list[str],
+    relation: Any = None,
 ) -> None:
     if not isinstance(person, dict):
         return
     father = person.get("father")
-    relation = person.get("relation_to_subject")
     if father is None:
         if relation in {"son", "daughter"}:
             warnings.append(f"{where}: 아버지 연결(father)이 없습니다.")
@@ -551,6 +558,7 @@ def validate(
                 f"entries[{index}].person",
                 errors,
                 warnings,
+                entry.get("relation_to_subject"),
             )
     for index, subject in enumerate(subjects):
         if isinstance(subject, dict):
@@ -562,6 +570,7 @@ def validate(
                 f"subjects[{index}]",
                 errors,
                 warnings,
+                subject.get("relation_to_subject"),
             )
 
     subject_names = {

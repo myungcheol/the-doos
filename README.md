@@ -75,8 +75,9 @@ scan/*.jpg
 | ⑥ | 자동 검증 | 파싱 JSON | 필수 필드, `(row, column)` 중복, `page_ref`, 날짜·묘소 구조 검사 | 오류/경고 목록, `needs_human` 표시 | `scripts/validate_page.py` |
 | ⑦ | 사람 검수 | 이미지 + JSON | 이미지와 파싱 결과를 나란히 보고 수정·승인 | `data/review/status.json` | `admin/server.py` |
 | ⑧ | 내보내기 | `approved` 페이지 | 승인된 페이지만 JSONL로 묶어 DB 적재·공개 | `data/exports/approved.jsonl` → PostgreSQL → 웹앱 | `scripts/export_approved.py` |
+| ⑨ | DB 적재 | `data/exports/approved.jsonl` | DDL 적용 후 페이지·인물·관계·참조를 PostgreSQL에 넣음 | PostgreSQL | `db/schema.sql`, `scripts/import_db.py` |
 
-> ⑤~⑧은 아직 실제 데이터로 완주하지 않았다. 현재 상태는 [STATUS.md](STATUS.md)를 본다.
+> ⑤~⑨은 아직 실제 데이터로 완주하지 않았다. 현재 상태는 [STATUS.md](STATUS.md)를 본다.
 
 ---
 
@@ -105,6 +106,9 @@ the-doos/
 ├─ schema/
 │  └─ page.schema.json        # AI 출력 JSON Schema
 │
+├─ db/
+│  └─ schema.sql              # PostgreSQL DDL
+│
 ├─ scripts/
 │  ├─ build_manifest.py       # scan/ → pages.csv
 │  ├─ link_pages.py           # scan/ → data/pages symlink
@@ -114,6 +118,7 @@ the-doos/
 │  ├─ run_pipeline.py         # 범위/유형/개수 지정 배치
 │  ├─ validate_page.py        # 파싱 JSON 검증
 │  ├─ export_approved.py      # 승인분 → data/exports/approved.jsonl
+│  ├─ import_db.py            # approved.jsonl → PostgreSQL SQL/적재
 │  ├─ sync_status.py          # STATUS.md → README 진행 상황 삽입
 │  └─ common.py               # manifest·경로 공통 함수
 │
@@ -181,7 +186,15 @@ python3 scripts/parse_page.py --section genealogy --page 25
 python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genealogy --page 25
 ```
 
-배치·OCR·검수 단축키·문제 해결은 [04. 작업 흐름](docs/04-workflow.ko.md)에 있다.
+승인분을 PostgreSQL에 넣으려면:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+python3 scripts/import_db.py --include-schema --sql /tmp/doos.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
+```
+
+배치·OCR·검수 단축키·DB 적재·문제 해결은 [04. 작업 흐름](docs/04-workflow.ko.md)에 있다.
 
 ---
 
@@ -190,7 +203,7 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 <!-- STATUS:BEGIN -->
 > 이 표는 `STATUS.md`에서 자동 생성됩니다. 직접 수정하지 마세요.
 >
-> 마지막 갱신: **2026-11-02**, 기능 기준 커밋 `284c35e`.
+> 마지막 갱신: **2026-11-04**, 기능 기준 커밋 `c76a497`.
 
 | 영역 | 상태 | 근거 |
 |---|---|---|
@@ -202,7 +215,8 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 | 검수 도구 | 초안 완료 / 25면 검수 대기 | `admin/server.py`, `admin/static/` |
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 진행 중 / 25면 1차 결과 | `data/parsed/genealogy/0025.json` (로컬) |
-| DB 적재·공개 앱 | 대기 | DDL/import 스크립트 없음 |
+| DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `scripts/import_db.py` |
+| 공개 앱 | 대기 | 승인 데이터·masking 정책 필요 |
 <!-- STATUS:END -->
 
 자세한 완료/진행/다음/블로커와 갱신 규칙은 **[STATUS.md](STATUS.md)** 에 있다. 위 표는 `STATUS.md`에서 `python3 scripts/sync_status.py`로 생성한다.

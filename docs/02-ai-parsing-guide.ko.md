@@ -71,7 +71,8 @@
           "row": 1,
           "column": 1,
           "page_ref": null,
-          "relation": "father"
+          "relation": "father",
+          "source": "inferred"
         },
         "page_ref": null,
         "birth": {
@@ -277,6 +278,7 @@ image_height: {height}
   - `row`, `column`: 아버지가 **같은 페이지**에 있으면 그 인물의 단/열. 없으면 둘 다 `null`.
   - `page_ref`: 아버지가 **다른 페이지**에 있으면 `上###` 참조. 없으면 `null`.
   - `relation`: `father` | `adoptive_father` | `unknown`. `系`로 양자임이 표시되면 `adoptive_father`.
+  - `source`: `printed` | `inferred` | `reviewed` | `unknown`. `上###`처럼 인쇄된 참조면 `printed`, 같은 페이지 `row`/`column`으로 위치를 추정했으면 `inferred`, 검수에서 사람이 확정했으면 `reviewed`.
   - `confidence`, `needs_human`.
   - **`relation_to_subject`나 `generation_offset`으로 아버지를 대신하지 않는다.**
 - `spouses[]`: 배우자.

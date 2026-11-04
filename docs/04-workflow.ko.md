@@ -18,7 +18,8 @@
 | 4 | 이미지와 JSON 대조 검수 (§5) | **사람** | `data/review/status.json` (로컬) |
 | 5 | 잘못된 판독 규칙 수정 | **사람** | `docs/01`, `docs/02` (커밋) |
 | 6 | 승인분 export (§5) | 스크립트 | `data/exports/approved.jsonl` (커밋) |
-| 7 | 진행 상황 갱신 | **사람** | `STATUS.md` → README 자동 반영 |
+| 7 | PostgreSQL 적재 (§6) | 스크립트 | DB |
+| 8 | 진행 상황 갱신 | **사람** | `STATUS.md` → README 자동 반영 |
 
 **검수 루프**는 이렇게 돈다.
 
@@ -248,7 +249,59 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 
 ---
 
-## 6. 검수 상태
+## 6. DB 적재
+
+승인분이 `data/exports/approved.jsonl`에 고정된 뒤에 실행한다. `data/parsed/`와 `data/review/status.json`은 DB에 직접 넣지 않는다.
+
+```bash
+# 1) 스키마 생성
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+
+# 2) 승인분 → SQL 생성 (data/exports/import.sql)
+python3 scripts/import_db.py
+
+# 3) 적용
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f data/exports/import.sql
+```
+
+스키마까지 한 번에 적용하려면:
+
+```bash
+python3 scripts/import_db.py --include-schema --sql /tmp/doos.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
+```
+
+`psql`이 PATH에 있으면 바로 적용할 수도 있다.
+
+```bash
+python3 scripts/import_db.py --dsn "$DATABASE_URL" --include-schema
+```
+
+적재 계획만 확인하려면:
+
+```bash
+python3 scripts/import_db.py --dry-run
+```
+
+적재 후 확인:
+
+```sql
+SELECT count(*) FROM pages;
+SELECT count(*) FROM people;
+SELECT count(*) FROM people WHERE father_id IS NULL AND father_raw IS NOT NULL; -- 미해결 아버지
+SELECT count(*) FROM page_refs WHERE target_page_id IS NULL;                    -- 미해결 페이지 참조
+```
+
+- `generation_no`는 스캔에 인쇄된 `世` 값을 그대로 넣는다. `father_id` 체인으로 계산하지 않는다.
+- `father_id`는 모든 페이지를 넣은 뒤 `person.father`의 `row`/`column` 또는 `page_ref`로 해석한다.
+- 재실행하면 승인 페이지의 인물·관계·참조 행을 지우고 다시 넣는다. 같은 입력이면 결과가 같다.
+- 승인 목록에서 빠진 페이지의 인물·관계·참조 행도 삭제된다. DB는 `approved.jsonl`의 스냅샷이다. 페이지 행은 `pending`으로 남는다.
+- 대상 면이 미수록이면 `page_refs.target_page_id`가 `NULL`로 남는다. 오류가 아니다.
+- `import.sql`은 생성물이므로 git에 올리지 않는다.
+
+---
+
+## 7. 검수 상태
 
 | 상태 | 의미 |
 |---|---|
@@ -261,7 +314,7 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 
 ---
 
-## 7. 문제가 생기면
+## 8. 문제가 생기면
 
 - **이미지가 안 보임**: `python3 scripts/link_pages.py`를 실행했는지 확인한다. 서버는 `data/pages`가 없으면 `scan/` 원본으로 fallback한다.
 - **`PAGE_AI_MODEL` 오류**: 모델 ID가 제공자에서 이미지 입력을 지원하는지 확인한다.
@@ -270,7 +323,7 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 
 ---
 
-## 8. 무엇을 어디에 기록하나
+## 9. 무엇을 어디에 기록하나
 
 | 기록 | 어디에 | 커밋? | 언제 |
 |---|---|---|---|
@@ -279,6 +332,7 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 | 판독 규칙 수정 | `docs/01`, `docs/02` | 예 | 규칙 오류를 발견했을 때 |
 | 단계 진행 상황 | `STATUS.md` | 예 | 파일럿·검수·DB 단계가 끝났을 때 |
 | 승인 데이터 | `data/exports/approved.jsonl` | 예 | 승인분을 export할 때 |
+| DB 적재 | PostgreSQL | 아니오 | approved export 후 `import_db.py` |
 
 - `README.md`의 진행 상황 블록은 직접 고치지 않는다. `STATUS.md`를 고친 뒤 `python3 scripts/sync_status.py`를 실행한다.
 - `STATUS.md`는 **페이지마다 고치지 않는다.** 파일럿·검수·DB 적재 같은 단계가 끝났을 때만 갱신한다. 페이지별 상태는 검수 UI가 `data/review/status.json`에 쓴다.

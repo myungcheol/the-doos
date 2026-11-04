@@ -11,6 +11,7 @@ python3 scripts/export_approved.py --check
 - 출력: `data/exports/approved.jsonl` (한 줄에 한 페이지)
 - 정렬: `section`, `printed_page_no`
 - 직접 수정하지 않는다. 승인 상태가 바뀌면 스크립트를 다시 실행한다.
+- PostgreSQL 적재는 `python3 scripts/import_db.py`가 만든 SQL로 한다. `import.sql`은 생성물이라 git에 올리지 않는다.
 
 ## 레코드 형식
 
