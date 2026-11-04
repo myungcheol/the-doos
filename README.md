@@ -209,7 +209,14 @@ docker compose --profile tools run --rm import
 docker compose --profile tools run --rm verify
 ```
 
-`import`는 `data/exports/approved.jsonl`을 읽는다. 검수 도구까지 컨테이너로 띄우려면 `docker compose --profile tools up admin` (http://127.0.0.1:8765).
+공개 웹앱까지 띄우려면:
+
+```bash
+docker compose --profile tools up public
+# http://127.0.0.1:8080
+```
+
+`import`는 `data/exports/approved.jsonl`을 읽는다. 검수 도구까지 컨테이너로 띄우려면 `docker compose --profile tools up admin` (http://127.0.0.1:8765). 공개 웹앱은 `public/` (`public/server.py`, `public/static/`)가 담당한다.
 
 배치·OCR·검수 단축키·DB 적재·문제 해결은 [04. 작업 흐름](docs/04-workflow.ko.md)에 있다.
 
@@ -233,7 +240,7 @@ docker compose --profile tools run --rm verify
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 진행 중 / 25면 1차 결과 | `data/parsed/genealogy/0025.json` (로컬) |
 | DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `db/verify.sql`, `scripts/import_db.py` |
-| 공개 앱 | 대기 | `public_*` 뷰 준비됨. 승인 데이터만 있으면 시작 |
+| 공개 앱 | 진행 중 | `public/server.py`, `public/static/`, `public_*` 뷰. fixture로 API·이미지·확대·축소 검증 완료 |
 <!-- STATUS:END -->
 
 자세한 완료/진행/다음/블로커와 갱신 규칙은 **[STATUS.md](STATUS.md)** 에 있다. 위 표는 `STATUS.md`에서 `python3 scripts/sync_status.py`로 생성한다.

@@ -18,7 +18,7 @@
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 진행 중 / 25면 1차 결과 | `data/parsed/genealogy/0025.json` (로컬) |
 | DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `db/verify.sql`, `scripts/import_db.py` |
-| 공개 앱 | 대기 | `public_*` 뷰 준비됨. 승인 데이터만 있으면 시작 |
+| 공개 앱 | 진행 중 | `public/server.py`, `public/static/`, `public_*` 뷰. fixture로 API·이미지·확대·축소 검증 완료 |
 
 ---
 
@@ -41,6 +41,7 @@
 - 2026-11-02: 인물별 아버지 연결(`person.father`) 추가. 계보의 정본은 `people.father_id`로 하고, `relation_to_subject`는 페이지 안 참고값으로 재정의. `grandson`은 father 연결로 확실할 때만 사용. 검증기와 관리자 구조 탭에 father 편집을 추가.
 - 2026-10-31: OmniRoute combo 대응. `PAGE_AI_MAX_TOKENS`·`PAGE_AI_EXTRA_HEADERS` 추가, 실제 응답 모델과 라우팅 헤더를 `*.meta.json`에 기록.
 - 2026-11-04: 공개 정책 확정. 승인분은 그대로 공개(1986년 간행본과 같은 범위)하고, `public_*` 뷰에서 `raw`·`confidence`·`needs_human`·검수 플래그만 뺀다. 공개 식별자는 bigserial `id` 대신 `(section_code, printed_page_no, row_no, column_no)`. `db/verify.sql` 추가, `export_approved.py`는 검수 메모(`review.note`)를 내보내지 않는다.
+- 2026-11-04: 공개 웹앱(`public/server.py`, `public/static/`) 추가. 승인 데이터 전용 API(`/api/pages`, `/api/pages/{sec}/{no}`, `/images/...`)와 확대/축소·목록 UI. fixture로 검증했다.
 - 2026-11-04: PostgreSQL DDL(`db/schema.sql`)과 `approved.jsonl` import(`scripts/import_db.py`) 추가. 페이지·인물·배우자·묘소·`page_refs`·`relations`를 적재하고, 모든 페이지를 넣은 뒤 `person.father`로 `father_id`를 해석한다. `generation_no`는 인쇄된 `世` 값만 쓰고, 재실행하면 승인 페이지의 파생 행을 교체한다. PostgreSQL 16에서 3면 fixture와 199면 합성 데이터로 적재·재적재·father 해석을 검증했다.
 - 2026-10-31: 루트 `.env` 파일 자동 로드 지원. `.env.example` 제공, `.env`는 git 제외.
 

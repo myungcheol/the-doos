@@ -78,5 +78,16 @@ services:
       - "${ADMIN_PORT:-8765}:8765"
     command: ["python3", "admin/server.py", "--host", "0.0.0.0", "--port", "8765"]
 
+  public:
+    <<: *tools
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PUBLIC_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-doos}:${POSTGRES_PASSWORD:-doos}@db:5432/${POSTGRES_DB:-doos}
+    command: ["python3", "public/server.py", "--host", "0.0.0.0", "--port", "8080"]
+
 volumes:
   db-data:

@@ -264,6 +264,12 @@ docker compose --profile tools run --rm import
 docker compose --profile tools run --rm verify
 ```
 
+공개 웹앱까지 띄우려면:
+
+```bash
+docker compose --profile tools up public
+```
+
 스키마를 바꿨을 때는 `docker compose down -v`로 볼륨을 비운 뒤 다시 띄운다. 값은 `.env`의 `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_PORT`로 바꾼다.
 
 직접 적재하려면:

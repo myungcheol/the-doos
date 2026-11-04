@@ -48,6 +48,7 @@ docker compose up -d db   # PostgreSQL 16, 포트 5432
 | `docker compose --profile tools run --rm import --input data/parsed/genealogy/0025.json` | 다른 파일로 연습 적재 |
 | `docker compose --profile tools run --rm verify` | `db/verify.sql` 실행 |
 | `docker compose --profile tools up admin` | 검수 도구 http://127.0.0.1:8765 |
+| `docker compose --profile tools up public` | 공개 웹앱 http://127.0.0.1:8080 |
 | `docker compose down` | 컨테이너만 정지 (데이터 유지) |
 | `docker compose down -v` | 데이터까지 삭제. 스키마를 바꿨을 때 사용 |
 
