@@ -269,9 +269,6 @@ def run() -> ThreadingHTTPServer:
                 return
             self.send_error_json(404, "not found")
 
-        def do_HEAD(self) -> None:
-            self.do_GET()
-
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"public: http://{args.host}:{args.port}", file=sys.stderr)
     print(f"public: db {build_dsn()}", file=sys.stderr)
