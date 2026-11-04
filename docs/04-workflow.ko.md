@@ -255,6 +255,18 @@ curl -o approved.jsonl 'http://127.0.0.1:8765/api/export?status=approved'
 
 승인분이 `data/exports/approved.jsonl`에 고정된 뒤에 실행한다. `data/parsed/`와 `data/review/status.json`은 DB에 직접 넣지 않는다.
 
+호스트에 PostgreSQL이 없으면 Docker로 띄운다.
+
+```bash
+cp .env.example .env
+docker compose up -d db
+docker compose --profile tools run --rm import
+docker compose --profile tools run --rm verify
+```
+
+스키마를 바꿨을 때는 `docker compose down -v`로 볼륨을 비운 뒤 다시 띄운다. 값은 `.env`의 `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_PORT`로 바꾼다.
+
+직접 적재하려면:
 ```bash
 # 1) 스키마 생성
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql

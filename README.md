@@ -107,7 +107,12 @@ the-doos/
 │  └─ page.schema.json        # AI 출력 JSON Schema
 │
 ├─ db/
-│  └─ schema.sql              # PostgreSQL DDL
+│  ├─ schema.sql              # PostgreSQL DDL + 공개 뷰
+│  └─ verify.sql              # 적재 후 점검 쿼리
+│
+├─ docker/
+│  └─ tools.Dockerfile        # python3 + psql 테스트 이미지
+├─ docker-compose.yaml        # 테스트용 PostgreSQL·적재·검증·검수 도구
 │
 ├─ scripts/
 │  ├─ build_manifest.py       # scan/ → pages.csv
@@ -194,6 +199,17 @@ python3 scripts/import_db.py --include-schema --sql /tmp/doos.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
 psql "$DATABASE_URL" -X -f db/verify.sql
 ```
+
+호스트에 PostgreSQL이 없으면 Docker로 띄운다.
+
+```bash
+cp .env.example .env          # 처음 한 번. POSTGRES_* 값을 바꿔도 된다
+docker compose up -d db
+docker compose --profile tools run --rm import
+docker compose --profile tools run --rm verify
+```
+
+`import`는 `data/exports/approved.jsonl`을 읽는다. 검수 도구까지 컨테이너로 띄우려면 `docker compose --profile tools up admin` (http://127.0.0.1:8765).
 
 배치·OCR·검수 단축키·DB 적재·문제 해결은 [04. 작업 흐름](docs/04-workflow.ko.md)에 있다.
 

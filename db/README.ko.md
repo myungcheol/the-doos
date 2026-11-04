@@ -32,6 +32,32 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
 python3 scripts/import_db.py --dsn "$DATABASE_URL" --include-schema
 ```
 
+## Docker로 테스트
+
+호스트에 PostgreSQL·psql이 없어도 된다. `docker-compose.yaml`이 DB와 도구 이미지를 정의한다.
+
+```bash
+cp .env.example .env      # 처음 한 번
+docker compose up -d db   # PostgreSQL 16, 포트 5432
+```
+
+| 명령 | 하는 일 |
+|---|---|
+| `docker compose up -d db` | DB만 띄운다. 처음 뜰 때 `db/schema.sql`을 자동 적용 |
+| `docker compose --profile tools run --rm import` | `data/exports/approved.jsonl` 적재 |
+| `docker compose --profile tools run --rm import --input data/parsed/genealogy/0025.json` | 다른 파일로 연습 적재 |
+| `docker compose --profile tools run --rm verify` | `db/verify.sql` 실행 |
+| `docker compose --profile tools up admin` | 검수 도구 http://127.0.0.1:8765 |
+| `docker compose down` | 컨테이너만 정지 (데이터 유지) |
+| `docker compose down -v` | 데이터까지 삭제. 스키마를 바꿨을 때 사용 |
+
+- 값은 `.env` 또는 셸 환경변수에서 온다: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `ADMIN_PORT`, `LOCAL_UID`, `LOCAL_GID`.
+- 기본값(`doos`/`doos`/`doos`)은 로컬 테스트 전용이다.
+- 5432가 이미 쓰이면 `.env`에 `POSTGRES_PORT=5433`처럼 바꾼다.
+- 도구 컨테이너는 `LOCAL_UID`/`LOCAL_GID`(기본 `1000:1000`)로 실행된다. 그래야 `data/review/status.json` 같은 파일이 root 소유가 되지 않는다. 호스트 uid가 다르면 `id -u`, `id -g` 값으로 바꾼다.
+- `import`·`verify`·`admin`은 `docker/tools.Dockerfile`(python3 + psql) 이미지를 쓴다. 저장소를 `/app`에 바인드 마운트하므로 `scan/`, `data/pages` 심볼릭 링크, `.env`가 그대로 보인다.
+- `db/schema.sql`은 **볼륨이 비어 있을 때만** 자동 적용된다. 스키마를 고친 뒤에는 `docker compose down -v`로 초기화하거나 `import`가 `--include-schema`로 다시 적용하게 둔다.
+
 ## 확인 쿼리
 
 ```bash
