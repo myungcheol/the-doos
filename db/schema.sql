@@ -308,8 +308,7 @@ CREATE TABLE IF NOT EXISTS import_runs (
   warnings    jsonb NOT NULL DEFAULT '[]'
 );
 
--- 승인된 페이지만 모은 내부 뷰. 아직 masking 뷰가 아니다.
--- 공개 앱에 연결하기 전에 생존자·주소·묘소 좌표 정책을 먼저 확정한다.
+-- 승인된 페이지만 모은 내부 뷰. 공개 앱은 아래 public_* 뷰를 쓴다.
 CREATE OR REPLACE VIEW approved_pages AS
 SELECT p.*
 FROM pages p
@@ -321,8 +320,198 @@ FROM people pe
 JOIN pages p ON p.id = pe.source_page_id
 WHERE p.review_status IN ('approved', 'published');
 
+-- ---------------------------------------------------------------------------
+-- 6. 공개 뷰 (공개 앱의 API 표면)
+-- ---------------------------------------------------------------------------
+--
+-- 정책: 승인분은 **그대로 공개**한다. 생존자·주소·묘소 좌표도 가리지 않는다
+-- (1986년 간행본과 같은 범위). 대신 검수용 내부 값은 공개하지 않는다.
+--   * `raw` JSON, `confidence`, `father_confidence`, `needs_human`
+--   * `ocr_status`, `quality_flags`, `manifest_notes`, `image_sha256`
+--   * bigserial `id` — 재적재마다 인물 행이 새로 들어가므로 id가 바뀐다.
+-- 공개 식별자는 `(section_code, printed_page_no, row_no, column_no)`를 쓴다.
+
+CREATE OR REPLACE VIEW public_pages AS
+SELECT s.code            AS section_code,
+       p.printed_page_no,
+       p.scan_seq,
+       p.page_type,
+       p.image_path,
+       p.width,
+       p.height
+FROM pages p
+JOIN sections s ON s.id = p.section_id
+WHERE p.review_status IN ('approved', 'published');
+
+-- 전체 면 인벤토리. 미수록/미공개 면을 앱에서 표시하기 위한 것으로,
+-- 공개되지 않은 면의 이미지 경로나 본문은 담지 않는다.
+CREATE OR REPLACE VIEW public_page_inventory AS
+SELECT s.code AS section_code,
+       p.printed_page_no,
+       p.scan_seq,
+       p.page_type,
+       (p.review_status IN ('approved', 'published')) AS is_published
+FROM pages p
+JOIN sections s ON s.id = p.section_id;
+
+CREATE OR REPLACE VIEW public_people AS
+SELECT s.code             AS section_code,
+       pg.printed_page_no,
+       pe.row_no,
+       pe.column_no,
+       pe.is_subject,
+       pe.as_printed,
+       pe.name_hanja,
+       pe.name_hangul,
+       pe.prefix,
+       pe.generation_no,
+       pe.generation_char,
+       pe.page_relation,
+       fs.code            AS father_section_code,
+       fp.printed_page_no AS father_page_no,
+       f.row_no           AS father_row_no,
+       f.column_no        AS father_column_no,
+       f.as_printed       AS father_as_printed,
+       pe.father_relation,
+       pe.father_source,
+       pe.notes,
+       pe.offices
+FROM people pe
+JOIN pages pg ON pg.id = pe.source_page_id
+JOIN sections s ON s.id = pg.section_id
+LEFT JOIN people f ON f.id = pe.father_id
+LEFT JOIN pages fp ON fp.id = f.source_page_id
+LEFT JOIN sections fs ON fs.id = fp.section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_person_names AS
+SELECT s.code AS section_code,
+       pg.printed_page_no,
+       pe.row_no,
+       pe.column_no,
+       n.kind,
+       n.value,
+       n.ordinal
+FROM person_names n
+JOIN people pe ON pe.id = n.person_id
+JOIN pages pg ON pg.id = pe.source_page_id
+JOIN sections s ON s.id = pg.section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_person_events AS
+SELECT s.code AS section_code,
+       pg.printed_page_no,
+       pe.row_no,
+       pe.column_no,
+       e.event_type,
+       e.date_raw,
+       e.king_era,
+       e.ganji,
+       e.date_text,
+       e.certainty
+FROM person_events e
+JOIN people pe ON pe.id = e.person_id
+JOIN pages pg ON pg.id = pe.source_page_id
+JOIN sections s ON s.id = pg.section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_marriages AS
+SELECT s.code AS section_code,
+       pg.printed_page_no,
+       pe.row_no,
+       pe.column_no,
+       m.ordinal,
+       m.spouse_as_printed,
+       m.spouse_name_hanja,
+       m.spouse_bonkwan,
+       m.spouse_father,
+       m.relation,
+       m.birth,
+       m.death,
+       m.certainty
+FROM marriages m
+JOIN people pe ON pe.id = m.person_id
+JOIN pages pg ON pg.id = pe.source_page_id
+JOIN sections s ON s.id = pg.section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_burials AS
+SELECT s.code                          AS section_code,
+       pg.printed_page_no,
+       owner.row_no,
+       owner.column_no,
+       m.ordinal                       AS marriage_ordinal,
+       b.burial_raw,
+       b.location,
+       b.orientation,
+       b.note,
+       b.certainty
+FROM burials b
+LEFT JOIN marriages m ON m.id = b.marriage_id
+JOIN people owner ON owner.id = COALESCE(b.person_id, m.person_id)
+JOIN pages pg ON pg.id = owner.source_page_id
+JOIN sections s ON s.id = pg.section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_page_refs AS
+SELECT s.code            AS section_code,
+       pg.printed_page_no,
+       pe.row_no,
+       pe.column_no,
+       r.raw_ref,
+       r.direction,
+       ts.code           AS target_section_code,
+       r.target_page_no
+FROM page_refs r
+JOIN pages pg ON pg.id = r.source_page_id
+JOIN sections s ON s.id = pg.section_id
+LEFT JOIN people pe ON pe.id = r.source_person_id
+JOIN sections ts ON ts.id = r.target_section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_relations AS
+SELECT s.code AS section_code,
+       pg.printed_page_no,
+       fp.row_no         AS from_row_no,
+       fp.column_no      AS from_column_no,
+       tp.row_no         AS to_row_no,
+       tp.column_no      AS to_column_no,
+       r.to_as_printed,
+       r.relation_type
+FROM relations r
+JOIN pages pg ON pg.id = r.source_page_id
+JOIN sections s ON s.id = pg.section_id
+JOIN people fp ON fp.id = r.from_person_id
+LEFT JOIN people tp ON tp.id = r.to_person_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_index_entries AS
+SELECT s.code AS section_code,
+       pg.printed_page_no,
+       i.name_hanja,
+       i.name_hangul,
+       ts.code AS target_section_code,
+       i.target_page_no,
+       i.raw_ref
+FROM index_entries i
+JOIN pages pg ON pg.id = i.page_id
+JOIN sections s ON s.id = pg.section_id
+LEFT JOIN sections ts ON ts.id = i.target_section_id
+WHERE pg.review_status IN ('approved', 'published');
+
+CREATE OR REPLACE VIEW public_page_texts AS
+SELECT s.code AS section_code,
+       pg.printed_page_no,
+       t.kind,
+       t.subkind,
+       t.raw_text
+FROM page_texts t
+JOIN pages pg ON pg.id = t.page_id
+JOIN sections s ON s.id = pg.section_id
+WHERE pg.review_status IN ('approved', 'published');
+
 INSERT INTO schema_migrations (version)
-VALUES ('001_initial')
+VALUES ('002_public_views')
 ON CONFLICT (version) DO NOTHING;
 
 COMMIT;

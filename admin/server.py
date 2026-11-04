@@ -435,12 +435,17 @@ class AdminHandler(BaseHTTPRequestHandler):
             parsed = load_json(parsed_path(row["section"], row["printed_page_no"]))
             if not isinstance(parsed, dict):
                 continue
+            review = statuses.get(page_key(row["section"], row["printed_page_no"]), {})
             lines.append(
                 json.dumps(
                     {
                         "section": row["section"],
                         "printed_page_no": row["printed_page_no"],
-                        "review": statuses.get(page_key(row["section"], row["printed_page_no"]), {}),
+                        # 검수 메모(note)는 내부 기록이므로 내보내지 않는다.
+                        "review": {
+                            "status": review.get("status"),
+                            "updated_at": review.get("updated_at"),
+                        },
                         "parsed": parsed,
                     },
                     ensure_ascii=False,

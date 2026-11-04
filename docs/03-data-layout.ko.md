@@ -339,7 +339,8 @@ DDL은 [`db/schema.sql`](../db/schema.sql)에 있다.
 - `people.raw`, `marriages.raw` 등 `raw` 컬럼은 AI/검수 JSON 원문을 그대로 보존한다. 공개 앱은 `raw`를 직접 노출하지 않는다.
 - `burials`는 인물 묘소와 배우자 묘소를 모두 담는다. 둘 중 하나만 FK가 채워진다.
 - `page_refs.target_page_id`는 모든 페이지를 넣은 뒤 `(target_section_id, target_page_no)`로 채운다. 대상 면이 미수록이면 `NULL`로 남는다.
-- `approved_pages`/`approved_people` 뷰는 승인 페이지만 거르는 **내부용** 뷰다. masking 뷰가 아니다.
+- `approved_pages`/`approved_people` 뷰는 승인 페이지만 거르는 **내부용** 뷰다.
+- 공개 앱은 `public_*` 뷰를 쓴다. 승인분은 그대로 공개하고, `raw`·`confidence`·`needs_human`·검수 플래그만 뺀다. 공개 식별자는 bigserial `id`가 아니라 `(section_code, printed_page_no, row_no, column_no)`다. 인물 행은 재적재마다 새로 들어가 `id`가 바뀐다.
 
 ---
 

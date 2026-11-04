@@ -10,8 +10,9 @@ Usage:
     python3 scripts/export_approved.py --check
     python3 scripts/export_approved.py --out data/exports/approved.jsonl
 
-Important: this script does NOT mask personal data. Approve pages only after
-the masking policy is settled, or treat the export as internal until then.
+Policy: approved pages are published as-is (1986 간행본과 같은 범위). This
+script does not mask names, dates, addresses, or burial locations. Review
+memo text (`review.note`) is internal and is NOT exported.
 """
 
 from __future__ import annotations
@@ -96,7 +97,6 @@ def build_records(status: str, section: str | None) -> tuple[list[dict], list[st
                 "printed_page_no": page_no,
                 "review": {
                     "status": review.get("status"),
-                    "note": review.get("note", ""),
                     "updated_at": review.get("updated_at"),
                 },
                 "needs_human": human,

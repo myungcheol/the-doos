@@ -192,6 +192,7 @@ python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genea
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
 python3 scripts/import_db.py --include-schema --sql /tmp/doos.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
+psql "$DATABASE_URL" -X -f db/verify.sql
 ```
 
 배치·OCR·검수 단축키·DB 적재·문제 해결은 [04. 작업 흐름](docs/04-workflow.ko.md)에 있다.
@@ -203,7 +204,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
 <!-- STATUS:BEGIN -->
 > 이 표는 `STATUS.md`에서 자동 생성됩니다. 직접 수정하지 마세요.
 >
-> 마지막 갱신: **2026-11-04**, 기능 기준 커밋 `c76a497`.
+> 마지막 갱신: **2026-11-04**, 기능 기준 커밋 `a578215`.
 
 | 영역 | 상태 | 근거 |
 |---|---|---|
@@ -215,8 +216,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/doos.sql
 | 검수 도구 | 초안 완료 / 25면 검수 대기 | `admin/server.py`, `admin/static/` |
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 진행 중 / 25면 1차 결과 | `data/parsed/genealogy/0025.json` (로컬) |
-| DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `scripts/import_db.py` |
-| 공개 앱 | 대기 | 승인 데이터·masking 정책 필요 |
+| DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `db/verify.sql`, `scripts/import_db.py` |
+| 공개 앱 | 대기 | `public_*` 뷰 준비됨. 승인 데이터만 있으면 시작 |
 <!-- STATUS:END -->
 
 자세한 완료/진행/다음/블로커와 갱신 규칙은 **[STATUS.md](STATUS.md)** 에 있다. 위 표는 `STATUS.md`에서 `python3 scripts/sync_status.py`로 생성한다.

@@ -16,14 +16,16 @@ python3 scripts/export_approved.py --check
 ## 레코드 형식
 
 ```json
-{"section":"genealogy","printed_page_no":25,"review":{"status":"approved","note":"","updated_at":"..."},"needs_human":0,"parsed":{"page":{},"entries":[]}}
+{"section":"genealogy","printed_page_no":25,"review":{"status":"approved","updated_at":"..."},"needs_human":0,"parsed":{"page":{},"entries":[]}}
 ```
 
-## 주의: masking은 아직 자동이 아니다
+검수 메모(`review.note`)는 내부 기록이므로 export에 넣지 않는다. `data/review/status.json`에만 남는다.
 
-이 스크립트는 승인 여부만 본다. 생존자·주소·묘소 좌표 등 민감 정보를 제거하지 않는다. 공개 저장소에 커밋하기 전에 다음 중 하나를 먼저 확정한다.
+## 공개 정책: 승인분은 그대로 공개
 
-1. 승인 단계에서 민감 정보가 없는 페이지/항목만 승인한다.
-2. 별도의 masking 스크립트를 만들어 `approved.jsonl` 생성 전에 적용한다.
+생존자·주소·묘소 좌표를 가리지 않는다. 1986년 간행본과 같은 범위로 공개하는 것이 확정된 정책이다. 따라서 승인은 곧 공개다.
 
-masking 정책이 정해지기 전에는 이 파일을 **내부 검수용**으로만 두는 것을 권장한다.
+- `approved.jsonl`은 공개 저장소에 그대로 올라간다.
+- 공개 앱은 `public_*` 뷰를 쓴다(`db/schema.sql` §6). `raw` JSON·`confidence`·`needs_human`·검수 플래그는 공개하지 않는다.
+- 검수 메모와 `data/parsed/` 원문은 공개하지 않는다.
+- 정책을 바꿀 때는 `public_*` 뷰만 고치면 된다. 원본 테이블은 그대로 둔다.

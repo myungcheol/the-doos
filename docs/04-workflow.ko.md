@@ -239,7 +239,9 @@ python3 scripts/export_approved.py
 python3 scripts/export_approved.py --check
 ```
 
-`approved` 상태이면서 `data/parsed/`에 JSON이 있는 페이지만 들어간다. 검증 오류가 있는 승인 페이지가 있으면 export를 중단한다. **masking은 아직 자동이 아니므로**, 공개 커밋 전에 `data/exports/README.md`의 주의사항을 확인한다.
+`approved` 상태이면서 `data/parsed/`에 JSON이 있는 페이지만 들어간다. 검증 오류가 있는 승인 페이지가 있으면 export를 중단한다. 검수 메모(`review.note`)는 export에 넣지 않는다.
+
+승인분은 **그대로 공개**한다. 생존자·주소·묘소 좌표를 가리지 않고, 1986년 간행본과 같은 범위로 공개한다. 따라서 승인은 곧 공개다. 공개 앱에는 `public_*` 뷰만 연결한다(`db/schema.sql` §6).
 
 검수 서버에서 바로 받고 싶으면 다음도 쓸 수 있다.
 
@@ -285,6 +287,12 @@ python3 scripts/import_db.py --dry-run
 
 적재 후 확인:
 
+```bash
+psql "$DATABASE_URL" -X -f db/verify.sql
+```
+
+`db/verify.sql`은 적재 요약, 미해결 아버지, 미해결 참조, 아버지 순환, 세대 번호 누락, 마지막 적재 기록을 한 번에 보여준다. 개별로 볼 때는:
+
 ```sql
 SELECT count(*) FROM pages;
 SELECT count(*) FROM people;
@@ -294,6 +302,7 @@ SELECT count(*) FROM page_refs WHERE target_page_id IS NULL;                    
 
 - `generation_no`는 스캔에 인쇄된 `世` 값을 그대로 넣는다. `father_id` 체인으로 계산하지 않는다.
 - `father_id`는 모든 페이지를 넣은 뒤 `person.father`의 `row`/`column` 또는 `page_ref`로 해석한다.
+- 공개 앱은 `public_*` 뷰만 읽는다. 승인분은 그대로 공개하되 `raw`·`confidence`·`needs_human`·검수 플래그는 빼고, bigserial `id` 대신 `(section_code, printed_page_no, row_no, column_no)`를 쓴다.
 - 재실행하면 승인 페이지의 인물·관계·참조 행을 지우고 다시 넣는다. 같은 입력이면 결과가 같다.
 - 승인 목록에서 빠진 페이지의 인물·관계·참조 행도 삭제된다. DB는 `approved.jsonl`의 스냅샷이다. 페이지 행은 `pending`으로 남는다.
 - 대상 면이 미수록이면 `page_refs.target_page_id`가 `NULL`로 남는다. 오류가 아니다.

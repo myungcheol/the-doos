@@ -1,7 +1,7 @@
 # 진행 상황
 
 > 이 파일이 프로젝트 진행 상황의 **단일 기록**이다. 설계 문서(`docs/01`~`04`)에는 “현재 어디까지 했는지”를 쓰지 않는다.
-> 마지막 갱신: **2026-11-04**, 기능 기준 커밋 `c76a497`.
+> 마지막 갱신: **2026-11-04**, 기능 기준 커밋 `a578215`.
 
 ---
 
@@ -17,8 +17,8 @@
 | 검수 도구 | 초안 완료 / 25면 검수 대기 | `admin/server.py`, `admin/static/` |
 | 승인 데이터 export | 완료 | `scripts/export_approved.py` → `data/exports/approved.jsonl` |
 | AI 파일럿 파싱 | 진행 중 / 25면 1차 결과 | `data/parsed/genealogy/0025.json` (로컬) |
-| DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `scripts/import_db.py` |
-| 공개 앱 | 대기 | 승인 데이터·masking 정책 필요 |
+| DB 적재 | DDL/import 완료 / 실제 전수 적재 대기 | `db/schema.sql`, `db/verify.sql`, `scripts/import_db.py` |
+| 공개 앱 | 대기 | `public_*` 뷰 준비됨. 승인 데이터만 있으면 시작 |
 
 ---
 
@@ -40,6 +40,7 @@
 - 2026-11-02: `PAGE_AI_MAX_TOKENS` 기본값을 32768로 상향. 구조 탭에서 기준 인물·인물 항목 삭제와 `page_ref`의 방향·구분·면 편집 지원.
 - 2026-11-02: 인물별 아버지 연결(`person.father`) 추가. 계보의 정본은 `people.father_id`로 하고, `relation_to_subject`는 페이지 안 참고값으로 재정의. `grandson`은 father 연결로 확실할 때만 사용. 검증기와 관리자 구조 탭에 father 편집을 추가.
 - 2026-10-31: OmniRoute combo 대응. `PAGE_AI_MAX_TOKENS`·`PAGE_AI_EXTRA_HEADERS` 추가, 실제 응답 모델과 라우팅 헤더를 `*.meta.json`에 기록.
+- 2026-11-04: 공개 정책 확정. 승인분은 그대로 공개(1986년 간행본과 같은 범위)하고, `public_*` 뷰에서 `raw`·`confidence`·`needs_human`·검수 플래그만 뺀다. 공개 식별자는 bigserial `id` 대신 `(section_code, printed_page_no, row_no, column_no)`. `db/verify.sql` 추가, `export_approved.py`는 검수 메모(`review.note`)를 내보내지 않는다.
 - 2026-11-04: PostgreSQL DDL(`db/schema.sql`)과 `approved.jsonl` import(`scripts/import_db.py`) 추가. 페이지·인물·배우자·묘소·`page_refs`·`relations`를 적재하고, 모든 페이지를 넣은 뒤 `person.father`로 `father_id`를 해석한다. `generation_no`는 인쇄된 `世` 값만 쓰고, 재실행하면 승인 페이지의 파생 행을 교체한다. PostgreSQL 16에서 3면 fixture와 199면 합성 데이터로 적재·재적재·father 해석을 검증했다.
 - 2026-10-31: 루트 `.env` 파일 자동 로드 지원. `.env.example` 제공, `.env`는 git 제외.
 
@@ -76,8 +77,8 @@
 6. **항렬표 구조화**
    - `scan/frontmatter/063.jpg` → `generation_chars`.
 7. **공개 웹앱**
-   - `approved` 데이터만 노출.
-   - 생존자·주소·묘소 좌표 등 민감 정보 masking 정책 확정 후 공개.
+   - `public_*` 뷰(승인 데이터)만 노출.
+   - 공개 정책은 확정: 승인분은 그대로 공개하고, `raw`·`confidence`·`needs_human` 같은 검수 내부 값만 뺀다.
 
 ---
 
@@ -90,7 +91,7 @@
 | Tesseract | 미설치 | OCR 보조가 필요한지, vision 전용으로 갈지 |
 | 검수 범위 | 미정 | 전수 검수 vs 표본 검수 |
 | 전수 approved.jsonl | 확인 필요 | 현재 작업 디렉터리에는 `data/exports/approved.jsonl`이 없다. export 후 DB 적재 |
-| 민감 정보 공개 | 미정 | 생존자·주소·묘소 좌표 masking 여부 |
+| 민감 정보 공개 | 확정 | 승인분은 그대로 공개(1986년 간행본과 같은 범위). `public_*` 뷰에서 `raw`·`confidence`·`needs_human`만 제외 |
 | 본편 1면 해석 | 확인됨 | 일반 `genealogy` 페이지로 처리 |
 
 ---
