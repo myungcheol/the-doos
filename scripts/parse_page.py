@@ -282,7 +282,8 @@ def parse_page(
     if not os.environ.get("PAGE_AI_API_KEY"):
         raise SystemExit("PAGE_AI_API_KEY 환경변수를 지정하세요. 로컬 서버면 더미 값을 넣어도 됩니다.")
 
-    log(f"AI   {section} {page_no}: {image.relative_to(ROOT)} ({model})")
+    image_label = str(image.relative_to(ROOT)) if image is not None else f"OCR text-only {section} {page_no}"
+    log(f"AI   {section} {page_no}: {image_label} ({model})")
     if extra_headers():
         log(f"  extra headers: {', '.join(sorted(extra_headers()))}")
     started = time.time()
