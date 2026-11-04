@@ -13,6 +13,7 @@ Usage:
     python3 scripts/ocr.py --section genealogy --page 25 --force
     python3 scripts/ocr.py --section genealogy --page 25 --format tsv
     python3 scripts/ocr.py --section genealogy --page 25 --format tsv --direction ltr
+    python3 scripts/ocr.py --section genealogy --page 25 --format tsv --language chi_tra
 """
 
 from __future__ import annotations
@@ -193,6 +194,7 @@ def main() -> int:
     parser.add_argument("--psm", type=int, default=6, help="Tesseract page segmentation mode (기본 6)")
     parser.add_argument("--format", choices=["txt", "tsv"], default="txt", help="출력 형식 (기본 txt, tsv는 단어 좌표 포함)")
     parser.add_argument("--direction", choices=["ltr", "rtl"], default="rtl", help="단 안 읽기 방향 (기본 rtl: 오른쪽→왼쪽)")
+    parser.add_argument("--language", default=None, help="Tesseract language (기본: 자동 선택 kor+chi_tra/kor/chi_tra/en). 한자 전용 스캔이면 chi_tra 지정")
     args = parser.parse_args()
 
     binary = shutil.which("tesseract")
@@ -206,7 +208,7 @@ def main() -> int:
         return 2
 
     languages = available_languages(binary)
-    language = pick_language(languages)
+    language = args.language or pick_language(languages)
     print(f"tesseract: {binary}, language={language}, psm={args.psm}")
 
     if args.page:
