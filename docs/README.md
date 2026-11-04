@@ -4,6 +4,7 @@
 - [02. AI 세보 파싱 가이드](02-ai-parsing-guide.ko.md)
 - [03. 데이터 구성: 폴더와 DB](03-data-layout.ko.md)
 - [04. 작업 흐름: 인벤토리 → 파싱 → 검수](04-workflow.ko.md)
+- [05. ChatGPT용 판독 프롬프트 템플릿](05-chatgpt-prompt.md)
 - [진행 상황](../STATUS.md)
 
 ## 프로젝트 전제
