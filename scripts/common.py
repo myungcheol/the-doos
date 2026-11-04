@@ -58,6 +58,10 @@ def ocr_path(section: str, page_no: int) -> Path:
     return OCR_DIR / section / f"{page_no:04d}.txt"
 
 
+def ocr_tsv_path(section: str, page_no: int) -> Path:
+    return OCR_DIR / section / f"{page_no:04d}.tsv"
+
+
 def prompt_path(section: str, page_no: int) -> Path:
     return PROMPT_DIR / section / f"{page_no:04d}.txt"
 

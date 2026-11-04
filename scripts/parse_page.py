@@ -21,6 +21,7 @@ Usage:
     python3 scripts/parse_page.py --section genealogy --page 25
     python3 scripts/parse_page.py --section genealogy --page 25 --dry-run
     python3 scripts/parse_page.py --section genealogy --page 25 --force --ocr
+    python3 scripts/parse_page.py --section genealogy --page 25 --ocr --text-only
 """
 
 from __future__ import annotations
@@ -132,7 +133,12 @@ def content_text(content: object) -> str:
     return str(content)
 
 
-def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, dict, dict]:
+def call_api(
+    messages: list[dict],
+    image_path: Path,
+    model: str,
+    use_image: bool = True,
+) -> tuple[str, dict, dict]:
     base_url = os.environ.get("PAGE_AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     api_key = os.environ.get("PAGE_AI_API_KEY", "")
     timeout = float(os.environ.get("PAGE_AI_TIMEOUT", "180"))
@@ -140,13 +146,14 @@ def call_api(messages: list[dict], image_path: Path, model: str) -> tuple[str, d
 
     # Inject the image into the user message for providers with vision support.
     prepared = [dict(message) for message in messages]
-    for message in prepared:
-        if message["role"] == "user":
-            message["content"] = [
-                {"type": "text", "text": str(message["content"])},
-                {"type": "image_url", "image_url": {"url": image_data_url(image_path)}},
-            ]
-            break
+    if use_image:
+        for message in prepared:
+            if message["role"] == "user":
+                message["content"] = [
+                    {"type": "text", "text": str(message["content"])},
+                    {"type": "image_url", "image_url": {"url": image_data_url(image_path)}},
+                ]
+                break
 
     body: dict = {
         "model": model,
@@ -219,6 +226,7 @@ def parse_page(
     force: bool = False,
     dry_run: bool = False,
     use_ocr: bool = False,
+    use_image: bool = True,
     out: Path | None = None,
     model: str | None = None,
 ) -> dict | None:
@@ -234,9 +242,11 @@ def parse_page(
         existing = load_json(destination)
         return existing if isinstance(existing, dict) else None
 
-    image = resolve_image(row)
-    if image is None:
-        raise SystemExit(f"{section} {page_no}면 이미지 파일을 찾지 못했습니다: {row.get('source_path')}")
+    image = None
+    if use_image:
+        image = resolve_image(row)
+        if image is None:
+            raise SystemExit(f"{section} {page_no}면 이미지 파일을 찾지 못했습니다: {row.get('source_path')}")
 
     ocr_text = None
     if use_ocr:
@@ -244,6 +254,10 @@ def parse_page(
         if not path.exists():
             raise SystemExit(f"OCR 파일이 없습니다: {path.relative_to(ROOT)}. 먼저 scripts/ocr.py를 실행하세요.")
         ocr_text = path.read_text(encoding="utf-8")
+    if not use_image and not ocr_text:
+        raise SystemExit(
+            f"{section} {page_no} text-only 모드에서는 OCR 텍스트가 필요합니다. scripts/ocr.py를 먼저 실행하세요."
+        )
 
     messages = build_messages(
         section=section,
@@ -251,7 +265,7 @@ def parse_page(
         page_type_hint=row["page_type"],
         width=row.get("width"),
         height=row.get("height"),
-        image_path=row["normalized_path"] or row["source_path"],
+        image_path=str(image.relative_to(ROOT)) if image is not None else f"OCR text-only {section} {page_no}",
         ocr_text=ocr_text,
         notes=row.get("notes"),
     )
@@ -272,7 +286,7 @@ def parse_page(
     if extra_headers():
         log(f"  extra headers: {', '.join(sorted(extra_headers()))}")
     started = time.time()
-    text, usage, response_meta = call_api(messages, image, model)
+    text, usage, response_meta = call_api(messages, image, model, use_image=use_image)
     response_models = [response_meta.get("response_model", model)]
     routing_traces = [response_meta.get("omniroute", {})]
     first_raw = text
@@ -296,7 +310,7 @@ def parse_page(
             },
         ]
         try:
-            text, usage2, response_meta = call_api(messages, image, model)
+            text, usage2, response_meta = call_api(messages, image, model, use_image=use_image)
         except Exception as call_exc:
             raise SystemExit(f"교정 호출 실패: {call_exc}")
         response_models.append(response_meta.get("response_model", model))
@@ -415,6 +429,7 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="기존 결과를 덮어쓴다")
     parser.add_argument("--dry-run", action="store_true", help="프롬프트만 저장하고 API는 호출하지 않는다")
     parser.add_argument("--ocr", action="store_true", help="OCR 텍스트를 보조 자료로 함께 넣는다")
+    parser.add_argument("--text-only", action="store_true", help="이미지 대신 OCR 텍스트로만 파싱한다 (무료 vision 쿼터 절약)")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--model")
     args = parser.parse_args()
@@ -424,6 +439,7 @@ def main() -> int:
         force=args.force,
         dry_run=args.dry_run,
         use_ocr=args.ocr,
+        use_image=not args.text_only,
         out=args.out,
         model=args.model,
     )

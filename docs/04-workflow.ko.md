@@ -151,6 +151,10 @@ python3 scripts/parse_page.py --section genealogy --page 25
 python3 scripts/ocr.py --section genealogy --page 25
 python3 scripts/parse_page.py --section genealogy --page 25 --ocr
 
+# OCR 텍스트만으로 파싱 (이미지 입력 없음 → 무료 vision 쿼터 대신 OCR 텍스트 사용)
+python3 scripts/ocr.py --section genealogy --page 25 --format tsv
+python3 scripts/parse_page.py --section genealogy --page 25 --ocr --text-only
+
 # 결과 검증
 python3 scripts/validate_page.py data/parsed/genealogy/0025.json --section genealogy --page 25
 ```
@@ -191,6 +195,7 @@ python3 scripts/run_pipeline.py --section frontmatter --from 65 --to 66
 --force             이미 파싱된 페이지도 다시 호출
 --dry-run           프롬프트만 생성
 --ocr               OCR sidecar 포함
+--text-only        OCR 텍스트로만 파싱 (이미지 미전송)
 --fail-fast         첫 실패에서 중단
 --report            진행률만 출력
 ```

@@ -65,6 +65,7 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="이미 파싱된 페이지도 다시 호출")
     parser.add_argument("--dry-run", action="store_true", help="프롬프트만 생성")
     parser.add_argument("--ocr", action="store_true", help="OCR sidecar를 프롬프트에 포함")
+    parser.add_argument("--text-only", action="store_true", help="이미지 대신 OCR 텍스트로만 파싱한다 (무료 vision 쿼터 절약)")
     parser.add_argument("--fail-fast", action="store_true")
     parser.add_argument("--report", action="store_true", help="진행률만 출력")
     args = parser.parse_args()
@@ -92,6 +93,7 @@ def main() -> int:
                 force=args.force,
                 dry_run=args.dry_run,
                 use_ocr=args.ocr,
+                use_image=not args.text_only,
             )
             if result is None and not args.dry_run:
                 skipped += 1

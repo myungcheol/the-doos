@@ -70,8 +70,8 @@ scan/*.jpg
 | ① | 인벤토리 | `scan/**/*.jpg` | 파일명·해시·해상도·인쇄 면번호·페이지 유형을 기록. 없는 면은 `missing` 행 추가 | `data/manifests/pages.csv` (1,031행) | `scripts/build_manifest.py` |
 | ② | 정규화 경로 | `pages.csv`, `scan/` | 3자리 원본을 4자리 앱 경로로 연결. 원본은 그대로 | `data/pages/<section>/<4digit>.jpg` symlink | `scripts/link_pages.py` |
 | ③ | 프롬프트 | `pages.csv`, `docs/02` §2, `schema/page.schema.json` | 판독 규칙 + JSON Schema + 페이지 메타데이터를 합침 | `data/prompts/<section>/<4digit>.txt` | `scripts/prompt.py` |
-| ④ | OCR (선택) | 페이지 이미지 | Tesseract로 보조 텍스트 추출. Vision 모델의 대체가 아니라 힌트 | `data/ocr/<section>/<4digit>.txt` | `scripts/ocr.py` |
-| ⑤ | AI 파싱 | 이미지 + 프롬프트 (+ OCR) | Vision 모델이 단·인물·관계·`上`/`下` 참조를 JSON으로 구조화 | `data/parsed/<section>/<4digit>.json`, `.meta.json` | `scripts/parse_page.py` |
+| ④ | OCR (선택) | 페이지 이미지 | Tesseract로 보조 텍스트 추출(txt, `--format tsv` 선택 시 단·단어 좌표 포함). Vision 모델의 대체가 아니라 힌트 | `data/ocr/<section>/<4digit>.txt` (+ `.tsv`) | `scripts/ocr.py` |
+| ⑤ | AI 파싱 | 이미지 + 프롬프트 (+ OCR), 또는 OCR 텍스트 + 프롬프트 (`--text-only`) | Vision 모델(또는 OCR 텍스트)이 단·인물·관계·`上`/`下` 참조를 JSON으로 구조화 | `data/parsed/<section>/<4digit>.json`, `.meta.json` | `scripts/parse_page.py` |
 | ⑥ | 자동 검증 | 파싱 JSON | 필수 필드, `(row, column)` 중복, `page_ref`, 날짜·묘소 구조 검사 | 오류/경고 목록, `needs_human` 표시 | `scripts/validate_page.py` |
 | ⑦ | 사람 검수 | 이미지 + JSON | 이미지와 파싱 결과를 나란히 보고 수정·승인 | `data/review/status.json` | `admin/server.py` |
 | ⑧ | 내보내기 | `approved` 페이지 | 승인된 페이지만 JSONL로 묶어 DB 적재·공개 | `data/exports/approved.jsonl` → PostgreSQL → 웹앱 | `scripts/export_approved.py` |
