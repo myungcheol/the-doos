@@ -93,33 +93,53 @@ def tsv_records(stdout: str) -> list[dict]:
         if len(fields) != len(TSV_HEADER):
             continue
         record = dict(zip(TSV_HEADER, fields))
-        if record.get("level") == "4" and record.get("text", "").strip():
-            records.append(record)
+        if str(record.get("level")) not in ("4", "5"):
+            continue
+        if not record.get("text", "").strip():
+            continue
+        records.append(record)
     return records
 
 
 def reading_lines(stdout: str, rtl: bool) -> list[dict]:
-    """Tesseract TSV(단어 좌표 포함)를 읽기 순서(단 위→아래, 단 안은 오른쪽→왼쪽)로 묶는다."""
+    """Tesseract TSV(단어 좌표 포함)을 읽기 순서(단 위→아래, 단 안은 오른쪽→왼쪽)로 묶는다.
+
+    단어 판별: 텍스트가 있는 행을 단어로 본다. 표준 Tesseract TSV은 단어를 level 4로
+    내보내지만, 이번 실측 TSV도 단어를 level 5로 내보내므로 level 4/5를 모두 단어
+    후보로 삼고 텍스트 존재 여부로 단어를 확정한다.
+    """
     grouped: dict[tuple[str, str, str], list[dict]] = {}
     order: list[tuple[str, str, str]] = []
     for record in tsv_records(stdout):
+        text = (record.get("text") or "").strip()
+        if not text:
+            continue
+        if str(record.get("level")) not in ("4", "5"):
+            continue
         key = (record["block_num"], record["par_num"], record["line_num"])
         if key not in grouped:
             grouped[key] = []
             order.append(key)
+        try:
+            word_num = int(record.get("word_num") or 0)
+        except (TypeError, ValueError):
+            word_num = 0
         grouped[key].append(
             {
-                "text": record["text"].strip(),
-                "left": float(record["left"]),
-                "top": float(record["top"]),
-                "width": float(record["width"]),
-                "height": float(record["height"]),
-                "conf": float(record["conf"]) if record.get("conf") else 0.0,
+                "text": text,
+                "left": float(record.get("left") or 0),
+                "top": float(record.get("top") or 0),
+                "width": float(record.get("width") or 0),
+                "height": float(record.get("height") or 0),
+                "conf": float(record.get("conf") or 0),
+                "word_num": word_num,
             }
         )
     lines: list[dict] = []
     for key in order:
-        words = sorted(grouped[key], key=lambda word: word["left"], reverse=rtl)
+        words = sorted(grouped[key], key=lambda word: (word["left"], word["top"]))
+        if rtl:
+            words = list(reversed(words))
         top = min(word["top"] for word in words)
         lines.append(
             {
