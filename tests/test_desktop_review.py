@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
-    from PySide6.QtGui import QImage
+    from PySide6.QtGui import QImage, QRawFont
     from PySide6.QtWidgets import QApplication, QMessageBox
-    from desktop_review import ReviewWindow
+    from desktop_review import ReviewWindow, configure_application
 except ImportError:
     QApplication = None
 
@@ -19,6 +19,7 @@ class DesktopReviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+        cls.font_loaded = configure_application(cls.app)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -58,6 +59,21 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(len(state["person_uid_map"]), 2)
         exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
         self.assertEqual(exports[0]["raw_data"]["name_ocr"]["raw_text"], "子甲")
+
+    def test_bundled_font_covers_korean_and_hanja(self):
+        self.assertTrue(self.font_loaded)
+        font = QRawFont.fromFont(self.app.font())
+        for character in "족보검수子女杜慶寧":
+            self.assertTrue(font.supportsCharacter(character), character)
+
+    def test_search_and_selection_keep_page_numbers(self):
+        self.window.search.setText("p2")
+        self.assertTrue(self.window.person_results.item(0).isHidden())
+        item = self.window.person_results.item(1)
+        self.assertFalse(item.isHidden())
+        self.window.person_results.setCurrentItem(item)
+        self.assertEqual(self.window.selected_id, "p2")
+        self.assertTrue(item.text().strip().startswith("2."))
 
     def test_external_state_change_is_not_overwritten(self):
         self.window.select_person_id("p1")

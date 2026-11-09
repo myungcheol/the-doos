@@ -10,11 +10,11 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtGui import QColor, QPen, QPixmap, QPainter
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
     QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget, QTextEdit,
+    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
@@ -23,6 +23,47 @@ from person_info_extractor import extract_person_info_draft, get_field_source_co
 from review_app import (effective_name, effective_relationship,
                         find_output_root, get_page_image, parse_optional_generation,
                         relationship_key, save_state, would_create_cycle)
+
+
+STYLE = """
+QWidget { background: #182230; color: #e5edf7; font-size: 13px; }
+QLabel { background: transparent; }
+QWidget#header { background: #202e40; border-radius: 8px; }
+QWidget#panel { background: #202d3c; border: 1px solid #33465b; border-radius: 8px; }
+QLabel#title { font-size: 21px; font-weight: bold; color: #f5f8fc; }
+QLabel#subtitle, QLabel#muted { color: #acbdd0; }
+QLabel#section { font-size: 15px; font-weight: bold; color: #f4f7fb; }
+QLabel#evidence { background: #26384a; border: 1px solid #3a5168; border-radius: 6px; padding: 8px; color: #e5edf7; }
+QPushButton { background: #30465e; border: 1px solid #49647f; border-radius: 5px; padding: 7px 11px; }
+QPushButton:hover { background: #405d7a; }
+QPushButton:pressed { background: #243a51; }
+QPushButton#primary { background: #2166a6; border-color: #408ccc; font-weight: bold; }
+QPushButton#primary:hover { background: #2c7bbd; }
+QLineEdit, QTextEdit, QComboBox, QListWidget { background: #101a27; color: #eef4fb; border: 1px solid #3b526a; border-radius: 5px; padding: 6px; selection-background-color: #315f87; }
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #66a9dc; }
+QListWidget::item { padding: 7px; border-bottom: 1px solid #273a4d; }
+QListWidget::item:selected { background: #315f87; color: white; }
+QComboBox QAbstractItemView { background: #172638; color: #eef4fb; selection-background-color: #315f87; }
+QTabWidget::pane { border: 1px solid #3b526a; border-radius: 5px; }
+QTabBar::tab { background: #24374a; color: #b7c8da; padding: 8px 18px; margin-right: 3px; border-radius: 4px; }
+QTabBar::tab:selected { background: #34536e; color: white; }
+QScrollArea { border: 0; }
+QGraphicsView { background: #101722; border: 1px solid #3b526a; border-radius: 5px; }
+QToolTip { background: #f4f7fc; color: #142234; border: 1px solid #8999aa; padding: 5px; }
+QStatusBar { color: #b9c9d9; }
+"""
+
+
+def configure_application(app):
+    """Use the bundled OFL font so Korean and Hanja do not depend on host fonts."""
+    app.setStyle("Fusion")
+    font_path = Path(__file__).resolve().parent / "assets/fonts/NotoSansCJKkr-Regular.otf"
+    font_id = QFontDatabase.addApplicationFont(str(font_path))
+    families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
+    if families:
+        app.setFont(QFont(families[0], 10))
+    app.setStyleSheet(STYLE)
+    return bool(families)
 
 
 def file_digest(path: Path) -> str | None:
@@ -148,12 +189,27 @@ class ReviewWindow(QMainWindow):
         outer = QWidget()
         self.setCentralWidget(outer)
         layout = QVBoxLayout(outer)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+        header = QWidget()
+        header.setObjectName("header")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(16, 10, 16, 10)
+        title = QLabel("족보 OCR 검수")
+        title.setObjectName("title")
+        header_layout.addWidget(title)
+        subtitle = QLabel("원본을 확인하고 인물과 관계를 검수합니다")
+        subtitle.setObjectName("subtitle")
+        header_layout.addWidget(subtitle)
+        layout.addWidget(header)
         top = QHBoxLayout()
         layout.addLayout(top)
         open_button = QPushButton("OCR 결과 폴더 열기")
+        open_button.setObjectName("primary")
         open_button.clicked.connect(self.choose_folder)
         top.addWidget(open_button)
         self.folder_label = QLabel("폴더를 선택하세요")
+        self.folder_label.setObjectName("muted")
         top.addWidget(self.folder_label, 1)
         self.pages = QComboBox()
         self.pages.currentIndexChanged.connect(self.change_page)
@@ -169,22 +225,53 @@ class ReviewWindow(QMainWindow):
         layout.addWidget(splitter, 1)
         left = QWidget()
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 8, 0)
+        scan_title = QLabel("원본 스캔")
+        scan_title.setObjectName("section")
+        left_layout.addWidget(scan_title)
         self.evidence = QLabel("OCR 박스에 마우스를 올려 원문을 확인하세요.")
+        self.evidence.setObjectName("evidence")
         self.evidence.setWordWrap(True)
+        self.evidence.setMinimumHeight(48)
         self.evidence.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         left_layout.addWidget(self.evidence)
         self.view = ScanView()
         self.view.selected.connect(self.select_person_id)
         self.view.hovered.connect(self.evidence.setText)
         left_layout.addWidget(self.view, 1)
+        hint = QLabel("드래그: 이동   ·   클릭: 인물 선택   ·   Ctrl + 휠: 확대/축소")
+        hint.setObjectName("muted")
+        left_layout.addWidget(hint)
         splitter.addWidget(left)
+        right = QWidget()
+        right.setObjectName("panel")
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(14, 12, 14, 12)
+        heading = QLabel("검수 작업")
+        heading.setObjectName("section")
+        right_layout.addWidget(heading)
+        self.progress_label = QLabel("페이지를 열어 주세요")
+        self.progress_label.setObjectName("muted")
+        right_layout.addWidget(self.progress_label)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("인물 이름 또는 ID 검색")
+        self.search.textChanged.connect(self.filter_people)
+        right_layout.addWidget(self.search)
+        self.person_results = QListWidget()
+        self.person_results.setMinimumHeight(110)
+        self.person_results.setMaximumHeight(170)
+        self.person_results.currentItemChanged.connect(self.result_selected)
+        right_layout.addWidget(self.person_results)
         tabs = QTabWidget()
-        splitter.addWidget(tabs)
+        right_layout.addWidget(tabs, 1)
+        splitter.addWidget(right)
         splitter.setSizes([950, 500])
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         panel = QWidget()
         form = QFormLayout(panel)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setVerticalSpacing(10)
         self.people_list = QComboBox()
         self.people_list.currentIndexChanged.connect(self.person_changed)
         form.addRow("인물", self.people_list)
@@ -224,8 +311,8 @@ class ReviewWindow(QMainWindow):
         self.partners.textChanged.connect(self.mark_dirty)
         form.addRow("배우자 배열 (JSON)", self.partners)
         save = QPushButton("인물 저장")
+        save.setObjectName("primary")
         save.clicked.connect(self.save_person)
-        form.addRow(save)
         scroll.setWidget(panel)
         tabs.addTab(scroll, "인물 검수")
         relations = QWidget()
@@ -240,6 +327,7 @@ class ReviewWindow(QMainWindow):
         rel_layout.addWidget(self.parent_label)
         self.pending_parent = None
         tabs.addTab(relations, "관계 검수")
+        right_layout.addWidget(save)
         if root:
             self.open_folder(Path(root))
 
@@ -285,6 +373,7 @@ class ReviewWindow(QMainWindow):
             name = str(page.get("source_page") or Path(page.get("source_image", "page")).name)
             self.pages.addItem(name)
         self.pages.blockSignals(False)
+        self.search.clear()
         self.change_page()
 
     def relationships(self):
@@ -312,6 +401,7 @@ class ReviewWindow(QMainWindow):
             self.people_list.addItem(f"{index}. {effective_name(person, self.state)}", person.get("person_id"))
         self.people_list.blockSignals(False)
         self.selected_id = None
+        self.refresh_people_list()
         self.pending_parent = None
         self.parent_label.setText("선택된 부모 없음")
         page_dir = Path(self.page.get("page_output_dir") or self.root / Path(str(self.page.get("source_image", self.page_name))).stem)
@@ -335,6 +425,42 @@ class ReviewWindow(QMainWindow):
         index = self.people_list.findData(pid)
         if index >= 0:
             self.people_list.setCurrentIndex(index)
+
+    def refresh_people_list(self):
+        self.person_results.blockSignals(True)
+        self.person_results.clear()
+        confirmed = 0
+        labels = {"confirmed": "확인", "needs_review": "검토 대기", "rejected": "거절"}
+        colors = {"confirmed": "#62d6ac", "needs_review": "#ffc577", "rejected": "#ef9abb"}
+        for index, person in enumerate(self.page_people, 1):
+            pid = person.get("person_id")
+            status = self.state["people_updates"].get(pid, {}).get("review_status") or person.get("review_status", "needs_review")
+            confirmed += status == "confirmed"
+            name = effective_name(person, self.state)
+            item = QListWidgetItem(f"{index:>2}.  {name}     ·     {labels.get(status, status)}")
+            item.setData(Qt.ItemDataRole.UserRole, pid)
+            item.setData(Qt.ItemDataRole.UserRole + 1, f"{name} {pid}".casefold())
+            item.setForeground(QColor(colors.get(status, "#e5edf7")))
+            self.person_results.addItem(item)
+            if pid == self.selected_id:
+                self.person_results.setCurrentItem(item)
+        self.person_results.blockSignals(False)
+        self.progress_label.setText(f"인명 확인 {confirmed} / {len(self.page_people)}   ·   색상과 상태로 구분")
+        self.filter_people(self.search.text())
+
+    def filter_people(self, text):
+        query = text.strip().casefold()
+        for row in range(self.person_results.count()):
+            item = self.person_results.item(row)
+            item.setHidden(bool(query) and query not in item.data(Qt.ItemDataRole.UserRole + 1))
+
+    def result_selected(self, current, previous):
+        if current:
+            self.select_person_id(current.data(Qt.ItemDataRole.UserRole))
+            if self.people_list.currentData() != current.data(Qt.ItemDataRole.UserRole):
+                self.person_results.blockSignals(True)
+                self.person_results.setCurrentItem(previous)
+                self.person_results.blockSignals(False)
 
     def person_changed(self, *_):
         if self.dirty and not self.can_discard():
@@ -368,6 +494,15 @@ class ReviewWindow(QMainWindow):
         self.info_confirmed.setChecked(update.get("information_review_status", (person or {}).get("information_review_status")) == "confirmed")
         self.partners.setPlainText(json.dumps(update.get("spouses", (person or {}).get("spouses") or []), ensure_ascii=False, indent=2))
         self.loading = False
+        self.person_results.blockSignals(True)
+        for row in range(self.person_results.count()):
+            item = self.person_results.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == self.selected_id:
+                if item.isHidden():
+                    self.search.clear()
+                self.person_results.setCurrentItem(item)
+                break
+        self.person_results.blockSignals(False)
         self.render_scan()
         self.refresh_relations()
 
@@ -458,6 +593,7 @@ class ReviewWindow(QMainWindow):
         self.dirty = False
         self.people_list.setItemText(self.people_list.currentIndex(), f"{self.people_list.currentIndex()}. {effective_name(next(p for p in self.page_people if p.get('person_id') == self.selected_id), self.state)}")
         self.statusBar().showMessage("인물을 저장했습니다.", 4000)
+        self.refresh_people_list()
         self.refresh_relations()
 
     def review_relation(self, status):
@@ -522,6 +658,8 @@ def main():
     parser.add_argument("output", nargs="?", help="OCR 결과 폴더")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
+    if not configure_application(app):
+        QMessageBox.warning(None, "글꼴 오류", "포함된 한글·한자 글꼴을 불러오지 못했습니다. assets/fonts 폴더를 확인하세요.")
     window = ReviewWindow(args.output)
     window.show()
     return app.exec()
