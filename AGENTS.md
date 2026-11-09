@@ -1,0 +1,81 @@
+# Codex / coding agent instructions
+
+This file is the **canonical repository-level instruction file** for coding agents. Read [README.md](README.md) first for the complete project overview, installation, usage, output schema, and history. The user-facing documentation is primarily in Korean; prefer Korean for explanations and new docs. `AGENT.md` is a compatibility pointer to this file.
+
+## Project mission and current reality
+
+- Convert scanned traditional vertical Chinese-character Korean genealogy (`족보`) pages into structured, human-reviewed people, source occurrences, and parent/child edges. The source edition currently being reviewed was published in **1987**; future editions may be linked to the same people.
+- Runtime pipeline: **OpenCV + PaddleOCR/Tesseract + deterministic Python rules + Streamlit review UI**. No LLM is required or desired in the OCR/extraction pipeline.
+- A database has **not** been implemented. The persisted workflow uses JSON/CSV and `person_registry.json`. Do not describe the future DB schema in README §8.5 as production code.
+- `scan/` contains many scanned pages. Prefer **one-page tests** with `scan/001.jpg`; do not process the entire corpus or publish additional scanned/person data without explicit need.
+
+## Where to look first
+
+| Task | Entry point |
+|---|---|
+| OCR CLI, layout, name/relationship candidates, engine optimizations | `jokbo_ocr.py` |
+| Streamlit review workflow and exports | `review_app.py` |
+| Browser-side image pan/zoom/click and overlay rendering | `components/jokbo_image_viewer/index.html` |
+| Review list filters, matching scan number labels, relationship anchors, OCR focus | `review_helpers.py` |
+| Person-record OCR draft and evidence bounding boxes | `person_info_extractor.py` |
+| Stable `person_uid`, source occurrences, raw/reviewed records | `person_data_model.py` |
+| Tests and regression examples | `tests/` |
+| Setup, CLI, data formats, review steps, user workflow | README §§3–12, 17–19 |
+
+**Important:** `person_data_extractor.py` also exists, but the active review UI imports **`person_info_extractor.py`**. Check call sites before modifying similarly named modules.
+
+## Non-negotiable domain and data invariants
+
+1. **Raw OCR is evidence, not verified truth.** Preserve original image references, unmodified name OCR, full record OCR, token/column bbox, confidence and sources. Keep `raw_data` separate from `reviewed_data`. Automated extraction populates **unverified drafts** and must not overwrite human edits.
+2. **Name markers:** leading `子` and `女` represent son/daughter and must be removed from the reviewed name while preserving the **exact raw OCR string** and the marker/sex field. Do not strip arbitrary Chinese characters from a name.
+3. **Lineage:** a parent has 0..N children. Store each confirmed pair as an edge, never a single child field. Use stable `parent_person_uid` and `child_person_uid` for export/DB linkage; the page-local `person_id` is not a global key. Keep cycle checks and duplicate detection.
+4. **Page geometry is a heuristic:** OCR text runs vertically; columns read **right-to-left**. The eldest son may be below the father at a similar x, later sons appear to the left, and daughters can appear to the right. The geometry suggests candidates; **it does not prove kinship**. `親族也` is a phrase, not a person.
+5. **Multiple partners:** a person may have multiple wives and/or concubines. Preserve an array of separately typed partner entries; do not collapse it into a single authoritative string.
+6. **Stable identity vs source:** `PER_<UUID>` remains constant across revised editions; publication year, printed page, scan page, row, right-to-left column, ordinal, and bbox are stored separately in `source_occurrences`. Never derive the permanent UID from edition/year/page/column or merge namesakes automatically.
+7. **Review status:** preserve `needs_review`, `confirmed`, `rejected` semantics. OCR confidence is **not** calibrated probability; PaddleOCR and Tesseract confidence numbers are not directly comparable.
+8. **Source provenance:** OCR field evidence must retain original-image coordinate bbox. A crop/ROI can have an offset; ensure coordinate transforms are correct and test both offset and no-offset paths.
+
+## Review UI expectations
+
+- Reviewer can click people directly in the scan; labels `1, 2, 3...` must match relationship list numbers for that page.
+- Relationship creation is **1:N**: select parent once, add multiple children; allow cancel/undo, show pre-existing confirmed/unreviewed edges. Connect parent bbox **bottom-center** to child bbox **top-center**, avoiding text overlap.
+- Use visibly distinct overlay colors **plus clear status labels**; do not rely on nearly identical shades of blue/green/orange.
+- Scanned page stays visible while the independent right-hand panel scrolls. Zoom/pan are browser-local with no arbitrary maximum zoom; avoid animations/flash or unnecessary Streamlit reruns. Image click must stay fast and preserve zoom/pan.
+- Clicking an individual or choosing a birth/death/office/partner/burial/name field should expose the **correct OCR evidence bbox**. Use real source columns when available, and make missing evidence explicit rather than fabricating a precise bbox.
+- A page with **no selected person** must render normally: initialize OCR focus before use. Regression: `focus` previously caused `UnboundLocalError` at the viewer payload call.
+- Maintain existing `review_state.json` compatibility. Protect reviewer edits and avoid resetting UUID mappings or re-generating registry data during a cosmetic UI change.
+
+## Suggested workflow for every task
+
+1. Read **README.md §§17–19** and this file; inspect `git status` and the current head before editing. **Preserve existing user modifications.**
+2. Reproduce on `scan/001.jpg` or a small synthetic fixture. Do not run OCR on the whole `scan/` tree merely to test a UI tweak.
+3. Edit only relevant modules; add a regression test for each bug, including first-load/no-selection behavior and geometry offsets when appropriate.
+4. Run:
+   ```bash
+   python -m unittest discover -s tests -v
+   python -m compileall -q jokbo_ocr.py review_app.py review_helpers.py person_info_extractor.py person_data_model.py tests
+   ```
+   For viewer edits, also check JavaScript syntax and **manually verify in Streamlit** if an environment is available. Never claim actual browser or PaddleOCR inference testing when it was not performed.
+5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.
+6. Update the **single consolidated README.md** (especially workflow/code map and change history) for meaningful behavior changes; do not add versioned README clones.
+7. If the user requests GitHub updates, commit only intended files and push after tests; do not force-push, overwrite others' work, or claim success before verifying the remote branch/commit. Report precise tests and unverified areas.
+
+## Fast commands
+
+```bash
+# From the repository root; see README §3 for environment setup
+python -m unittest discover -s tests -v
+python jokbo_ocr.py --help
+
+# OCR only after installing an engine; inspect a single sample
+python jokbo_ocr.py ./scan/001.jpg --ocr-engine paddleocr --rows 6 --output output/
+
+# Review existing OCR output (the folder must have ocr_results.json)
+streamlit run review_app.py
+```
+
+## Open questions / safe defaults
+
+- Text, character, and column OCR segmentation can miss characters and mix adjacent people's biographies. Do not silently treat keywords or name strings as verified; surface evidence and review status.
+- User preferences: avoid LLM dependency, favor efficient OCR inference and responsive local UI, retain review history and provenance, use the existing **main** branch workflow, and communicate technical changes in Korean.
+- See README §13 for oneDNN/PIR compatibility and prior `focus` regression; keep a test for both.

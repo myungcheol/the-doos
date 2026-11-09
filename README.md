@@ -2,7 +2,7 @@
 
 전통 한자 세로쓰기 족보 스캔본을 OCR로 읽고, 인물 후보와 부모·자녀 관계를 추출한 뒤, 원본 이미지와 대조해 검수하는 Python 프로젝트입니다.
 
-현재 통합 문서 기준 버전은 **v6.7**입니다. 이 파일 하나를 프로젝트의 공식 README로 사용합니다. 이전 버전별 README는 별도로 관리하지 않아도 됩니다.
+현재 통합 문서 기준 코드는 **v6.7.1**입니다. 이 파일 하나를 프로젝트의 공식 README로 사용합니다. 이전 버전별 README는 별도로 관리하지 않아도 됩니다.
 
 ---
 
@@ -24,6 +24,9 @@
 14. [현재 한계와 검수 원칙](#14-현재-한계와-검수-원칙)
 15. [버전별 기능 이력](#15-버전별-기능-이력)
 16. [프로젝트 파일 구성](#16-프로젝트-파일-구성)
+17. [처음 참여하는 개발자를 위한 빠른 시작](#17-처음-참여하는-개발자를-위한-빠른-시작)
+18. [소스 코드와 데이터 찾아보기](#18-소스-코드와-데이터-찾아보기)
+19. [안전한 개발 및 검수 절차](#19-안전한-개발-및-검수-절차)
 
 ---
 
@@ -143,7 +146,7 @@ v5까지는 행 OCR 이후 각 인명 crop에 여러 전처리를 적용해 반�
 프로젝트 파일을 원하는 작업 디렉터리에 압축 해제하고 해당 폴더로 이동합니다.
 
 ```bash
-cd ~/workspaces/jokbo_ocr_project
+cd /path/to/the-doos
 ```
 
 ### 3.2 공통 Python 패키지
@@ -802,7 +805,7 @@ v6.7에서 아직 인물을 선택하지 않은 첫 화면 렌더링 시 OCR 강
 ## 16. 프로젝트 파일 구성
 
 ```text
-jokbo_ocr_project/
+the-doos/
 ├── README.md
 ├── jokbo_ocr.py                 # OCR, 레이아웃, 인명 및 관계 후보 처리
 ├── review_app.py                # Streamlit 검수 UI
@@ -826,6 +829,87 @@ jokbo_ocr_project/
     ├── test_relationship_layout.py
     └── test_review_helpers.py
 ```
+
+
+## 17. 처음 참여하는 개발자를 위한 빠른 시작
+
+이 저장소를 처음 보는 개발자나 Codex 에이전트는 **이 README를 먼저**, 코드 수정 전에 저장소 루트의 [AGENTS.md](AGENTS.md)를 읽습니다. `AGENT.md`는 `AGENTS.md`의 안내 파일입니다. 설계·사용법은 README, 작업 중 반드시 지킬 규칙은 AGENTS.md가 담당합니다.
+
+### 17.1 현재 저장소의 성격과 범위
+
+- 이 프로젝트는 **1987년 발행 족보**의 스캔본을 출발점으로, 판본이 달라져도 재사용할 수 있는 인물·가족관계·출처 데이터를 만드는 로컬 도구입니다.
+- 입력 스캔은 저장소의 `scan/`에 있으며 `scan/001.jpg`는 작은 단위의 재현/확인에 적합합니다. `scan/`의 모든 파일을 테스트 목적으로 일괄 OCR하지 마세요.
+- **아직 구현된 데이터베이스 서비스는 없습니다.** 현재 영속적인 결과는 JSON/CSV와 인물 ID 레지스트리이며, 향후 DB 테이블 구조는 8.5절의 제안입니다.
+- 이 저장소는 OCR/검수 앱 외에 과거 실험 파일을 포함할 수 있습니다. 현재 실행 진입점은 `jokbo_ocr.py`와 `review_app.py`입니다.
+
+### 17.2 첫 실행 순서
+
+```bash
+git clone https://github.com/myungcheol/the-doos.git
+cd the-doos
+python3.12 -m venv .venv-paddle
+source .venv-paddle/bin/activate
+python -m pip install -U pip
+pip install -r requirements.txt -r requirements-review.txt
+python -m unittest discover -s tests -v
+python jokbo_ocr.py --help
+```
+
+- **OCR을 실제로 돌릴 때**만 3.3절의 PaddlePaddle/PaddleOCR 설치(또는 3.4절의 Tesseract 설치)가 추가로 필요합니다. 모델·언어팩 없이도 실행 가능한 단위 테스트와 OCR 추론 테스트를 혼동하지 마세요.
+- OCR 실행 예시는 4절, 검수 UI는 6절을 따릅니다. 처음에는 `scan/001.jpg` **한 페이지만 별도 출력 폴더에** 실행해 보세요.
+- 검수 UI에는 기존 OCR 결과 폴더(`ocr_results.json`이 있는 곳)를 지정합니다. **OCR 결과가 없는 새 clone 상태에서 UI만 실행해도 검수할 페이지는 없습니다.**
+- 사용자 작업 디렉터리가 꼭 `~/workspaces/jokbo_ocr_project`일 필요는 없습니다. clone한 저장소 루트에서 명령을 실행합니다.
+
+### 17.3 실제 작업을 시작할 때
+
+1. `git status`와 `git log -5 --oneline`으로 현재 코드/미커밋 변경 사항을 확인합니다.
+2. 문제를 재현하고 **19절의 변경 절차**를 따릅니다. UI 문제라면 먼저 `review_app.py`, 브라우저 상호작용은 `components/jokbo_image_viewer/index.html`을 확인합니다.
+3. 입력 스캔, OCR 원본과 `review_state.json`은 서로 다른 역할을 합니다. 실험 출력 디렉터리로 테스트하고 검수자의 기존 결과를 덮어쓰지 않습니다.
+4. 작업 결과에는 변경 파일, 재현/테스트 결과, 실제로 실행하지 못한 테스트, 커밋 SHA를 구분해서 기록합니다.
+
+## 18. 소스 코드와 데이터 찾아보기
+
+### 18.1 요구사항별 수정 위치
+
+| 찾고 싶은 것 / 하려는 일 | 우선 읽을 파일 |
+|---|---|
+| OCR 전체 처리 흐름, CLI 옵션, OpenCV 레이아웃·인명/관계 후보 생성 | `jokbo_ocr.py` |
+| PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `jokbo_ocr.py`, `tests/test_paddle_adapter.py`, `tests/test_paddle_optimization.py` |
+| 부자관계 추론의 판면/기하 규칙 | `jokbo_ocr.py`, `tests/test_relationship_layout.py` |
+| 인물 선택, 인명·관계 검수, 입력폼, 저장/내보내기, 이미지 overlay payload | `review_app.py` |
+| 실제 줌/팬, 클릭, bbox·관계선의 브라우저 렌더링 | `components/jokbo_image_viewer/index.html` |
+| 관계 목록 번호/필터, 관계선 끝점, OCR focus 안전 처리 | `review_helpers.py`, `tests/test_review_helpers.py` |
+| 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `person_info_extractor.py`, `tests/test_person_info_extractor.py` |
+| `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `person_data_model.py`, `tests/test_person_data_model.py` |
+| 로컬 검수 UI 실행/의존성 | `run_review.sh`, `requirements-review.txt`, `requirements.txt` |
+| OCR 엔진 전용 의존성 | `requirements-paddle.txt`, `requirements-tesseract.txt` |
+
+`person_data_extractor.py`도 저장소에 남아 있습니다. **현재 검수 UI가 직접 import하는 모듈은 `person_info_extractor.py`**입니다. 유사한 파일명이 있다는 이유로 둘을 일괄 수정하거나 삭제하지 말고 실제 import와 사용 경로를 확인하세요.
+
+### 18.2 데이터별 위치와 구분
+
+| 구분 | 위치/예시 | 의미와 주의 |
+|---|---|---|
+| 원본 스캔 | `scan/001.jpg`, `scan/frontmatter/...` 등 | 손실 없는 입력 원본. 임의로 덮어쓰지 않음 |
+| OCR/추론 원본 | `output/ocr_results.json`, `people_candidates.json`, `relationship_candidates.json` | 재생성 가능한 후보 데이터. 검수자가 직접 수정하는 저장소가 아님 |
+| OCR 좌표/이미지 | `output/001/rows.json`, `table_roi.jpg`, `layout_debug.jpg` | 행·열·인물 bbox 및 디버깅 근거 |
+| 검수 작업 상태 | OCR 결과 폴더의 `review_state.json` | 수작업 정정, 확인/거절, 수동 관계 등. 백업 후 변경 |
+| 검수된 내보내기 | `reviewed_people.json/csv`, `reviewed_relationships.json/csv` | 사람이 확정/검토 중인 상태를 함께 보관 |
+| 공용 인물 레지스트리 | `person_registry.json` | 영구 인물 ID/출처. **저장소 루트에도 파일이 추적되고 있으므로 실험·실행만으로 변경된 내용을 무심코 커밋하지 말 것** |
+
+`review_state.json`과 `person_registry.json`을 초기화하면 UUID 연결과 검수 이력이 손상될 수 있습니다. 별도 테스트용 디렉터리를 사용하고, 실제 데이터 변경은 의도·백업·차이를 확인한 후 진행하세요. `.gitignore`가 모든 임시 파일이나 검수 산출물을 자동으로 제외한다고 가정하지 말고, 커밋 전에 `git status`로 검토하세요.
+
+## 19. 안전한 개발 및 검수 절차
+
+1. **문제 확인:** 재현 환경(원본 파일명, 선택 인물, OCR 결과 폴더, 실행 명령/에러)을 적고, `git status`로 이미 있는 사용자 변경을 보존합니다.
+2. **범위 선택:** 18절의 책임 파일부터 읽고 변경을 최소화합니다. OCR 후보/검수 상태/영구 ID를 섞는 리팩터링은 별도의 데이터 마이그레이션 없이 하지 않습니다.
+3. **구현:** 기존 확정된 검수 정보와 `review_state.json`의 읽기 호환성을 유지합니다. 화면 단축을 위해 원본 OCR 증거를 삭제하지 않습니다.
+4. **검증:** `python -m unittest discover -s tests -v`와 수정한 Python 파일의 문법 검사를 실행합니다. 이미지 뷰어를 수정했다면 JavaScript 구문과 실제 Streamlit 클릭/줌/팬도 별도로 검증합니다. UI가 실행되지 않은 경우 **실제 브라우저 검증 미수행**이라고 명시합니다.
+5. **검수:** 1987년 샘플 `scan/001.jpg`의 인명·부모/자녀와 OCR bbox를 비교하되, OCR confidence를 정답으로 간주하지 않습니다. 속도 측정은 최초 모델 초기화 비용과 페이지 추론 시간을 구분합니다.
+6. **커밋:** `git diff`와 `git status`로 스캔·레지스트리·검수 결과의 의도치 않은 변경이 없는지 확인합니다. 관련 테스트와 **이 README만** 갱신하고 별도 버전별 README를 만들지 않습니다.
+7. **공유:** 적용 결과, 테스트 범위, 한계, 커밋 SHA를 보고합니다. `main` 반영은 사용자의 작업 요청에 따라 수행하고, 다른 작업자의 변경이 생겼다면 덮어쓰기/강제 push를 하지 않습니다.
+
+코딩 에이전트가 작업할 때 추가로 지켜야 할 상세 원칙은 [AGENTS.md](AGENTS.md)를 참고하세요.
 
 ---
 
