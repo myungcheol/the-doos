@@ -330,10 +330,10 @@ class ReviewWindow(QMainWindow):
         scan_tools_layout.setContentsMargins(0, 0, 0, 0)
         for text, factor in [("− 축소", 1 / 1.25), ("+ 확대", 1.25)]:
             button = QPushButton(text)
-            button.clicked.connect(lambda checked=False, scale=factor: self.view.scale(scale, scale))
+            button.clicked.connect(lambda checked=False, scale=factor: self.scale_scans(scale))
             scan_tools_layout.addWidget(button)
         fit = QPushButton("화면 맞춤")
-        fit.clicked.connect(lambda: self.view.fitInView(self.view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio))
+        fit.clicked.connect(self.fit_scans)
         scan_tools_layout.addWidget(fit)
         recover = QPushButton("누락 인명 후보 찾기")
         recover.clicked.connect(self.recover_people)
@@ -346,11 +346,26 @@ class ReviewWindow(QMainWindow):
         self.evidence.setMinimumHeight(48)
         self.evidence.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         left_layout.addWidget(self.evidence)
+        image_titles = QHBoxLayout()
+        self.previous_scan_title = QLabel("이전 페이지 없음")
+        self.previous_scan_title.setObjectName("muted")
+        image_titles.addWidget(self.previous_scan_title, 1)
+        self.current_scan_title = QLabel("현재 검수 페이지")
+        self.current_scan_title.setObjectName("muted")
+        image_titles.addWidget(self.current_scan_title, 1)
+        left_layout.addLayout(image_titles)
+        views = QHBoxLayout()
+        views.setSpacing(8)
+        self.previous_view = ScanView()
+        self.previous_view.selected.connect(self.select_continuation_target)
+        self.previous_view.hovered.connect(self.evidence.setText)
+        views.addWidget(self.previous_view, 1)
         self.view = ScanView()
         self.view.selected.connect(self.select_person_id)
         self.view.hovered.connect(self.evidence.setText)
-        left_layout.addWidget(self.view, 1)
-        hint = QLabel("드래그: 이동   ·   클릭: 인물 선택   ·   Ctrl + 휠: 확대/축소")
+        views.addWidget(self.view, 1)
+        left_layout.addLayout(views, 1)
+        hint = QLabel("왼쪽: 직전 페이지 · 오른쪽: 현재 검수 페이지 · 드래그: 이동 · Ctrl + 휠: 확대/축소")
         hint.setObjectName("muted")
         left_layout.addWidget(hint)
         splitter.addWidget(left)
@@ -465,6 +480,7 @@ class ReviewWindow(QMainWindow):
         self.orphan_preview.setMinimumHeight(110)
         continuation_layout.addWidget(self.orphan_preview)
         self.continuation_target = QComboBox()
+        self.continuation_target.currentIndexChanged.connect(self.render_scan)
         continuation_layout.addWidget(QLabel("연결할 이전 페이지 인물"))
         continuation_layout.addWidget(self.continuation_target)
         attach = QPushButton("선택한 OCR 영역을 인물에 연결")
@@ -715,6 +731,8 @@ class ReviewWindow(QMainWindow):
             self.pages.addItem(page_name(page))
         if selected_page and self.pages.findText(selected_page) >= 0:
             self.pages.setCurrentIndex(self.pages.findText(selected_page))
+        elif self.pages.count() > 1:
+            self.pages.setCurrentIndex(1)
         self.pages.blockSignals(False)
         self.search.clear()
         self.change_page()
@@ -723,6 +741,53 @@ class ReviewWindow(QMainWindow):
 
     def relationships(self):
         return [effective_relationship(r, self.state) for r in self.base_rels + self.state["manual_relationships"]]
+
+    def scale_scans(self, factor):
+        for view in (self.previous_view, self.view):
+            view.scale(factor, factor)
+
+    def fit_scans(self):
+        for view in (self.previous_view, self.view):
+            if not view.sceneRect().isEmpty():
+                view.fitInView(view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def page_directory(self, page):
+        page_dir = Path(page.get("page_output_dir") or self.root / Path(str(page.get("source_image", page_name(page)))).stem)
+        if not page_dir.is_absolute():
+            page_dir = self.root / page_dir
+        if not page_dir.exists():
+            page_dir = self.root / Path(str(page.get("source_image", page_name(page)))).stem
+        return page_dir
+
+    def load_page_visual(self, page):
+        image, offset, _ = get_page_image(page, str(self.page_directory(page)))
+        from PySide6.QtGui import QImage
+        rgb = image[:, :, ::-1].copy()
+        qimage = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
+        return QPixmap.fromImage(qimage), offset, image
+
+    def load_previous_page(self):
+        self.previous_page = self.page_results[self.page_index - 1] if self.page_index > 0 else None
+        self.previous_people = []
+        self.previous_pixmap, self.previous_offset = QPixmap(), (0, 0)
+        if not self.previous_page:
+            self.previous_scan_title.setText("이전 페이지 없음")
+            return
+        previous_name = page_name(self.previous_page)
+        self.previous_scan_title.setText(f"이전 페이지 · {previous_name}")
+        self.previous_people = [person for person in self.base_people if person.get("source_page") == previous_name]
+        try:
+            self.previous_pixmap, self.previous_offset, _ = self.load_page_visual(self.previous_page)
+        except (OSError, ValueError) as exc:
+            self.statusBar().showMessage(f"이전 페이지 이미지를 읽지 못했습니다: {exc}", 8000)
+
+    def select_continuation_target(self, person_id):
+        index = self.continuation_target.findData(person_id)
+        if index < 0:
+            self.statusBar().showMessage("같은 행의 이전 페이지 인물만 연결 대상으로 선택할 수 있습니다.", 5000)
+            return
+        self.continuation_target.setCurrentIndex(index)
+        self.statusBar().showMessage("왼쪽 인물을 이어진 기록의 연결 대상으로 선택했습니다.", 4000)
 
     def change_page(self, *_):
         if not self.root:
@@ -749,25 +814,17 @@ class ReviewWindow(QMainWindow):
         self.refresh_people_list()
         self.pending_parent = None
         self.parent_label.setText("선택된 부모 없음")
-        page_dir = Path(self.page.get("page_output_dir") or self.root / Path(str(self.page.get("source_image", self.page_name))).stem)
-        if not page_dir.is_absolute():
-            page_dir = self.root / page_dir
-        if not page_dir.exists():
-            page_dir = self.root / Path(str(self.page.get("source_image", self.page_name))).stem
+        self.current_scan_title.setText(f"현재 검수 페이지 · {self.page_name}")
         try:
-            image, self.offset, _ = get_page_image(self.page, str(page_dir))
-            self.source_image = image
-            from PySide6.QtGui import QImage
-            rgb = image[:, :, ::-1].copy()
-            qimage = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
-            self.pixmap = QPixmap.fromImage(qimage)
+            self.pixmap, self.offset, self.source_image = self.load_page_visual(self.page)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "이미지 오류", str(exc))
             self.pixmap, self.offset = QPixmap(), (0, 0)
             self.source_image = None
+        self.load_previous_page()
         self.refresh_orphan_rows()
         self.person_changed()
-        self.view.fitInView(self.view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.fit_scans()
 
     def select_person_id(self, pid):
         index = self.people_list.findData(pid)
@@ -889,6 +946,11 @@ class ReviewWindow(QMainWindow):
             self.evidence.setText("OCR 박스에 마우스를 올려 원문을 확인하세요.")
         self.view.show_page(self.pixmap, self.offset, self.page_people, self.selected_id, sources,
                             [r for r in self.relationships() if r.get("source_page") == self.page_name])
+        previous_target = self.continuation_target.currentData() if self.tabs.currentIndex() == 2 else None
+        self.previous_view.show_page(
+            self.previous_pixmap, self.previous_offset, self.previous_people, previous_target, [],
+            [r for r in self.relationships() if self.previous_page and r.get("source_page") == page_name(self.previous_page)]
+        )
 
     def refresh_relations(self):
         self.rel_list.clear()

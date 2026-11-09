@@ -188,8 +188,11 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual([self.window.pages.itemText(i) for i in range(self.window.pages.count())],
                          ["001.png", "sample.png"])
         self.assertEqual(self.window.page_name, "sample.png")
+        self.assertEqual(self.window.previous_scan_title.text(), "이전 페이지 · 001.png")
+        self.assertEqual([person["person_id"] for person in self.window.previous_view.people], ["first_person"])
         self.window.pages.setCurrentIndex(0)
         self.assertEqual(self.window.page_people[0]["person_id"], "first_person")
+        self.assertEqual(self.window.previous_scan_title.text(), "이전 페이지 없음")
         self.assertEqual((self.root / "review_state.json").read_bytes(), original_state)
 
     def test_orphan_region_preview_and_attachment_preserve_columns(self):
@@ -210,6 +213,7 @@ class DesktopReviewTests(unittest.TestCase):
 
     def test_zoom_controls_belong_to_image_panel(self):
         self.assertIs(self.window.scan_tools.parent(), self.window.view.parent())
+        self.assertIs(self.window.previous_view.parent(), self.window.view.parent())
 
     def test_recovery_persists_unverified_candidate_without_renumbering(self):
         self.window.select_person_id("p1")
