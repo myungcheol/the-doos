@@ -227,8 +227,38 @@ def detect_large_printed_name_regions(
                 center_x=(left+right)/2.0, center_y=(top+bottom)/2.0,
             )
 
+    # Some printed characters (e.g. 吉) are split into an upper and lower
+    # component. Horizontal-only merging leaves both shorter than the minimum
+    # glyph height. Join tightly stacked, aligned fragments before filtering.
+    merged_glyphs: list[dict[str, float | int]] = []
+    for glyph in sorted(glyphs, key=lambda item: int(item["y"])):
+        match = None
+        for previous in reversed(merged_glyphs):
+            gap = int(glyph["y"]) - (int(previous["y"]) + int(previous["height"]))
+            overlap = min(int(previous["x"]) + int(previous["width"]), int(glyph["x"]) + int(glyph["width"])) - max(int(previous["x"]), int(glyph["x"]))
+            combined_height = int(glyph["y"]) + int(glyph["height"]) - int(previous["y"])
+            combined_width = max(int(previous["x"]) + int(previous["width"]), int(glyph["x"]) + int(glyph["width"])) - min(int(previous["x"]), int(glyph["x"]))
+            if (0 <= gap <= 3 and int(previous["height"]) < min_component_height
+                    and int(glyph["height"]) < min_component_height
+                    # Wider fragments often join neighboring prose columns.
+                    and min_component_width <= combined_width <= min(30, min_component_width * 1.7)
+                    and overlap >= 0.6 * min(int(previous["width"]), int(glyph["width"]))
+                    and abs(float(previous["center_x"]) - float(glyph["center_x"])) <= x_cluster_tolerance
+                    and min_component_height <= combined_height <= 35):
+                match = previous
+                break
+        if match is None:
+            merged_glyphs.append(dict(glyph))
+        else:
+            left = min(int(match["x"]), int(glyph["x"]))
+            right = max(int(match["x"]) + int(match["width"]), int(glyph["x"]) + int(glyph["width"]))
+            bottom = int(glyph["y"]) + int(glyph["height"])
+            match.update(x=left, width=right-left, height=bottom-int(match["y"]),
+                         area=int(match["area"]) + int(glyph["area"]),
+                         center_x=(left+right)/2, center_y=(int(match["y"])+bottom)/2)
+
     large_glyphs = [
-        glyph for glyph in glyphs
+        glyph for glyph in merged_glyphs
         if int(glyph["width"]) >= min_component_width
         and int(glyph["height"]) >= min_component_height
         and int(glyph["area"]) >= min_component_area

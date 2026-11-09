@@ -10,10 +10,11 @@ import sys
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QRectF, QTimer
+from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
+    QGridLayout,
     QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
     QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget, QTextEdit,
     QVBoxLayout, QWidget,
@@ -21,6 +22,8 @@ from PySide6.QtWidgets import (
 
 from person_data_model import ensure_person_uid, strip_name_marker
 from person_info_extractor import extract_person_info_draft, get_field_source_columns
+from review_extensions import (merge_review_sources, page_name, orphan_columns,
+                               previous_row_people, make_continuation, recover_name_candidates)
 
 # OpenCV's Linux wheel may replace these variables during import, directing Qt
 # at cv2's plugin directory instead of PySide6's input-method plugins.
@@ -61,6 +64,7 @@ QPushButton:hover { background: #405d7a; }
 QPushButton:pressed { background: #243a51; }
 QPushButton#primary { background: #2166a6; border-color: #408ccc; font-weight: bold; }
 QPushButton#primary:hover { background: #2c7bbd; }
+QPushButton:checked { background: #2166a6; border-color: #82b7e3; color: white; }
 QLineEdit, QTextEdit, QComboBox, QListWidget { background: #101a27; color: #eef4fb; border: 1px solid #3b526a; border-radius: 5px; padding: 6px; selection-background-color: #315f87; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QListWidget:focus { border: 1px solid #66a9dc; }
 QListWidget::item { padding: 7px; border-bottom: 1px solid #273a4d; }
@@ -96,6 +100,35 @@ def read_json(path: Path, default):
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+class OcrFocusSelector(QWidget):
+    """Always-visible choices: avoids platform-dependent popup behavior."""
+    currentIndexChanged = Signal(int)
+    choices = [("전체 기록", "all"), ("이름", "name"), ("출생", "birth_text"),
+               ("사망", "death_text"), ("관직", "office_title"), ("배우자", "spouse_text"),
+               ("묘소", "burial_text"), ("자", "courtesy_name_hanja"), ("호", "pen_name_hanja")]
+
+    def __init__(self):
+        super().__init__()
+        layout = QGridLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        self.group = QButtonGroup(self)
+        for index, (title, _) in enumerate(self.choices):
+            button = QPushButton(title)
+            button.setCheckable(True)
+            self.group.addButton(button, index)
+            layout.addWidget(button, index // 3, index % 3)
+        self.group.button(0).setChecked(True)
+        self.group.idClicked.connect(self.currentIndexChanged.emit)
+
+    def currentData(self):
+        return self.choices[self.group.checkedId()][1]
+
+    def setCurrentIndex(self, index):
+        self.group.button(index).setChecked(True)
+        self.currentIndexChanged.emit(index)
 
 
 class ScanView(QGraphicsView):
@@ -208,6 +241,7 @@ class ReviewWindow(QMainWindow):
         self.draft = {}
         self.loading = False
         self.dirty = False
+        self.preview_link_sources = None
         outer = QWidget()
         self.setCentralWidget(outer)
         layout = QVBoxLayout(outer)
@@ -236,13 +270,9 @@ class ReviewWindow(QMainWindow):
         self.pages = QComboBox()
         self.pages.currentIndexChanged.connect(self.change_page)
         top.addWidget(self.pages)
-        for text, factor in [("−", 1 / 1.25), ("+", 1.25)]:
-            button = QPushButton(text)
-            button.clicked.connect(lambda checked=False, scale=factor: self.view.scale(scale, scale))
-            top.addWidget(button)
-        fit = QPushButton("화면 맞춤")
-        fit.clicked.connect(lambda: self.view.fitInView(self.view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio))
-        top.addWidget(fit)
+        import_button = QPushButton("이전 OCR 페이지 불러오기")
+        import_button.clicked.connect(self.import_previous_page)
+        top.addWidget(import_button)
         splitter = QSplitter()
         layout.addWidget(splitter, 1)
         left = QWidget()
@@ -251,6 +281,21 @@ class ReviewWindow(QMainWindow):
         scan_title = QLabel("원본 스캔")
         scan_title.setObjectName("section")
         left_layout.addWidget(scan_title)
+        self.scan_tools = QWidget(left)
+        scan_tools_layout = QHBoxLayout(self.scan_tools)
+        scan_tools_layout.setContentsMargins(0, 0, 0, 0)
+        for text, factor in [("− 축소", 1 / 1.25), ("+ 확대", 1.25)]:
+            button = QPushButton(text)
+            button.clicked.connect(lambda checked=False, scale=factor: self.view.scale(scale, scale))
+            scan_tools_layout.addWidget(button)
+        fit = QPushButton("화면 맞춤")
+        fit.clicked.connect(lambda: self.view.fitInView(self.view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio))
+        scan_tools_layout.addWidget(fit)
+        recover = QPushButton("누락 인명 후보 찾기")
+        recover.clicked.connect(self.recover_people)
+        scan_tools_layout.addWidget(recover)
+        scan_tools_layout.addStretch(1)
+        left_layout.addWidget(self.scan_tools)
         self.evidence = QLabel("OCR 박스에 마우스를 올려 원문을 확인하세요.")
         self.evidence.setObjectName("evidence")
         self.evidence.setWordWrap(True)
@@ -284,7 +329,7 @@ class ReviewWindow(QMainWindow):
         self.person_results.setMaximumHeight(170)
         self.person_results.currentItemChanged.connect(self.result_selected)
         right_layout.addWidget(self.person_results)
-        tabs = QTabWidget()
+        tabs = self.tabs = QTabWidget()
         right_layout.addWidget(tabs, 1)
         splitter.addWidget(right)
         splitter.setSizes([950, 500])
@@ -300,12 +345,8 @@ class ReviewWindow(QMainWindow):
         self.raw_name = QLabel()
         self.raw_name.setWordWrap(True)
         form.addRow("이름 OCR 원문", self.raw_name)
-        self.focus = QComboBox()
-        for title, key in [("전체 기록", "all"), ("이름", "name"), ("출생", "birth_text"), ("사망", "death_text"), ("관직", "office_title"), ("배우자", "spouse_text"), ("묘소", "burial_text"), ("자", "courtesy_name_hanja"), ("호", "pen_name_hanja")]:
-            self.focus.addItem(title, key)
-        # Qt emits currentIndexChanged while the popup is still handling the
-        # selection. Redrawing the scene there can leave the popup visible.
-        self.focus.currentIndexChanged.connect(lambda: QTimer.singleShot(0, self.render_scan))
+        self.focus = OcrFocusSelector()
+        self.focus.currentIndexChanged.connect(self.render_scan)
         form.addRow("OCR 강조", self.focus)
         self.inputs = {}
         for key, title in self.fields.items():
@@ -340,6 +381,10 @@ class ReviewWindow(QMainWindow):
         self.partners.setFixedHeight(110)
         self.partners.textChanged.connect(self.mark_dirty)
         form.addRow("배우자 배열 (JSON)", self.partners)
+        self.attached_records = QTextEdit()
+        self.attached_records.setReadOnly(True)
+        self.attached_records.setFixedHeight(130)
+        form.addRow("다른 페이지에서 연결한 원문", self.attached_records)
         save = QPushButton("인물 저장")
         save.setObjectName("primary")
         save.clicked.connect(self.save_person)
@@ -357,9 +402,214 @@ class ReviewWindow(QMainWindow):
         rel_layout.addWidget(self.parent_label)
         self.pending_parent = None
         tabs.addTab(relations, "관계 검수")
+        continuation_panel = QWidget()
+        continuation_layout = QVBoxLayout(continuation_panel)
+        instructions = QLabel("같은 행의 이전 페이지 마지막 인물을 제안합니다. 이름 누락 여부와 원본을 확인한 뒤 이어진 OCR 열만 선택해 연결하세요.")
+        instructions.setWordWrap(True)
+        continuation_layout.addWidget(instructions)
+        self.orphan_row = QComboBox()
+        self.orphan_row.currentIndexChanged.connect(self.refresh_orphan_columns)
+        continuation_layout.addWidget(self.orphan_row)
+        self.orphan_list = QListWidget()
+        self.orphan_list.setMinimumHeight(150)
+        self.orphan_list.itemChanged.connect(self.orphan_selection_changed)
+        self.orphan_list.currentItemChanged.connect(self.preview_orphan)
+        continuation_layout.addWidget(self.orphan_list, 1)
+        self.continuation_target = QComboBox()
+        continuation_layout.addWidget(QLabel("연결할 이전 페이지 인물"))
+        continuation_layout.addWidget(self.continuation_target)
+        attach = QPushButton("선택한 OCR 열을 인물에 연결")
+        attach.clicked.connect(self.attach_continuation)
+        continuation_layout.addWidget(attach)
+        self.continuation_list = QListWidget()
+        self.continuation_list.setMaximumHeight(70)
+        self.continuation_list.currentItemChanged.connect(self.preview_continuation)
+        continuation_layout.addWidget(self.continuation_list)
+        detach = QPushButton("선택한 기록 연결 해제")
+        detach.clicked.connect(self.detach_continuation)
+        continuation_layout.addWidget(detach)
+        continuation_scroll = QScrollArea()
+        continuation_scroll.setWidgetResizable(True)
+        continuation_scroll.setWidget(continuation_panel)
+        tabs.addTab(continuation_scroll, "이어진 기록")
+        tabs.currentChanged.connect(self.render_scan)
+        tabs.currentChanged.connect(lambda index: save.setVisible(index == 0))
         right_layout.addWidget(save)
         if root:
             self.open_folder(Path(root))
+
+    def import_previous_page(self):
+        if not self.root:
+            QMessageBox.information(self, "작업 폴더", "먼저 검수할 OCR 결과 폴더를 여세요.")
+            return
+        if self.dirty:
+            QMessageBox.information(self, "인물 저장", "인물 변경을 먼저 저장한 뒤 이전 페이지를 불러오세요.")
+            return
+        rows_file, _ = QFileDialog.getOpenFileName(self, "이전 페이지의 rows.json 선택", str(self.root), "OCR 행 JSON (rows.json)")
+        if not rows_file:
+            return
+        image_file, _ = QFileDialog.getOpenFileName(self, "해당 페이지 원본 스캔 선택", "", "스캔 이미지 (*.jpg *.jpeg *.png *.tif *.tiff *.bmp)")
+        if not image_file:
+            return
+        try:
+            self.import_page_data(Path(rows_file), Path(image_file))
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            QMessageBox.warning(self, "이전 페이지 불러오기", str(exc))
+
+    def import_page_data(self, rows_file, image_file):
+        rows = read_json(rows_file, None)
+        people = read_json(rows_file.parent / "people_candidates.json", [])
+        rels = read_json(rows_file.parent / "relationship_candidates.json", [])
+        if not isinstance(rows, list) or not rows or not isinstance(people, list) or not isinstance(rels, list):
+            raise ValueError("rows.json과 인물/관계 후보 배열 형식을 확인하세요.")
+        name = image_file.name
+        # Per-page relationship files predate the aggregate source_page field.
+        # Their page is supplied by the explicitly selected scan and page folder.
+        rels = [{**rel, "source_page": rel.get("source_page") or name} for rel in rels]
+        if any(page_name(p) == name for p in self.page_results):
+            raise ValueError("이미 불러온 페이지입니다.")
+        if any(p.get("source_page") != name for p in people) or any(r.get("source_page") != name for r in rels):
+            raise ValueError("원본 스캔 이름과 OCR 후보의 페이지 이름이 다릅니다.")
+        if {p.get("person_id") for p in people} & {p.get("person_id") for p in self.base_people}:
+            raise ValueError("기존 인물 ID와 충돌합니다. 같은 판본의 서로 다른 페이지인지 확인하세요.")
+        if cv2.imread(str(image_file)) is None:
+            raise ValueError("원본 스캔 이미지를 읽을 수 없습니다.")
+        entry = {"page_result": {"source_page": name, "source_image": str(image_file.resolve()),
+                                "page_output_dir": str(rows_file.parent.resolve()), "rows": rows},
+                 "people": people, "relationships": rels}
+        self.state.setdefault("supplemental_pages", []).append(entry)
+        if not self.persist():
+            self.state["supplemental_pages"].pop()
+            return False
+        self.base_people, self.base_rels, self.page_results = merge_review_sources(self.base_people, self.base_rels, self.page_results, self.state)
+        self.pages.blockSignals(True)
+        self.pages.addItem(name)
+        self.pages.blockSignals(False)
+        self.refresh_orphan_rows()
+        self.statusBar().showMessage("이전 페이지를 불러왔습니다. 이어진 기록 탭에서 연결하세요.", 6000)
+        return True
+
+    def recover_people(self):
+        if not self.root or getattr(self, "source_image", None) is None:
+            return
+        if self.dirty:
+            QMessageBox.information(self, "인물 저장", "인물 변경을 먼저 저장하세요.")
+            return
+        additions = recover_name_candidates(self.source_image, self.page, self.page_people, self.offset)
+        if not additions:
+            QMessageBox.information(self, "인명 후보", "추가로 검출된 큰 글자 인명 후보가 없습니다.")
+            return
+        if QMessageBox.question(self, "미검수 인명 후보", f"기존 OCR 결과와 이미지 기하에서 {len(additions)}개 후보를 찾았습니다. 검토 대기로 추가하시겠습니까?") != QMessageBox.StandardButton.Yes:
+            return
+        self.state.setdefault("additional_people", []).extend(additions)
+        if not self.persist():
+            del self.state["additional_people"][-len(additions):]
+            return
+        self.base_people, self.base_rels, self.page_results = merge_review_sources(self.base_people, self.base_rels, self.page_results, self.state)
+        self.change_page()
+        self.select_person_id(additions[0]["person_id"])
+        self.statusBar().showMessage("추가 후보의 이름과 영역을 원본에서 확인하세요.", 6000)
+
+    def refresh_orphan_rows(self):
+        self.preview_link_sources = None
+        self.orphan_row.blockSignals(True)
+        self.orphan_row.clear()
+        for index, row in enumerate(self.page.get("rows", [])):
+            count = len(orphan_columns(row, self.page_people, self.state))
+            self.orphan_row.addItem(f"행 {row.get('row_number', index + 1)} · 미배정 OCR {count}열", index)
+        self.orphan_row.blockSignals(False)
+        self.refresh_orphan_columns()
+
+    def refresh_orphan_columns(self, *_):
+        if not self.root or not hasattr(self, "page"):
+            return
+        self.preview_link_sources = None
+        self.orphan_list.blockSignals(True)
+        self.orphan_list.clear()
+        self.continuation_target.clear()
+        index = self.orphan_row.currentData()
+        if index is not None:
+            row = self.page["rows"][index]
+            for column in orphan_columns(row, self.page_people, self.state):
+                text = str(column.get("text") or "")
+                item = QListWidgetItem(text[:42] + ("…" if len(text) > 42 else ""))
+                item.setData(Qt.ItemDataRole.UserRole, column)
+                item.setToolTip(text)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.orphan_list.addItem(item)
+            targets = previous_row_people(self.page, row, self.page_results, self.base_people, self.state)
+            for person in targets:
+                self.continuation_target.addItem(f"{person.get('source_page')} · {effective_name(person, self.state)}", person["person_id"])
+        self.orphan_list.blockSignals(False)
+        self.refresh_continuation_list()
+        self.render_scan()
+
+    def checked_orphan_columns(self):
+        return [self.orphan_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.orphan_list.count())
+                if self.orphan_list.item(i).checkState() == Qt.CheckState.Checked]
+
+    def preview_orphan(self, current, _previous):
+        self.preview_link_sources = None
+        if current:
+            self.evidence.setText(str(current.data(Qt.ItemDataRole.UserRole).get("text") or ""))
+
+    def orphan_selection_changed(self, *_):
+        self.preview_link_sources = None
+        self.render_scan()
+
+    def attach_continuation(self):
+        target_id = self.continuation_target.currentData()
+        row_index = self.orphan_row.currentData()
+        if not target_id or row_index is None:
+            QMessageBox.information(self, "기록 연결", "같은 행의 이전 페이지 인물이 필요합니다. 이전 OCR 페이지를 먼저 불러오세요.")
+            return
+        if self.dirty:
+            QMessageBox.information(self, "인물 저장", "인물 변경을 먼저 저장하세요.")
+            return
+        target = next(p for p in self.base_people if p.get("person_id") == target_id)
+        try:
+            link = make_continuation(self.page, self.page["rows"][row_index], self.checked_orphan_columns(), target, self.state)
+        except ValueError as exc:
+            QMessageBox.warning(self, "기록 연결", str(exc))
+            return
+        self.state.setdefault("continuation_links", []).append(link)
+        if not self.persist():
+            self.state["continuation_links"].pop()
+            return
+        self.refresh_continuation_list()
+        self.statusBar().showMessage("이전 인물에 원문 기록을 연결했습니다. 검수한 인물 기록은 그대로 유지됩니다.", 6000)
+
+    def refresh_continuation_list(self):
+        self.continuation_list.clear()
+        people = {p.get("person_id"): p for p in self.base_people}
+        for link in self.state.get("continuation_links", []):
+            if link.get("source_page") != self.page_name or link.get("review_status") != "confirmed":
+                continue
+            target = people.get(link.get("target_person_id"), {})
+            item = QListWidgetItem(f"{link.get('source_row_id')} → {effective_name(target, self.state)} · {len(link.get('columns', []))}열")
+            item.setData(Qt.ItemDataRole.UserRole, link["continuation_id"])
+            self.continuation_list.addItem(item)
+
+    def preview_continuation(self, current, _previous):
+        if current:
+            link = next(link for link in self.state.get("continuation_links", []) if link["continuation_id"] == current.data(Qt.ItemDataRole.UserRole))
+            self.preview_link_sources = link.get("columns", [])
+            self.render_scan()
+            self.evidence.setText(link.get("text") or "")
+
+    def detach_continuation(self):
+        item = self.continuation_list.currentItem()
+        if not item or self.dirty:
+            return
+        link = next(link for link in self.state.get("continuation_links", []) if link["continuation_id"] == item.data(Qt.ItemDataRole.UserRole))
+        link["review_status"] = "rejected"
+        if not self.persist():
+            link["review_status"] = "confirmed"
+            return
+        self.preview_link_sources = None
+        self.refresh_continuation_list()
+        self.render_scan()
 
     def mark_dirty(self, *_):
         if not self.loading and self.selected_id:
@@ -393,6 +643,9 @@ class ReviewWindow(QMainWindow):
         self.root, self.page_results, self.base_people, self.base_rels, self.state = root, pages, people, rels, state
         for key, default in [("people_updates", {}), ("relationship_updates", {}), ("manual_relationships", []), ("person_uid_map", {}), ("edition", {"edition_id": "jokbo-1987", "publication_year": 1987, "volume": None}), ("page_metadata", {})]:
             self.state.setdefault(key, default)
+        self.base_people, self.base_rels, self.page_results = merge_review_sources(
+            self.base_people, self.base_rels, self.page_results, self.state
+        )
         self.state_digest = file_digest(root / "review_state.json")
         self.dirty = False
         self.selected_id = None
@@ -441,6 +694,7 @@ class ReviewWindow(QMainWindow):
             page_dir = self.root / Path(str(self.page.get("source_image", self.page_name))).stem
         try:
             image, self.offset, _ = get_page_image(self.page, str(page_dir))
+            self.source_image = image
             from PySide6.QtGui import QImage
             rgb = image[:, :, ::-1].copy()
             qimage = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
@@ -448,6 +702,8 @@ class ReviewWindow(QMainWindow):
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "이미지 오류", str(exc))
             self.pixmap, self.offset = QPixmap(), (0, 0)
+            self.source_image = None
+        self.refresh_orphan_rows()
         self.person_changed()
         self.view.fitInView(self.view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
@@ -529,6 +785,11 @@ class ReviewWindow(QMainWindow):
         self.name_status.setCurrentIndex(max(0, self.name_status.findData(status)))
         self.info_confirmed.setChecked(update.get("information_review_status", (person or {}).get("information_review_status")) == "confirmed")
         self.partners.setPlainText(json.dumps(update.get("spouses", (person or {}).get("spouses") or []), ensure_ascii=False, indent=2))
+        self.attached_records.setPlainText("\n\n".join(
+            f"{link.get('source_page')} · {link.get('source_row_id')}\n{link.get('text', '')}"
+            for link in self.state.get("continuation_links", []) if link.get("review_status") == "confirmed"
+            and link.get("target_person_id") == self.selected_id
+        ))
         self.loading = False
         self.person_results.blockSignals(True)
         for row in range(self.person_results.count()):
@@ -547,7 +808,9 @@ class ReviewWindow(QMainWindow):
             return
         person = next((p for p in self.page_people if p.get("person_id") == self.selected_id), None)
         focus = self.focus.currentData()
-        if not person:
+        if self.tabs.currentIndex() == 2:
+            sources = self.preview_link_sources if self.preview_link_sources is not None else self.checked_orphan_columns()
+        elif not person:
             sources = []
         elif focus == "name":
             sources = [{"bbox": person.get("bbox"), "text": person.get("raw_name_ocr") or person.get("name_hanja_candidate") or ""}]
@@ -582,7 +845,8 @@ class ReviewWindow(QMainWindow):
             QMessageBox.warning(self, "저장 충돌", "다른 프로그램에서 검수 상태를 변경했습니다. 다시 열어 확인하세요.")
             return False
         try:
-            for person in self.base_people:
+            people, _, _ = merge_review_sources(self.base_people, self.base_rels, self.page_results, self.state)
+            for person in people:
                 ensure_person_uid(person, self.state)
             save_state(self.root, self.state, self.base_people, self.base_rels, self.page_results)
             self.state_digest = file_digest(self.root / "review_state.json")

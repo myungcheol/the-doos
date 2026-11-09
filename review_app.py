@@ -186,7 +186,10 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
 def build_review_data(root: Path, base_people: list[dict[str, Any]],
                       base_relationships: list[dict[str, Any]], state: dict[str, Any],
                       page_results: list[dict[str, Any]] | None = None):
-    page_results = page_results or []
+    from review_extensions import merge_review_sources, apply_continuations
+    base_people, base_relationships, page_results = merge_review_sources(
+        base_people, base_relationships, page_results or [], state
+    )
     page_result_map = {
         str(item.get("source_page") or Path(item.get("source_image", "page")).name): item
         for item in page_results
@@ -246,6 +249,7 @@ def build_review_data(root: Path, base_people: list[dict[str, Any]],
         )
         person["source_occurrences"] = [occurrence]
         person["raw_data"] = build_raw_data(raw, page_result, draft, occurrence)
+        apply_continuations(person, state)
         person["source_record_ocr_text"] = (
             update.get("source_record_ocr_text")
             or draft.get("source_record_ocr_text")
@@ -531,6 +535,10 @@ def main() -> None:
     state.setdefault("person_uid_map", {})
     state.setdefault("edition", {"edition_id": "jokbo-1987", "publication_year": 1987, "volume": None})
     state.setdefault("page_metadata", {})
+    from review_extensions import merge_review_sources
+    all_people, all_relationships, page_results = merge_review_sources(
+        all_people, all_relationships, page_results, state
+    )
     # Assign permanent IDs once and keep them in review_state.json. Location is
     # provenance, not identity, so a revised edition can reuse the same ID.
     uid_count_before = len(state["person_uid_map"])

@@ -77,17 +77,13 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(self.window.selected_id, "p2")
         self.assertTrue(item.text().strip().startswith("2."))
 
-    def test_focus_popup_closes_after_selection(self):
+    def test_focus_buttons_select_without_popup(self):
         self.window.show()
         self.window.select_person_id("p1")
-        self.window.focus.showPopup()
-        self.app.processEvents()
-        view = self.window.focus.view()
-        index = view.model().index(1, 0)
-        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(index).center())
+        QTest.mouseClick(self.window.focus.group.button(1), Qt.MouseButton.LeftButton)
         self.app.processEvents()
         self.assertEqual(self.window.focus.currentData(), "name")
-        self.assertFalse(view.isVisible())
+        self.assertIsNone(QApplication.activePopupWidget())
 
     def test_korean_input_method_commit(self):
         self.window.select_person_id("p1")
@@ -130,6 +126,67 @@ class DesktopReviewTests(unittest.TestCase):
         self.window.save_person()
         exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
         self.assertEqual(exports[0]["reviewed_data"]["gender"], "unknown")
+
+    def test_import_attach_detach_and_reload_keep_original_ocr(self):
+        original = (self.root / "ocr_results.json").read_bytes()
+        previous_dir = self.root / "previous"
+        previous_dir.mkdir()
+        previous_image = self.root / "000.png"
+        image = QImage(100, 100, QImage.Format.Format_RGB32)
+        image.fill(0xffffffff)
+        image.save(str(previous_image))
+        rows_file = previous_dir / "rows.json"
+        rows_file.write_text(json.dumps([{"row_id": "000_row_01", "row_number": 1, "columns": []}]), encoding="utf-8")
+        (previous_dir / "people_candidates.json").write_text(json.dumps([
+            {"person_id": "p0", "source_page": "000.png", "source_row_id": "000_row_01",
+             "name_hanja_candidate": "甲", "bbox": {"x": 30, "y": 20, "width": 10, "height": 20}}
+        ]), encoding="utf-8")
+        (previous_dir / "relationship_candidates.json").write_text(json.dumps([
+            {"relationship_id": "old-format", "parent_candidate_id": "p0", "child_candidate_id": "p0", "review_status": "rejected"}
+        ]), encoding="utf-8")
+        self.window.page["rows"] = [{"row_id": "sample_row_01", "row_number": 1,
+                                     "columns": [{"column_id": "source", "text": "續記原文",
+                                                  "bbox": {"x": 60, "y": 10, "width": 15, "height": 50}}]}]
+        self.assertTrue(self.window.import_page_data(rows_file, previous_image))
+        self.assertEqual(self.window.base_rels[0]["source_page"], "000.png")
+        self.window.tabs.setCurrentIndex(2)
+        self.window.orphan_list.item(0).setCheckState(Qt.CheckState.Checked)
+        self.assertEqual(self.window.view.sources[0]["bbox"]["x"], 60)
+        self.window.attach_continuation()
+        state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["continuation_links"][0]["target_person_id"], "p0")
+        self.assertEqual(len(state["person_uid_map"]), 3)
+        exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
+        person = next(p for p in exports if p["person_id"] == "p0")
+        self.assertEqual(person["raw_data"]["record_ocr"]["continuations"][0]["text"], "續記原文")
+        self.assertEqual((self.root / "ocr_results.json").read_bytes(), original)
+        self.window.open_folder(self.root)
+        self.assertIn("p0", [p["person_id"] for p in self.window.base_people])
+        self.assertEqual(self.window.continuation_list.count(), 1)
+        self.window.continuation_list.setCurrentRow(0)
+        self.window.detach_continuation()
+        exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
+        self.assertNotIn("continuations", next(p for p in exports if p["person_id"] == "p0")["raw_data"]["record_ocr"])
+        self.assertEqual((self.root / "ocr_results.json").read_bytes(), original)
+
+    def test_zoom_controls_belong_to_image_panel(self):
+        self.assertIs(self.window.scan_tools.parent(), self.window.view.parent())
+
+    def test_recovery_persists_unverified_candidate_without_renumbering(self):
+        self.window.select_person_id("p1")
+        self.window.save_person()
+        old_map = dict(self.window.state["person_uid_map"])
+        recovered = {"person_id": "new_candidate", "source_page": "sample.png", "source_row_id": "row1",
+                     "bbox": {"x": 60, "y": 10, "width": 20, "height": 40}, "raw_name_ocr": "",
+                     "review_status": "needs_review"}
+        with patch("desktop_review.recover_name_candidates", return_value=[recovered]), patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            self.window.recover_people()
+        self.assertEqual([p["person_id"] for p in self.window.page_people], ["p1", "p2", "new_candidate"])
+        self.assertEqual(self.window.selected_id, "new_candidate")
+        for key, uid in old_map.items():
+            self.assertEqual(self.window.state["person_uid_map"][key], uid)
+        self.window.open_folder(self.root)
+        self.assertIn("new_candidate", [p["person_id"] for p in self.window.base_people])
 
     def test_external_state_change_is_not_overwritten(self):
         self.window.select_person_id("p1")
