@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import base64
 import csv
-import io
 import json
+import hashlib
 import math
 from pathlib import Path
 from typing import Any
@@ -15,9 +15,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from PIL import Image, ImageDraw, ImageFont
 
-from person_info_extractor import extract_person_info_draft
+from person_info_extractor import extract_person_info_draft, get_field_source_columns
 from person_data_model import (
     build_person_registry, build_raw_data, build_reviewed_data, ensure_person_uid,
     make_source_occurrence, person_local_key, registry_options, strip_name_marker,
@@ -57,12 +56,36 @@ def read_json(path: Path, default: Any) -> Any:
         return default
 
 
-def image_data_url(image: Image.Image) -> str:
-    """Encode a rendered PIL image for the local drag-pan Streamlit component."""
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+@st.cache_data(show_spinner=False)
+def image_data_url_from_file(image_path: str, modified_ns: int, file_size: int) -> str:
+    """Read and encode the source scan once; keep it stable across UI reruns."""
+    path = Path(image_path)
+    suffix = path.suffix.lower()
+    if suffix in {".tif", ".tiff"}:
+        source = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if source is None:
+            raise ValueError(f"이미지를 읽지 못했습니다: {path}")
+        ok, encoded_image = cv2.imencode(".png", source)
+        if not ok:
+            raise ValueError(f"브라우저용 이미지로 변환하지 못했습니다: {path}")
+        raw = encoded_image.tobytes()
+        mime = "image/png"
+    else:
+        raw = path.read_bytes()
+        mime = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+            ".webp": "image/webp", ".bmp": "image/bmp",
+        }.get(suffix, "application/octet-stream")
+    encoded = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+@st.cache_data(show_spinner=False)
+def cached_extract_person_info_draft(
+    person: dict[str, Any], page_result: dict[str, Any], page_people: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Cache deterministic OCR evidence extraction while keeping the UI responsive."""
+    return extract_person_info_draft(person, page_result, page_people)
 
 
 def find_output_root(raw_path: str) -> Path | None:
@@ -207,14 +230,15 @@ def build_review_data(root: Path, base_people: list[dict[str, Any]],
         cache_key = f"{source_page}::{person.get('person_id')}"
         if cache_key not in draft_cache:
             if page_result:
-                draft_cache[cache_key] = extract_person_info_draft(
+                draft_cache[cache_key] = cached_extract_person_info_draft(
                     raw, page_result, by_page_people.get(source_page, [])
                 )
             else:
                 draft_cache[cache_key] = {}
+        # Always use the current extractor result for raw OCR evidence/bboxes.
+        # A persisted draft from an older UI version may not contain field source
+        # boxes, so it must not overwrite the freshly recomputed source geometry.
         draft = dict(draft_cache[cache_key] or {})
-        if isinstance(update.get("auto_extraction_draft"), dict):
-            draft.update(update["auto_extraction_draft"])
         occurrence = make_source_occurrence(
             raw, page_result, edition, page_metadata.get(source_page, {}),
             by_page_people.get(source_page, []),
@@ -245,13 +269,15 @@ def build_review_data(root: Path, base_people: list[dict[str, Any]],
     return people, rels
 
 
-def get_page_image(page_result: dict[str, Any], page_dir: Path) -> tuple[np.ndarray, tuple[int, int], str]:
+@st.cache_data(show_spinner=False)
+def get_page_image(page_result: dict[str, Any], page_dir: str) -> tuple[np.ndarray, tuple[int, int], str]:
     """Return image, coordinate offset (x,y), and source label.
 
     Person bboxes are always in original-page coordinates. If the original
     scan is unavailable, table_roi.jpg is used and the stored ROI offset is
     subtracted while drawing / added after clicks.
     """
+    page_dir = Path(page_dir)
     source = Path(str(page_result.get("source_image", ""))).expanduser()
     if source.exists():
         image = cv2.imread(str(source), cv2.IMREAD_COLOR)
@@ -285,67 +311,36 @@ def parse_optional_generation(value: str) -> int | None:
         raise ValueError("세대는 숫자로 입력하거나 비워 두세요.") from exc
 
 
-def fit_display(image: np.ndarray, max_width: int = 950, max_height: int = 720,
-                zoom_factor: float = 1.0) -> tuple[Image.Image, float]:
-    """Fit the full page, then apply an unbounded user-selected zoom factor."""
-    h, w = image.shape[:2]
-    fit_scale = min(1.0, max_width / max(1, w), max_height / max(1, h))
-    scale = fit_scale * max(0.05, float(zoom_factor))
-    out_w, out_h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
-    interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
-    resized = cv2.resize(image, (out_w, out_h), interpolation=interpolation) if abs(scale - 1) > 1e-6 else image.copy()
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    return Image.fromarray(rgb), scale
+def _rgba_css(color: tuple[int, int, int, int]) -> tuple[str, float]:
+    return "#%02X%02X%02X" % color[:3], color[3] / 255.0
 
 
-def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[str, Any]],
-                 relationships: list[dict[str, Any]], state: dict[str, Any],
-                 selected_id: str | None = None, pending_parent_id: str | None = None,
-                 active_parent_id: str | None = None,
-                 max_width: int = 950, max_height: int = 720,
-                 zoom_factor: float = 1.0,
-                 ocr_boxes: list[dict[str, Any]] | None = None) -> Image.Image:
-    base, scale = fit_display(image, max_width, max_height, zoom_factor)
-    draw = ImageDraw.Draw(base, "RGBA")
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 15)
-        small_font = ImageFont.truetype("DejaVuSans.ttf", 12)
-    except OSError:
-        font = ImageFont.load_default()
-        small_font = ImageFont.load_default()
+def _source_bbox(bbox: dict[str, Any], offset: tuple[int, int]) -> dict[str, float]:
     ox, oy = offset
+    return {
+        "x": float(bbox.get("x", 0)) - ox,
+        "y": float(bbox.get("y", 0)) - oy,
+        "width": float(bbox.get("width", 0)),
+        "height": float(bbox.get("height", 0)),
+    }
+
+
+def build_viewer_overlay_data(
+    image_size: tuple[int, int], offset: tuple[int, int], people: list[dict[str, Any]],
+    relationships: list[dict[str, Any]], state: dict[str, Any],
+    selected_id: str | None = None, pending_parent_id: str | None = None,
+    active_parent_id: str | None = None,
+    ocr_boxes: list[dict[str, Any]] | None = None,
+    ocr_focus: str = "all",
+) -> dict[str, Any]:
+    """Return vector overlay primitives in original image coordinates.
+
+    The browser renders these over a stable source image. Changing zoom or
+    selecting a person updates only SVG overlays; it never reloads the bitmap.
+    """
+    width, height = image_size
     person_map = {p.get("person_id"): p for p in people}
-
-    # OCR evidence regions for the currently selected person. The name region
-    # and text columns use separate colors; character token boxes are optional.
-    for item in (ocr_boxes or []):
-        box = item.get("bbox") or {}
-        if not box:
-            continue
-        x0 = (float(box.get("x", 0)) - ox) * scale
-        y0 = (float(box.get("y", 0)) - oy) * scale
-        x1 = (float(box.get("x", 0)) + float(box.get("width", 0)) - ox) * scale
-        y1 = (float(box.get("y", 0)) + float(box.get("height", 0)) - oy) * scale
-        color = REVIEW_COLORS["ocr_name"] if item.get("kind") == "name" else REVIEW_COLORS["ocr_record"]
-        draw.rectangle((x0, y0, x1, y1), outline=color, width=max(2, int(round(2 * min(scale, 3)))))
-        label = str(item.get("label") or item.get("text") or "OCR")[:24]
-        label_top = min(max(0, y1 + 2), max(0, base.height - 18))
-        text_box = draw.textbbox((x0, label_top), label, font=small_font)
-        draw.rectangle(text_box, fill=(15, 23, 42, 205))
-        draw.text((x0, label_top), label, fill=(255, 255, 255, 255), font=small_font)
-        for token in item.get("token_boxes") or []:
-            token_box = token.get("bbox") or {}
-            if not token_box:
-                continue
-            tx0 = (float(token_box.get("x", 0)) - ox) * scale
-            ty0 = (float(token_box.get("y", 0)) - oy) * scale
-            tx1 = (float(token_box.get("x", 0)) + float(token_box.get("width", 0)) - ox) * scale
-            ty1 = (float(token_box.get("y", 0)) + float(token_box.get("height", 0)) - oy) * scale
-            draw.rectangle((tx0, ty0, tx1, ty1), outline=REVIEW_COLORS["ocr_token"], width=max(1, int(round(scale))))
-
-    # Confirmed links are always visible. When a parent is active, also show
-    # its unreviewed candidate links, using a different color to avoid implying
-    # that those candidate relationships are already factual.
+    relations: list[dict[str, Any]] = []
     for rel in relationships:
         status = rel.get("review_status")
         parent_id = rel.get("parent_candidate_id")
@@ -354,59 +349,120 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
         active_parent_edge = bool(active_parent_id and parent_id == active_parent_id)
         if status != "confirmed" and not active_parent_edge:
             continue
-        child_id = rel.get("child_candidate_id")
         parent = person_map.get(parent_id)
-        child = person_map.get(child_id)
+        child = person_map.get(rel.get("child_candidate_id"))
         if not parent or not child:
             continue
-        pb, cb = parent.get("bbox") or {}, child.get("bbox") or {}
-        # Connect at the parent's lower edge and the child's upper edge so
-        # relationship lines do not run through the vertical name glyphs.
-        parent_anchor, child_anchor = relationship_bbox_anchors(pb, cb)
-        pc = ((parent_anchor[0] - ox) * scale, (parent_anchor[1] - oy) * scale)
-        cc = ((child_anchor[0] - ox) * scale, (child_anchor[1] - oy) * scale)
-        active_edge = active_parent_edge and status == "confirmed"
-        active_candidate = active_parent_edge and status != "confirmed"
-        line_color = (
-            REVIEW_COLORS["relation_active_confirmed"] if active_edge else
-            REVIEW_COLORS["relation_candidate"] if active_candidate else
-            REVIEW_COLORS["relation_confirmed"]
+        parent_anchor, child_anchor = relationship_bbox_anchors(
+            parent.get("bbox") or {}, child.get("bbox") or {}
         )
-        line_width = 6 if active_edge else (3 if active_candidate else 3)
-        draw.line([pc, cc], fill=line_color, width=line_width)
-        if active_edge:
-            dx, dy = cc[0] - pc[0], cc[1] - pc[1]
-            length = max(1.0, math.hypot(dx, dy))
-            ux, uy = dx / length, dy / length
-            px, py = -uy, ux
-            base_x, base_y = cc[0] - ux * 13, cc[1] - uy * 13
-            draw.polygon([cc, (base_x + px * 6, base_y + py * 6),
-                          (base_x - px * 6, base_y - py * 6)],
-                         fill=line_color)
+        color_key = (
+            "relation_active_confirmed" if active_parent_edge and status == "confirmed" else
+            "relation_candidate" if active_parent_edge else "relation_confirmed"
+        )
+        color, opacity = _rgba_css(REVIEW_COLORS[color_key])
+        relations.append({
+            "x1": parent_anchor[0] - offset[0], "y1": parent_anchor[1] - offset[1],
+            "x2": child_anchor[0] - offset[0], "y2": child_anchor[1] - offset[1],
+            "color": color, "opacity": opacity,
+            "width": 6 if color_key == "relation_active_confirmed" else 3,
+            "arrow": color_key == "relation_active_confirmed",
+        })
 
+    person_boxes: list[dict[str, Any]] = []
     for index, person in enumerate(people, start=1):
-        bbox = person.get("bbox") or {}
-        x0 = (float(bbox.get("x", 0)) - ox) * scale
-        y0 = (float(bbox.get("y", 0)) - oy) * scale
-        x1 = (float(bbox.get("x", 0)) + float(bbox.get("width", 0)) - ox) * scale
-        y1 = (float(bbox.get("y", 0)) + float(bbox.get("height", 0)) - oy) * scale
         pid = person.get("person_id")
         status = effective_person_status(person, state)
-        color = (REVIEW_COLORS["person_needs_review"] if status != "confirmed"
-                 else REVIEW_COLORS["person_confirmed"])
-        width = 4 if pid == selected_id or pid == pending_parent_id else 2
-        if pid == selected_id:
-            color = REVIEW_COLORS["person_selected"]
-        elif pid == pending_parent_id:
-            color = REVIEW_COLORS["parent_selected"]
-        draw.rectangle((x0, y0, x1, y1), outline=color, width=width)
-        label = f"{index}. {effective_name(person, state)}"
-        label_top = max(0, y0 - 21)
-        text_box = draw.textbbox((x0, label_top), label, font=small_font)
-        draw.rectangle(text_box, fill=(15, 23, 42, 190))
-        draw.text((x0, label_top), label, fill=(255, 255, 255, 255), font=small_font)
+        color_key = (
+            "person_selected" if pid == selected_id else
+            "parent_selected" if pid == pending_parent_id else
+            "person_confirmed" if status == "confirmed" else "person_needs_review"
+        )
+        color, opacity = _rgba_css(REVIEW_COLORS[color_key])
+        raw_data = person.get("raw_data") or {}
+        raw_name = raw_data.get("name_ocr") or {}
+        raw_record = raw_data.get("record_ocr") or {}
+        raw_fields = raw_data.get("field_ocr") or {}
 
-    return base
+        def make_ocr_items(source_items: list[dict[str, Any]], color_key: str) -> list[dict[str, Any]]:
+            result: list[dict[str, Any]] = []
+            item_color, item_opacity = _rgba_css(REVIEW_COLORS[color_key])
+            for source_item in source_items or []:
+                source_bbox = source_item.get("bbox") or {}
+                if not source_bbox:
+                    continue
+                tokens = []
+                for token in source_item.get("token_boxes") or []:
+                    token_bbox = token.get("bbox") or {}
+                    if token_bbox:
+                        token_color, token_opacity = _rgba_css(REVIEW_COLORS["ocr_token"])
+                        tokens.append({
+                            "bbox": _source_bbox(token_bbox, offset),
+                            "color": token_color, "opacity": token_opacity,
+                        })
+                result.append({
+                    "bbox": _source_bbox(source_bbox, offset),
+                    "label": str(source_item.get("text") or "OCR")[:48],
+                    "color": item_color, "opacity": item_opacity, "tokens": tokens,
+                })
+            return result
+
+        name_ocr = []
+        name_bbox = raw_name.get("bbox") or person.get("bbox") or {}
+        if name_bbox:
+            name_color, name_opacity = _rgba_css(REVIEW_COLORS["ocr_name"])
+            name_ocr.append({
+                "bbox": _source_bbox(name_bbox, offset),
+                "label": "이름 OCR: " + str(raw_name.get("raw_text") or person.get("raw_name_ocr") or ""),
+                "color": name_color, "opacity": name_opacity, "tokens": [],
+            })
+        all_ocr = make_ocr_items(raw_record.get("columns") or [], "ocr_record")
+        field_ocr = {
+            field: make_ocr_items(source.get("columns") or [], "ocr_record")
+            for field, source in raw_fields.items()
+        }
+        person_boxes.append({
+            "bbox": _source_bbox(person.get("bbox") or {}, offset),
+            "person_id": pid,
+            "label": f"{index}. {effective_name(person, state)}",
+            "color": color, "selected_color": _rgba_css(REVIEW_COLORS["person_selected"])[0],
+            "parent_color": _rgba_css(REVIEW_COLORS["parent_selected"])[0],
+            "opacity": opacity,
+            "width": 4 if pid in {selected_id, pending_parent_id} else 2,
+            "selected": pid == selected_id,
+            # OCR bboxes are sent once with the page. The browser can switch a
+            # person's highlighted OCR fields instantly on image selection,
+            # without waiting for another Streamlit rerun.
+            "ocr": {"name": name_ocr, "all": all_ocr, "fields": field_ocr},
+        })
+
+    ocr_overlays: list[dict[str, Any]] = []
+    for item in (ocr_boxes or []):
+        bbox = item.get("bbox") or {}
+        if not bbox:
+            continue
+        color_key = "ocr_name" if item.get("kind") == "name" else "ocr_record"
+        color, opacity = _rgba_css(REVIEW_COLORS[color_key])
+        tokens = []
+        for token in item.get("token_boxes") or []:
+            token_bbox = token.get("bbox") or {}
+            if token_bbox:
+                token_color, token_opacity = _rgba_css(REVIEW_COLORS["ocr_token"])
+                tokens.append({
+                    "bbox": _source_bbox(token_bbox, offset),
+                    "color": token_color, "opacity": token_opacity,
+                })
+        ocr_overlays.append({
+            "bbox": _source_bbox(bbox, offset),
+            "label": str(item.get("label") or item.get("text") or "OCR")[:48],
+            "color": color, "opacity": opacity, "tokens": tokens,
+        })
+
+    return {
+        "image_width": int(width), "image_height": int(height),
+        "selected_id": selected_id, "ocr_focus": ocr_focus,
+        "relationships": relations, "people": person_boxes, "ocr_boxes": ocr_overlays,
+    }
 
 
 def find_person_at_click(people: list[dict[str, Any]], x: float, y: float,
@@ -436,7 +492,7 @@ def save_state(root: Path, state: dict[str, Any], base_people: list[dict[str, An
 
 
 def main() -> None:
-    st.title("족보 OCR 검수 v6.5")
+    st.title("족보 OCR 검수 v6.7")
     st.caption("이미지를 확대해 OCR 글자 영역을 확인하고, 인물별 원본 OCR과 검수 데이터를 분리 저장합니다. 인물은 영구 UUID로 식별하며 부모·자녀 관계는 해당 ID를 참조합니다.")
 
     with st.sidebar:
@@ -451,16 +507,6 @@ def main() -> None:
             "오른쪽 검수 패널 높이", 500, 1000, 780, 20,
             help="오른쪽 인물/관계 입력 영역만 내부 스크롤됩니다. 왼쪽 페이지 이미지는 그대로 보입니다.",
         )
-        zoom_factor = st.number_input(
-            "왼쪽 이미지 확대 배율", min_value=0.25, max_value=None,
-            value=1.0, step=0.25, key="page_zoom_factor",
-            help="1.0은 화면 맞춤. 1보다 크게 입력하면 확대됩니다. 고정된 최대 배율은 없습니다.",
-        )
-        if st.button(
-            "이미지 화면 맞춤", use_container_width=True,
-            on_click=lambda: st.session_state.update({"page_zoom_factor": 1.0}),
-        ):
-            st.rerun()
         click_mode = st.radio("이미지 클릭 모드", ["부모 → 자녀 연결", "인물 선택 / 이름 검수"], index=0)
 
     root = find_output_root(raw_root)
@@ -636,7 +682,7 @@ def main() -> None:
         selected_id = None
     selected_for_overlay = page_person_lookup.get(selected_id) if selected_id else None
     selected_draft = (
-        extract_person_info_draft(selected_for_overlay, page_result, page_people)
+        cached_extract_person_info_draft(selected_for_overlay, page_result, page_people)
         if selected_for_overlay else {}
     )
     ocr_focus_options = {
@@ -663,38 +709,58 @@ def main() -> None:
                 "bbox": selected_for_overlay.get("bbox") or {},
             }]
         else:
-            columns = selected_draft.get("columns") or []
-            if focus != "all":
-                wanted = {x.get("column_id") for x in (selected_draft.get("field_sources") or {}).get(focus, [])}
-                columns = [x for x in columns if x.get("column_id") in wanted]
+            if focus == "all":
+                columns = selected_draft.get("columns") or []
+            else:
+                # field_sources already contains the exact OCR column objects and
+                # their original-page bbox. Use them directly instead of looking
+                # them up by column_id (older OCR files may omit that identifier).
+                columns = get_field_source_columns(selected_draft, focus)
+                if not columns and (selected_draft.get("draft_values") or {}).get(focus):
+                    # Legacy review drafts may contain text but not field_sources.
+                    # In that case highlight the person's full record region rather
+                    # than silently showing no bbox at all.
+                    columns = selected_draft.get("columns") or []
             ocr_boxes = [{
                 "kind": "record", "label": str(col.get("text") or "OCR"),
                 "bbox": col.get("bbox") or {}, "token_boxes": col.get("token_boxes") or [],
-            } for col in columns]
-    _, display_scale = fit_display(
-        image, image_max_width, effective_image_height, zoom_factor
-    )
+            } for col in columns if col.get("bbox")]
     pending_parent_id = st.session_state.get("pending_parent_id")
-    overlay = draw_overlay(
-        image, offset, page_people, page_rels, state,
+    overlay_payload = build_viewer_overlay_data(
+        (image.shape[1], image.shape[0]), offset, page_people, page_rels, state,
         selected_id=selected_id, pending_parent_id=pending_parent_id,
         active_parent_id=pending_parent_id if click_mode == "부모 → 자녀 연결" else None,
-        max_width=image_max_width, max_height=effective_image_height,
-        zoom_factor=zoom_factor, ocr_boxes=ocr_boxes,
+        ocr_boxes=ocr_boxes, ocr_focus=focus,
     )
+    image_path = Path(image_label) if Path(image_label).is_file() else page_dir / "table_roi.jpg"
+    image_stat = image_path.stat()
+    base_image_url = image_data_url_from_file(
+        str(image_path.resolve()), image_stat.st_mtime_ns, image_stat.st_size
+    )
+    fit_scale = min(
+        1.0, image_max_width / max(1, image.shape[1]),
+        effective_image_height / max(1, image.shape[0]),
+    )
+    base_width = max(1, int(round(image.shape[1] * fit_scale)))
+    base_height = max(1, int(round(image.shape[0] * fit_scale)))
 
     image_col, detail_col = st.columns([1.8, 1], gap="large")
     with image_col:
         st.subheader(f"원본 페이지 · {selected_page_name}")
         st.caption(
-            f"{image_label} · 확대 {zoom_factor:g}x · 마우스로 드래그해 이동, 스크롤바로도 이동 가능 · "
-            "짧게 클릭하면 인물을 선택합니다."
+            f"{image_label} · 이미지 위의 + / − 버튼 또는 Ctrl+마우스휠로 확대·축소 · "
+            "드래그로 이동 · 짧게 클릭하면 인물을 선택합니다."
         )
         click_value = jokbo_image_viewer(
-            image_data=image_data_url(overlay),
+            image_data=base_image_url,
+            overlay_data=json.dumps(overlay_payload, ensure_ascii=False, separators=(",", ":")),
+            fit_width=base_width,
+            fit_height=base_height,
             viewport_height=int(effective_image_height),
-            height=int(effective_image_height) + 4,
-            key=f"page_image_{selected_page_name}_{click_mode}_{zoom_factor}",
+            page_id=selected_page_name,
+            click_mode=click_mode,
+            height=int(effective_image_height) + 46,
+            key=f"page_image_{selected_page_name}",
             default=None,
         )
         if click_value and isinstance(click_value, dict) and "x" in click_value and "y" in click_value:
@@ -702,9 +768,10 @@ def main() -> None:
             event_key = f"last_click_{selected_page_name}_{click_mode}"
             if st.session_state.get(event_key) != click_event:
                 st.session_state[event_key] = click_event
-                # Coordinates returned by the component refer to the resized image.
-                x_img = float(click_value["x"]) / max(display_scale, 1e-6)
-                y_img = float(click_value["y"]) / max(display_scale, 1e-6)
+                # The viewer returns coordinates in the natural source-image space.
+                # No Python-side zoom scale conversion is needed.
+                x_img = float(click_value["x"])
+                y_img = float(click_value["y"])
                 person = find_person_at_click(page_people, x_img, y_img, offset)
                 if person is None:
                     st.session_state["last_click_message"] = "인물 박스 안쪽을 클릭해 주세요."
@@ -713,7 +780,9 @@ def main() -> None:
                     st.session_state["selected_person_id"] = person["person_id"]
                     st.session_state[f"person_select_{selected_page_name}"] = person["person_id"]
                     st.session_state["last_click_message"] = f"선택됨: {effective_name(person, state)}"
-                    st.rerun()
+                    # The custom component event already caused this Streamlit
+                    # run. The browser highlights the clicked bbox immediately;
+                    # avoid a second explicit rerun just to refresh the right pane.
                 elif not st.session_state.get("pending_parent_id"):
                     st.session_state["pending_parent_id"] = person["person_id"]
                     st.session_state["selected_person_id"] = person["person_id"]
@@ -846,7 +915,7 @@ def main() -> None:
                         ))
                     update = state["people_updates"].get(selected_person_id, {})
                     # Precompute field-level OCR values as soon as an individual is selected.
-                    auto_draft = update.get("auto_extraction_draft") or extract_person_info_draft(
+                    auto_draft = cached_extract_person_info_draft(
                         selected_person, page_result, page_people
                     )
                     draft_values = auto_draft.get("draft_values", {}) if isinstance(auto_draft, dict) else {}
@@ -1265,20 +1334,36 @@ def main() -> None:
 
     st.divider()
     st.subheader("검수 결과 내보내기")
-    people_export, rel_export = build_review_data(
-        root, all_people, all_relationships, state, page_results
-    )
-    write_exports(root, people_export, rel_export)
-    registry_data = build_person_registry(people_export, registry_data)
-    try:
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(json.dumps(registry_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError as exc:
-        st.error(f"인물 레지스트리를 저장하지 못했습니다: {registry_path} · {exc}")
-    # Persist edition/source-location metadata and permanent person UID mappings.
-    (root / "review_state.json").write_text(
-        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    export_signature_payload = {
+        "state": state,
+        "registry_path": str(registry_path),
+        "registry": registry_data,
+        "people_count": len(all_people),
+        "relationship_count": len(all_relationships),
+    }
+    export_signature = hashlib.sha256(
+        json.dumps(export_signature_payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    exports_exist = (root / "reviewed_people.json").exists() and (root / "reviewed_relationships.json").exists()
+    if (st.session_state.get("review_export_signature") != export_signature) or not exports_exist:
+        people_export, rel_export = build_review_data(
+            root, all_people, all_relationships, state, page_results
+        )
+        write_exports(root, people_export, rel_export)
+        registry_data = build_person_registry(people_export, registry_data)
+        try:
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            registry_path.write_text(json.dumps(registry_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            st.error(f"인물 레지스트리를 저장하지 못했습니다: {registry_path} · {exc}")
+        # Persist edition/source-location metadata and permanent person UID mappings.
+        (root / "review_state.json").write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        st.session_state["review_export_signature"] = export_signature
+    else:
+        people_export = read_json(root / "reviewed_people.json", people)
+        rel_export = read_json(root / "reviewed_relationships.json", relationships)
     export_col1, export_col2 = st.columns(2)
     with export_col1:
         st.download_button("검수 인물 JSON", json.dumps(people_export, ensure_ascii=False, indent=2),

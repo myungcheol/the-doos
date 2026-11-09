@@ -18,7 +18,7 @@ FIELD_PATTERNS: dict[str, str] = {
         r"平章|知郡事|御史|功臣|寶文殿|宝文殿|大夫|判書|判书|郎中|"
         r"太守|縣令|县令|參知政事|参知政事|門下侍郎|门下侍郎"
     ),
-    "spouse_text": r"配|夫人|淑夫人|宜人|貞夫人|贞夫人",
+    "spouse_text": r"配|夫人|淑夫人|宜人|貞夫人|贞夫人|妾|媵|側室|侧室",
     "burial_text": r"葬|墓|塋|茔|墳|坟|壙|圹|坐之原|同原|設壇|设坛|合封|附右|祔",
     "courtesy_name_hanja": r"字",
     "pen_name_hanja": r"號|号",
@@ -76,6 +76,8 @@ def get_person_section_columns(
                 "text": text,
                 "bbox": box,
                 "mean_confidence": column.get("mean_confidence"),
+                "token_boxes": column.get("token_boxes") or [],
+                "order_right_to_left": column.get("order_right_to_left"),
                 "center_x": center,
             })
     columns.sort(key=lambda c: c["center_x"], reverse=True)
@@ -105,6 +107,16 @@ def _extract_context(columns: list[dict[str, Any]], pattern: str, radius: int = 
     return value or None, snippets
 
 
+def get_field_source_columns(draft: dict[str, Any], field: str) -> list[dict[str, Any]]:
+    """Return OCR source columns for one field, preserving their bboxes directly.
+
+    Do not resolve these objects by column_id: OCR output from older pages may
+    have missing or regenerated identifiers while still retaining valid boxes.
+    """
+    sources = (draft.get("field_sources") or {}).get(field) or []
+    return [item for item in sources if isinstance(item, dict) and item.get("bbox")]
+
+
 def extract_person_info_draft(
     person: dict[str, Any], page_result: dict[str, Any], page_people: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -128,15 +140,44 @@ def extract_person_info_draft(
 
     draft_values: dict[str, str] = {"biography_text": section_text}
     evidence: dict[str, list[str]] = {"biography_text": [section_text]}
+    field_sources: dict[str, list[dict[str, Any]]] = {}
     for field, pattern in FIELD_PATTERNS.items():
         value, snippets = _extract_context(columns, pattern, radius=1)
         if value:
             draft_values[field] = value
             evidence[field] = snippets
+            matched = [
+                col for col in columns
+                if re.search(pattern, col["text"], flags=re.IGNORECASE)
+            ]
+            # Include context columns around keyword hits, matching the text snippets.
+            matched_ids = {col.get("column_id") for col in matched}
+            expanded_ids: set[str | None] = set(matched_ids)
+            for idx, col in enumerate(columns):
+                if col.get("column_id") in matched_ids:
+                    for neighbor in columns[max(0, idx - 1):min(len(columns), idx + 2)]:
+                        expanded_ids.add(neighbor.get("column_id"))
+            field_sources[field] = [
+                {
+                    "column_id": col.get("column_id"), "text": col.get("text"),
+                    "bbox": col.get("bbox"), "token_boxes": col.get("token_boxes") or [],
+                    "mean_confidence": col.get("mean_confidence"),
+                }
+                for col in columns if col.get("column_id") in expanded_ids
+            ]
 
     return {
         "draft_values": draft_values,
         "evidence": evidence,
+        "field_sources": field_sources,
+        "columns": [
+            {
+                "column_id": col.get("column_id"), "text": col.get("text"),
+                "bbox": col.get("bbox"), "token_boxes": col.get("token_boxes") or [],
+                "mean_confidence": col.get("mean_confidence"),
+            }
+            for col in columns
+        ],
         "source_record_ocr_text": section_text,
         "source_row_id": row_id,
         "source_column_ids": [col["column_id"] for col in columns if col.get("column_id")],

@@ -148,6 +148,9 @@ def build_raw_data(
             "text": draft.get("source_record_ocr_text") or person.get("evidence_text") or "",
             "source_row_id": person.get("source_row_id"),
             "source_column_ids": draft.get("source_column_ids") or [],
+            # Retain every column bbox so the browser viewer can reveal OCR
+            # evidence immediately when an image click selects a person.
+            "columns": draft.get("columns") or [],
             "method": draft.get("method"),
         },
         "field_ocr": raw_fields,

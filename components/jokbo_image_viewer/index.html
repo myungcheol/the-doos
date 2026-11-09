@@ -4,141 +4,275 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; overflow: hidden; background: transparent; }
-    #viewer {
-      width: 100%;
-      box-sizing: border-box;
-      overflow: auto;
-      border: 1px solid rgba(128, 128, 128, .55);
-      border-radius: 8px;
-      background: #20242b;
-      cursor: grab;
-      overscroll-behavior: contain;
-      scrollbar-gutter: stable;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    #viewer.panning { cursor: grabbing; }
-    #page-image {
-      display: block;
-      width: auto;
-      height: auto;
-      max-width: none;
-      max-height: none;
-      user-select: none;
-      -webkit-user-drag: none;
-      pointer-events: none;
-    }
-    #hint {
-      position: sticky;
-      left: 8px;
-      bottom: 6px;
-      display: inline-block;
-      margin: 6px;
-      padding: 3px 7px;
-      border-radius: 5px;
-      color: #fff;
-      background: rgba(15, 23, 42, .78);
-      font: 11px sans-serif;
-      pointer-events: none;
-    }
+    html, body { margin:0; padding:0; width:100%; overflow:hidden; background:transparent; }
+    #root { width:100%; font:12px system-ui,sans-serif; }
+    #toolbar { height:38px; display:flex; align-items:center; gap:6px; padding:0 2px 6px; box-sizing:border-box; }
+    #toolbar button { height:28px; min-width:32px; padding:0 9px; border:1px solid #87909b; border-radius:6px; color:var(--text-color,#222); background:var(--secondary-background-color,#f4f5f7); cursor:pointer; }
+    #toolbar button:hover { filter:brightness(.96); }
+    #zoom-label { min-width:56px; text-align:center; font-variant-numeric:tabular-nums; color:var(--text-color,#222); }
+    #hint { margin-left:auto; color:var(--text-color,#777); opacity:.8; font-size:11px; white-space:nowrap; }
+    #viewer { width:100%; box-sizing:border-box; overflow:auto; border:1px solid rgba(128,128,128,.55); border-radius:8px; background:#20242b; overscroll-behavior:contain; scrollbar-gutter:stable; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
+    #viewer.panning { cursor:grabbing; }
+    #stage { position:relative; display:block; flex:none; margin:0; }
+    #page-image { position:absolute; inset:0; display:block; width:100%; height:100%; max-width:none; max-height:none; object-fit:fill; pointer-events:none; user-select:none; -webkit-user-drag:none; }
+    #overlay { position:absolute; inset:0; display:block; width:100%; height:100%; pointer-events:none; overflow:visible; }
+    svg * { vector-effect:non-scaling-stroke; }
+    .person-label { font: 13px system-ui,sans-serif; fill:#fff; }
+    .ocr-label { font: 12px system-ui,sans-serif; fill:#fff; }
+    * { transition:none !important; animation:none !important; scroll-behavior:auto !important; }
   </style>
 </head>
 <body>
-  <div id="viewer" role="img" aria-label="족보 페이지 이미지. 드래그하여 이동하고 짧게 클릭하여 인물을 선택합니다.">
-    <img id="page-image" alt="족보 원본 및 OCR Bounding Box" draggable="false" />
-    <div id="hint">드래그: 이미지 이동 · 클릭: 인물 선택</div>
+  <div id="root">
+    <div id="toolbar">
+      <button id="zoom-out" type="button" title="축소">−</button>
+      <span id="zoom-label">100%</span>
+      <button id="zoom-in" type="button" title="확대">+</button>
+      <button id="zoom-fit" type="button" title="화면 맞춤">맞춤</button>
+      <span id="hint">드래그: 이동 · 클릭: 인물 선택 · Ctrl+휠: 줌</span>
+    </div>
+    <div id="viewer" role="img" aria-label="족보 페이지 이미지. 드래그하여 이동하고 짧게 클릭하여 인물을 선택합니다.">
+      <div id="stage">
+        <img id="page-image" alt="족보 원본 이미지" draggable="false" />
+        <svg id="overlay" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+          <defs>
+            <marker id="edge-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L7,3 z" fill="#0891B2"></path>
+            </marker>
+          </defs>
+          <g id="relationship-layer"></g>
+          <g id="person-layer"></g>
+          <g id="ocr-layer"></g>
+        </svg>
+      </div>
+    </div>
   </div>
   <script>
-    const viewer = document.getElementById("viewer");
-    const image = document.getElementById("page-image");
-    let activePointer = null;
-    let moved = false;
-    let startX = 0;
-    let startY = 0;
-    let initialScrollLeft = 0;
-    let initialScrollTop = 0;
-    let lastSource = "";
-    let lastHeight = 0;
+    (() => {
+      const viewer = document.getElementById("viewer");
+      const stage = document.getElementById("stage");
+      const image = document.getElementById("page-image");
+      const svg = document.getElementById("overlay");
+      const relLayer = document.getElementById("relationship-layer");
+      const personLayer = document.getElementById("person-layer");
+      const ocrLayer = document.getElementById("ocr-layer");
+      const zoomLabel = document.getElementById("zoom-label");
+      let activePointer = null, moved = false;
+      let startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
+      let lastSource = "", lastOverlay = "", pageId = "";
+      let fitWidth = 1, fitHeight = 1, viewportHeight = 650, zoom = 1;
+      let overlayPayload = {}, optimisticSelectedId = null, clickMode = "";
 
-    function postToStreamlit(type, payload = {}) {
-      window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, "*");
-    }
+      function post(type, payload = {}) {
+        window.parent.postMessage({ isStreamlitMessage:true, type, ...payload }, "*");
+      }
+      function el(tag, attrs = {}, textValue = null) {
+        const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        Object.entries(attrs).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) node.setAttribute(key, String(value));
+        });
+        if (textValue !== null) node.textContent = String(textValue);
+        return node;
+      }
+      function setStageSize() {
+        stage.style.width = `${Math.max(1, fitWidth * zoom)}px`;
+        stage.style.height = `${Math.max(1, fitHeight * zoom)}px`;
+        zoomLabel.textContent = `${(zoom * 100).toFixed(0)}%`;
+      }
+      function changeZoom(next, clientX = null, clientY = null) {
+        const oldWidth = Math.max(1, stage.getBoundingClientRect().width);
+        const oldHeight = Math.max(1, stage.getBoundingClientRect().height);
+        const viewerRect = viewer.getBoundingClientRect();
+        const px = clientX === null ? viewerRect.left + viewer.clientWidth / 2 : clientX;
+        const py = clientY === null ? viewerRect.top + viewer.clientHeight / 2 : clientY;
+        const localX = (px - viewerRect.left + viewer.scrollLeft) / oldWidth;
+        const localY = (py - viewerRect.top + viewer.scrollTop) / oldHeight;
+        zoom = Math.max(0.05, Number.isFinite(next) ? next : 1);
+        setStageSize();
+        const newWidth = Math.max(1, fitWidth * zoom);
+        const newHeight = Math.max(1, fitHeight * zoom);
+        viewer.scrollLeft = Math.max(0, localX * newWidth - (px - viewerRect.left));
+        viewer.scrollTop = Math.max(0, localY * newHeight - (py - viewerRect.top));
+      }
+      function fitZoom() {
+        zoom = 1;
+        setStageSize();
+        viewer.scrollLeft = 0;
+        viewer.scrollTop = 0;
+      }
+      function drawOverlay(payload) {
+        const iw = Math.max(1, Number(payload.image_width) || 1);
+        const ih = Math.max(1, Number(payload.image_height) || 1);
+        svg.setAttribute("viewBox", `0 0 ${iw} ${ih}`);
+        svg.setAttribute("width", iw);
+        svg.setAttribute("height", ih);
+        relLayer.replaceChildren();
+        personLayer.replaceChildren();
+        ocrLayer.replaceChildren();
 
-    function sendClick(clientX, clientY) {
-      const rect = image.getBoundingClientRect();
-      const displayWidth = Math.max(1, image.clientWidth);
-      const displayHeight = Math.max(1, image.clientHeight);
-      const x = (clientX - rect.left) * image.naturalWidth / displayWidth;
-      const y = (clientY - rect.top) * image.naturalHeight / displayHeight;
-      postToStreamlit("streamlit:setComponentValue", {
-        value: { x, y, timestamp: Date.now() },
-        dataType: "json"
+        for (const edge of (payload.relationships || [])) {
+          const line = el("line", {
+            x1:edge.x1, y1:edge.y1, x2:edge.x2, y2:edge.y2,
+            stroke:edge.color, "stroke-opacity":edge.opacity,
+            "stroke-width":edge.width, "stroke-linecap":"round",
+            "marker-end":edge.arrow ? "url(#edge-arrow)" : null
+          });
+          if (edge.arrow) {
+            const markerPath = svg.querySelector("#edge-arrow path");
+            if (markerPath) markerPath.setAttribute("fill", edge.color);
+          }
+          relLayer.appendChild(line);
+        }
+
+        for (const item of (payload.people || [])) {
+          const b = item.bbox || {};
+          if (!(b.width > 0 && b.height > 0)) continue;
+          const isSelected = item.person_id && item.person_id === optimisticSelectedId;
+          const boxColor = isSelected ? (item.selected_color || item.color) : item.color;
+          personLayer.appendChild(el("rect", {
+            x:b.x, y:b.y, width:b.width, height:b.height,
+            fill:"none", stroke:boxColor, "stroke-opacity":item.opacity,
+            "stroke-width":item.width
+          }));
+          const label = String(item.label || "");
+          const labelWidth = Math.max(34, label.length * 8 + 10);
+          const labelY = Math.max(0, b.y - 20);
+          personLayer.appendChild(el("rect", {
+            x:b.x, y:labelY, width:labelWidth, height:18, rx:3,
+            fill:"#0f172a", "fill-opacity":0.86
+          }));
+          personLayer.appendChild(el("text", {
+            x:b.x + 4, y:labelY + 13, class:"person-label"
+          }, label));
+        }
+
+        let visibleOcrBoxes = payload.ocr_boxes || [];
+        const activePerson = (payload.people || []).find((item) => item.person_id === optimisticSelectedId);
+        if (activePerson && activePerson.ocr) {
+          const focus = payload.ocr_focus || "all";
+          const selectedSources = focus === "name" ? activePerson.ocr.name :
+            focus === "all" ? activePerson.ocr.all : (activePerson.ocr.fields[focus] || []);
+          if (selectedSources.length) visibleOcrBoxes = selectedSources;
+        }
+        for (const item of visibleOcrBoxes) {
+          const b = item.bbox || {};
+          if (!(b.width > 0 && b.height > 0)) continue;
+          ocrLayer.appendChild(el("rect", {
+            x:b.x, y:b.y, width:b.width, height:b.height,
+            fill:item.color, "fill-opacity":0.08,
+            stroke:item.color, "stroke-opacity":item.opacity,
+            "stroke-width":3
+          }));
+          const label = String(item.label || "OCR");
+          const labelWidth = Math.max(36, Math.min(260, label.length * 7 + 10));
+          const labelY = Math.min(ih - 18, b.y + b.height + 2);
+          ocrLayer.appendChild(el("rect", {
+            x:b.x, y:labelY, width:labelWidth, height:17, rx:3,
+            fill:"#111827", "fill-opacity":0.88
+          }));
+          ocrLayer.appendChild(el("text", {
+            x:b.x + 4, y:labelY + 12, class:"ocr-label"
+          }, label.length > 34 ? `${label.slice(0, 33)}…` : label));
+          for (const token of (item.tokens || [])) {
+            const tb = token.bbox || {};
+            if (tb.width > 0 && tb.height > 0) ocrLayer.appendChild(el("rect", {
+              x:tb.x, y:tb.y, width:tb.width, height:tb.height,
+              fill:"none", stroke:token.color, "stroke-opacity":token.opacity,
+              "stroke-width":2
+            }));
+          }
+        }
+      }
+      function sendClick(clientX, clientY) {
+        const rect = image.getBoundingClientRect();
+        const displayWidth = Math.max(1, rect.width);
+        const displayHeight = Math.max(1, rect.height);
+        const x = (clientX - rect.left) * image.naturalWidth / displayWidth;
+        const y = (clientY - rect.top) * image.naturalHeight / displayHeight;
+        if (clickMode === "인물 선택 / 이름 검수") {
+          const clicked = (overlayPayload.people || []).find((item) => {
+            const b = item.bbox || {};
+            return x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
+          });
+          if (clicked) {
+            optimisticSelectedId = clicked.person_id;
+            drawOverlay(overlayPayload);
+          }
+        }
+        post("streamlit:setComponentValue", {
+          value:{x, y, timestamp:Date.now()}, dataType:"json"
+        });
+      }
+      viewer.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || event.target.closest("button") || !image.complete || !image.naturalWidth) return;
+        activePointer = event.pointerId; moved = false;
+        startX = event.clientX; startY = event.clientY;
+        initialLeft = viewer.scrollLeft; initialTop = viewer.scrollTop;
+        viewer.classList.add("panning");
+        try { viewer.setPointerCapture(event.pointerId); } catch (_) {}
       });
-    }
-
-    viewer.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0 || !image.complete || !image.naturalWidth) return;
-      activePointer = event.pointerId;
-      moved = false;
-      startX = event.clientX;
-      startY = event.clientY;
-      initialScrollLeft = viewer.scrollLeft;
-      initialScrollTop = viewer.scrollTop;
-      viewer.classList.add("panning");
-      try { viewer.setPointerCapture(event.pointerId); } catch (_) {}
-    });
-
-    viewer.addEventListener("pointermove", (event) => {
-      if (activePointer !== event.pointerId) return;
-      const dx = event.clientX - startX;
-      const dy = event.clientY - startY;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
-      if (moved) {
-        viewer.scrollLeft = initialScrollLeft - dx;
-        viewer.scrollTop = initialScrollTop - dy;
+      viewer.addEventListener("pointermove", (event) => {
+        if (activePointer !== event.pointerId) return;
+        const dx = event.clientX - startX, dy = event.clientY - startY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+        if (moved) {
+          viewer.scrollLeft = initialLeft - dx;
+          viewer.scrollTop = initialTop - dy;
+        }
+      });
+      function finishPointer(event) {
+        if (activePointer !== event.pointerId) return;
+        if (!moved && image.complete && image.naturalWidth) sendClick(event.clientX, event.clientY);
+        activePointer = null; viewer.classList.remove("panning");
       }
-    });
+      viewer.addEventListener("pointerup", finishPointer);
+      viewer.addEventListener("pointercancel", () => { activePointer = null; viewer.classList.remove("panning"); });
+      viewer.addEventListener("lostpointercapture", () => { activePointer = null; viewer.classList.remove("panning"); });
+      viewer.addEventListener("dragstart", (event) => event.preventDefault());
+      document.getElementById("zoom-in").addEventListener("click", () => changeZoom(zoom * 1.25));
+      document.getElementById("zoom-out").addEventListener("click", () => changeZoom(zoom / 1.25));
+      document.getElementById("zoom-fit").addEventListener("click", fitZoom);
+      viewer.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey) return;
+        event.preventDefault();
+        changeZoom(zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event.clientX, event.clientY);
+      }, {passive:false});
 
-    function finishPointer(event) {
-      if (activePointer !== event.pointerId) return;
-      if (!moved && image.complete && image.naturalWidth) sendClick(event.clientX, event.clientY);
-      activePointer = null;
-      viewer.classList.remove("panning");
-    }
-    viewer.addEventListener("pointerup", finishPointer);
-    viewer.addEventListener("pointercancel", (event) => {
-      if (activePointer === event.pointerId) {
-        activePointer = null;
-        viewer.classList.remove("panning");
-      }
-    });
-    viewer.addEventListener("lostpointercapture", () => {
-      activePointer = null;
-      viewer.classList.remove("panning");
-    });
-    viewer.addEventListener("dragstart", (event) => event.preventDefault());
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (!data || data.type !== "streamlit:render") return;
+        const args = data.args || {};
+        const nextPage = String(args.page_id || "");
+        if (nextPage !== pageId) {
+          pageId = nextPage; zoom = 1; viewer.scrollLeft = 0; viewer.scrollTop = 0;
+        }
+        viewportHeight = Math.max(240, Number(args.viewport_height) || 650);
+        viewer.style.height = `${viewportHeight}px`;
+        fitWidth = Math.max(1, Number(args.fit_width) || 1);
+        fitHeight = Math.max(1, Number(args.fit_height) || 1);
+        setStageSize();
 
-    window.addEventListener("message", (event) => {
-      const data = event.data;
-      if (!data || data.type !== "streamlit:render") return;
-      const args = data.args || {};
-      const height = Math.max(240, Number(args.viewport_height) || 650);
-      viewer.style.height = `${height}px`;
-      if (lastHeight !== height) {
-        lastHeight = height;
-        postToStreamlit("streamlit:setFrameHeight", { height: height + 4 });
-      }
-      const nextSource = args.image_data || "";
-      if (nextSource && nextSource !== lastSource) {
-        lastSource = nextSource;
-        image.src = nextSource;
-      }
-    });
-
-    postToStreamlit("streamlit:componentReady", { apiVersion: 1 });
-    postToStreamlit("streamlit:setFrameHeight", { height: 654 });
+        const nextSource = args.image_data || "";
+        if (nextSource && nextSource !== lastSource) {
+          lastSource = nextSource;
+          image.onload = () => setStageSize();
+          image.src = nextSource;
+        }
+        clickMode = String(args.click_mode || "");
+        const nextOverlay = args.overlay_data || "{}";
+        if (nextOverlay !== lastOverlay) {
+          lastOverlay = nextOverlay;
+          try {
+            overlayPayload = JSON.parse(nextOverlay);
+            optimisticSelectedId = overlayPayload.selected_id || null;
+            drawOverlay(overlayPayload);
+          } catch (error) { console.error("Invalid overlay data", error); }
+        }
+        post("streamlit:setFrameHeight", {height:viewportHeight + 42});
+      });
+      post("streamlit:componentReady", {apiVersion:1});
+      post("streamlit:setFrameHeight", {height:692});
+    })();
   </script>
 </body>
 </html>
