@@ -24,6 +24,7 @@ from person_data_model import (
 from review_helpers import (
     person_number_map, format_person_reference, filter_relationships_for_person,
     format_relationship_label, relationship_bbox_anchors, resolve_person_field_value,
+    resolve_ocr_focus,
 )
 
 st.set_page_config(page_title="Jokbo OCR 검수", page_icon="📜", layout="wide")
@@ -700,9 +701,11 @@ def main() -> None:
     if ocr_focus_key not in st.session_state:
         st.session_state[ocr_focus_key] = "전체 인물 기록 OCR"
     ocr_focus_label = st.session_state.get(ocr_focus_key, "전체 인물 기록 OCR")
+    # The viewer is rendered even when no person is selected, so resolve this
+    # unconditionally. Unknown/stale session values safely fall back to "all".
+    focus = resolve_ocr_focus(ocr_focus_label, ocr_focus_options, default="all")
     ocr_boxes: list[dict[str, Any]] = []
     if selected_for_overlay:
-        focus = ocr_focus_options[ocr_focus_label]
         if focus == "name":
             ocr_boxes = [{
                 "kind": "name", "label": "이름 OCR: " + str(selected_for_overlay.get("raw_name_ocr") or selected_for_overlay.get("name_hanja_candidate") or ""),

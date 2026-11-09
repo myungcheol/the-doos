@@ -60,6 +60,14 @@ def format_relationship_label(
     return f"{status} · {parent} → {child}"
 
 
+def resolve_ocr_focus(
+    label: str, options: dict[str, str], default: str = "all"
+) -> str:
+    """Resolve OCR overlay focus with a safe fallback for first render/stale state."""
+    return options.get(label, default)
+
+
+
 def relationship_bbox_anchors(
     parent_bbox: dict[str, Any], child_bbox: dict[str, Any]
 ) -> tuple[tuple[float, float], tuple[float, float]]:

@@ -5,7 +5,7 @@ from review_helpers import (
     format_person_reference,
     filter_relationships_for_person,
     format_relationship_label,
-    relationship_bbox_anchors, resolve_person_field_value,
+    relationship_bbox_anchors, resolve_person_field_value, resolve_ocr_focus,
 )
 
 
@@ -72,6 +72,15 @@ class ReviewHelperTests(unittest.TestCase):
             "birth_text", {}, {}, {"birth_text": "壬子年三月生"}
         )
         self.assertEqual(value, "壬子年三月生")
+
+    def test_ocr_focus_defaults_for_first_render(self):
+        options = {"전체 인물 기록 OCR": "all", "이름 OCR": "name"}
+        self.assertEqual(resolve_ocr_focus("전체 인물 기록 OCR", options), "all")
+
+    def test_ocr_focus_uses_fallback_for_stale_session_value(self):
+        options = {"전체 인물 기록 OCR": "all", "이름 OCR": "name"}
+        self.assertEqual(resolve_ocr_focus("unknown old label", options), "all")
+        self.assertEqual(resolve_ocr_focus("unknown old label", options, default="name"), "name")
 
 
 if __name__ == "__main__":
