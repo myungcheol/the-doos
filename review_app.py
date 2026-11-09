@@ -403,7 +403,7 @@ def build_viewer_overlay_data(
                         })
                 result.append({
                     "bbox": _source_bbox(source_bbox, offset),
-                    "label": str(source_item.get("text") or "OCR")[:48],
+                    "label": str(source_item.get("text") or "OCR"),
                     "color": item_color, "opacity": item_opacity, "tokens": tokens,
                 })
             return result
@@ -455,7 +455,7 @@ def build_viewer_overlay_data(
                 })
         ocr_overlays.append({
             "bbox": _source_bbox(bbox, offset),
-            "label": str(item.get("label") or item.get("text") or "OCR")[:48],
+            "label": str(item.get("label") or item.get("text") or "OCR"),
             "color": color, "opacity": opacity, "tokens": tokens,
         })
 

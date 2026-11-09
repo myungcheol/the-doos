@@ -18,7 +18,7 @@
     #overlay { position:absolute; inset:0; display:block; width:100%; height:100%; pointer-events:none; overflow:visible; }
     svg * { vector-effect:non-scaling-stroke; }
     .person-label { font: 13px system-ui,sans-serif; fill:#fff; }
-    .ocr-label { font: 12px system-ui,sans-serif; fill:#fff; }
+    #ocr-text { height:64px; overflow:auto; padding:5px 8px; box-sizing:border-box; color:var(--text-color,#222); background:var(--secondary-background-color,#f4f5f7); border-radius:6px; white-space:pre-wrap; overflow-wrap:anywhere; user-select:text; }
     * { transition:none !important; animation:none !important; scroll-behavior:auto !important; }
   </style>
 </head>
@@ -31,6 +31,7 @@
       <button id="zoom-fit" type="button" title="화면 맞춤">맞춤</button>
       <span id="hint">드래그: 이동 · 클릭: 인물 선택 · Ctrl+휠: 줌</span>
     </div>
+    <div id="ocr-text" role="status">OCR 박스에 마우스를 올리면 인식된 글자가 여기에 표시됩니다.</div>
     <div id="viewer" role="img" aria-label="족보 페이지 이미지. 드래그하여 이동하고 짧게 클릭하여 인물을 선택합니다.">
       <div id="stage">
         <img id="page-image" alt="족보 원본 이미지" draggable="false" />
@@ -57,6 +58,9 @@
       const personLayer = document.getElementById("person-layer");
       const ocrLayer = document.getElementById("ocr-layer");
       const zoomLabel = document.getElementById("zoom-label");
+      const ocrText = document.getElementById("ocr-text");
+      const ocrHint = "OCR 박스에 마우스를 올리면 인식된 글자가 여기에 표시됩니다.";
+      let visibleOcrBoxes = [];
       let activePointer = null, moved = false;
       let startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
       let lastSource = "", lastOverlay = "", pageId = "";
@@ -146,7 +150,8 @@
           }, label));
         }
 
-        let visibleOcrBoxes = payload.ocr_boxes || [];
+        visibleOcrBoxes = payload.ocr_boxes || [];
+        ocrText.textContent = ocrHint;
         const activePerson = (payload.people || []).find((item) => item.person_id === optimisticSelectedId);
         if (activePerson && activePerson.ocr) {
           const focus = payload.ocr_focus || "all";
@@ -163,16 +168,6 @@
             stroke:item.color, "stroke-opacity":item.opacity,
             "stroke-width":3
           }));
-          const label = String(item.label || "OCR");
-          const labelWidth = Math.max(36, Math.min(260, label.length * 7 + 10));
-          const labelY = Math.min(ih - 18, b.y + b.height + 2);
-          ocrLayer.appendChild(el("rect", {
-            x:b.x, y:labelY, width:labelWidth, height:17, rx:3,
-            fill:"#111827", "fill-opacity":0.88
-          }));
-          ocrLayer.appendChild(el("text", {
-            x:b.x + 4, y:labelY + 12, class:"ocr-label"
-          }, label.length > 34 ? `${label.slice(0, 33)}…` : label));
           for (const token of (item.tokens || [])) {
             const tb = token.bbox || {};
             if (tb.width > 0 && tb.height > 0) ocrLayer.appendChild(el("rect", {
@@ -212,6 +207,18 @@
         try { viewer.setPointerCapture(event.pointerId); } catch (_) {}
       });
       viewer.addEventListener("pointermove", (event) => {
+        if (activePointer === null) {
+          const rect = image.getBoundingClientRect();
+          const x = (event.clientX - rect.left) * (Number(overlayPayload.image_width) || 1) / Math.max(1, rect.width);
+          const y = (event.clientY - rect.top) * (Number(overlayPayload.image_height) || 1) / Math.max(1, rect.height);
+          const hits = visibleOcrBoxes.filter((item) => {
+            const b = item.bbox || {};
+            return b.width > 0 && b.height > 0 && x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
+          });
+          hits.sort((a, b) => a.bbox.width * a.bbox.height - b.bbox.width * b.bbox.height);
+          ocrText.textContent = hits.length ? String(hits[0].label || "OCR 텍스트 없음") : ocrHint;
+          return;
+        }
         if (activePointer !== event.pointerId) return;
         const dx = event.clientX - startX, dy = event.clientY - startY;
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
@@ -268,10 +275,10 @@
             drawOverlay(overlayPayload);
           } catch (error) { console.error("Invalid overlay data", error); }
         }
-        post("streamlit:setFrameHeight", {height:viewportHeight + 42});
+        post("streamlit:setFrameHeight", {height:viewportHeight + 106});
       });
       post("streamlit:componentReady", {apiVersion:1});
-      post("streamlit:setFrameHeight", {height:692});
+      post("streamlit:setFrameHeight", {height:756});
     })();
   </script>
 </body>
