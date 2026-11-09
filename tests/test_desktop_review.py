@@ -11,7 +11,7 @@ try:
     from PySide6.QtGui import QImage, QInputMethodEvent, QRawFont
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox
-    from desktop_review import ReviewWindow, configure_application, restore_qt_environment
+    from desktop_review import ReviewComboBox, ReviewWindow, configure_application, restore_qt_environment
 except ImportError:
     QApplication = None
 
@@ -84,6 +84,18 @@ class DesktopReviewTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(self.window.focus.currentData(), "name")
         self.assertIsNone(QApplication.activePopupWidget())
+
+    def test_combo_box_closes_its_popup_after_user_selection(self):
+        combo = ReviewComboBox()
+        combo.addItems(["첫 값", "둘째 값"])
+        with patch.object(combo, "hidePopup") as close_popup:
+            combo.activated.emit(1)
+            self.app.processEvents()
+        close_popup.assert_called_once()
+        self.assertTrue(all(isinstance(widget, ReviewComboBox) for widget in (
+            self.window.pages, self.window.people_list, self.window.marker, self.window.gender,
+            self.window.name_status, self.window.orphan_row, self.window.continuation_target,
+        )))
 
     def test_korean_input_method_commit(self):
         self.window.select_person_id("p1")

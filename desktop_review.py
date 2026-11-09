@@ -10,7 +10,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QRectF
+from PySide6.QtCore import Qt, Signal, QRectF, QTimer
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
@@ -100,6 +100,17 @@ def read_json(path: Path, default):
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+class ReviewComboBox(QComboBox):
+    """Close the native popup after a user chooses an item on every platform."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.activated.connect(self.close_after_selection)
+
+    def close_after_selection(self, _index):
+        QTimer.singleShot(0, self.hidePopup)
 
 
 def discover_page_outputs(root, pages, people):
@@ -311,7 +322,7 @@ class ReviewWindow(QMainWindow):
         self.folder_label = QLabel("폴더를 선택하세요")
         self.folder_label.setObjectName("muted")
         top.addWidget(self.folder_label, 1)
-        self.pages = QComboBox()
+        self.pages = ReviewComboBox()
         self.pages.currentIndexChanged.connect(self.change_page)
         top.addWidget(self.pages)
         import_button = QPushButton("페이지 다시 검색")
@@ -398,7 +409,7 @@ class ReviewWindow(QMainWindow):
         form = QFormLayout(panel)
         form.setContentsMargins(12, 12, 12, 12)
         form.setVerticalSpacing(10)
-        self.people_list = QComboBox()
+        self.people_list = ReviewComboBox()
         self.people_list.currentIndexChanged.connect(self.person_changed)
         form.addRow("인물", self.people_list)
         self.raw_name = QLabel()
@@ -417,18 +428,18 @@ class ReviewWindow(QMainWindow):
                 widget.textEdited.connect(self.mark_dirty)
             self.inputs[key] = widget
             form.addRow(title, widget)
-        self.marker = QComboBox()
+        self.marker = ReviewComboBox()
         for title, marker in [("없음", None), ("子 (아들)", "子"), ("女 (딸)", "女")]:
             self.marker.addItem(title, marker)
         self.marker.currentIndexChanged.connect(self.mark_dirty)
         form.addRow("원문 자녀 표식", self.marker)
-        self.gender = QComboBox()
+        self.gender = ReviewComboBox()
         for title, value in [("미상", "unknown"), ("남성", "male"), ("여성", "female")]:
             self.gender.addItem(title, value)
         self.gender.currentIndexChanged.connect(self.mark_dirty)
         self.gender.setToolTip("성별은 별도로 검수합니다. 子/女는 원문에 기록된 자녀 표식입니다.")
         form.addRow("성별", self.gender)
-        self.name_status = QComboBox()
+        self.name_status = ReviewComboBox()
         for title, status in [("검토 대기", "needs_review"), ("확인", "confirmed"), ("거절", "rejected")]:
             self.name_status.addItem(title, status)
         self.info_confirmed = QCheckBox("추가 정보 확인")
@@ -466,7 +477,7 @@ class ReviewWindow(QMainWindow):
         instructions = QLabel("같은 행의 이전 페이지 마지막 인물을 제안합니다. 이름 누락 여부와 원본을 확인한 뒤 이어진 OCR 영역을 선택해 연결하세요.")
         instructions.setWordWrap(True)
         continuation_layout.addWidget(instructions)
-        self.orphan_row = QComboBox()
+        self.orphan_row = ReviewComboBox()
         self.orphan_row.currentIndexChanged.connect(self.refresh_orphan_columns)
         continuation_layout.addWidget(self.orphan_row)
         self.orphan_list = QListWidget()
@@ -479,7 +490,7 @@ class ReviewWindow(QMainWindow):
         self.orphan_preview.setReadOnly(True)
         self.orphan_preview.setMinimumHeight(110)
         continuation_layout.addWidget(self.orphan_preview)
-        self.continuation_target = QComboBox()
+        self.continuation_target = ReviewComboBox()
         self.continuation_target.currentIndexChanged.connect(self.render_scan)
         continuation_layout.addWidget(QLabel("연결할 이전 페이지 인물"))
         continuation_layout.addWidget(self.continuation_target)
