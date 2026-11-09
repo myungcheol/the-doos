@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from person_data_model import ensure_person_uid, strip_name_marker
 from person_info_extractor import extract_person_info_draft, get_field_source_columns
-from review_extensions import (merge_review_sources, page_name, orphan_columns,
+from review_extensions import (merge_review_sources, page_name, page_sort_key, orphan_regions,
                                previous_row_people, make_continuation, recover_name_candidates)
 
 # OpenCV's Linux wheel may replace these variables during import, directing Qt
@@ -100,6 +100,50 @@ def read_json(path: Path, default):
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def discover_page_outputs(root, pages, people):
+    """Find sibling per-page OCR results and their scans without changing review state."""
+    known_pages = {page_name(page) for page in pages}
+    known_ids = {person.get("person_id") for person in people}
+    templates = [Path(page["source_image"]) for page in pages if page.get("source_image")]
+    suffixes = list(dict.fromkeys(template.suffix for template in templates if template.suffix))
+    entries, warnings = [], []
+    for folder in sorted(root.iterdir()):
+        if not folder.is_dir() or not (folder / "rows.json").is_file():
+            continue
+        try:
+            rows = read_json(folder / "rows.json", None)
+            candidates = read_json(folder / "people_candidates.json", [])
+            relations = read_json(folder / "relationship_candidates.json", [])
+            if not isinstance(rows, list) or not rows or not isinstance(candidates, list) or not isinstance(relations, list):
+                raise ValueError("OCR JSON 배열 형식 오류")
+            names = {person.get("source_page") for person in candidates}
+            if len(names) > 1:
+                raise ValueError("한 폴더에 여러 원본 페이지가 섞여 있습니다")
+            name = next(iter(names), None) or next((folder.name + suffix for suffix in suffixes), None)
+            if not name:
+                raise ValueError("원본 스캔의 파일 형식을 확인할 수 없습니다")
+            if name in known_pages:
+                continue
+            if any(person.get("person_id") in known_ids for person in candidates):
+                raise ValueError("기존 인물 ID와 충돌합니다")
+            source = next((candidate for template in templates
+                           for candidate in (template.parent / name, root.parent / template.parent / name, root / name)
+                           if candidate.is_file()), None)
+            if source is None:
+                raise ValueError(f"원본 스캔 {name}을 찾을 수 없습니다")
+            relations = [{**rel, "source_page": rel.get("source_page") or name} for rel in relations]
+            if any(rel.get("source_page") != name for rel in relations):
+                raise ValueError("관계 후보의 원본 페이지가 다릅니다")
+            page = {"source_page": name, "source_image": str(source.resolve()),
+                    "page_output_dir": str(folder.resolve()), "rows": rows}
+            entries.append({"page_result": page, "people": candidates, "relationships": relations})
+            known_pages.add(name)
+            known_ids.update(person.get("person_id") for person in candidates)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            warnings.append(f"{folder.name}: {exc}")
+    return entries, warnings
 
 
 class OcrFocusSelector(QWidget):
@@ -270,7 +314,7 @@ class ReviewWindow(QMainWindow):
         self.pages = QComboBox()
         self.pages.currentIndexChanged.connect(self.change_page)
         top.addWidget(self.pages)
-        import_button = QPushButton("이전 OCR 페이지 불러오기")
+        import_button = QPushButton("페이지 다시 검색")
         import_button.clicked.connect(self.import_previous_page)
         top.addWidget(import_button)
         splitter = QSplitter()
@@ -404,7 +448,7 @@ class ReviewWindow(QMainWindow):
         tabs.addTab(relations, "관계 검수")
         continuation_panel = QWidget()
         continuation_layout = QVBoxLayout(continuation_panel)
-        instructions = QLabel("같은 행의 이전 페이지 마지막 인물을 제안합니다. 이름 누락 여부와 원본을 확인한 뒤 이어진 OCR 열만 선택해 연결하세요.")
+        instructions = QLabel("같은 행의 이전 페이지 마지막 인물을 제안합니다. 이름 누락 여부와 원본을 확인한 뒤 이어진 OCR 영역을 선택해 연결하세요.")
         instructions.setWordWrap(True)
         continuation_layout.addWidget(instructions)
         self.orphan_row = QComboBox()
@@ -415,10 +459,15 @@ class ReviewWindow(QMainWindow):
         self.orphan_list.itemChanged.connect(self.orphan_selection_changed)
         self.orphan_list.currentItemChanged.connect(self.preview_orphan)
         continuation_layout.addWidget(self.orphan_list, 1)
+        continuation_layout.addWidget(QLabel("선택한 영역의 OCR 원문 · 오른쪽에서 왼쪽 순서"))
+        self.orphan_preview = QTextEdit()
+        self.orphan_preview.setReadOnly(True)
+        self.orphan_preview.setMinimumHeight(110)
+        continuation_layout.addWidget(self.orphan_preview)
         self.continuation_target = QComboBox()
         continuation_layout.addWidget(QLabel("연결할 이전 페이지 인물"))
         continuation_layout.addWidget(self.continuation_target)
-        attach = QPushButton("선택한 OCR 열을 인물에 연결")
+        attach = QPushButton("선택한 OCR 영역을 인물에 연결")
         attach.clicked.connect(self.attach_continuation)
         continuation_layout.addWidget(attach)
         self.continuation_list = QListWidget()
@@ -442,19 +491,10 @@ class ReviewWindow(QMainWindow):
         if not self.root:
             QMessageBox.information(self, "작업 폴더", "먼저 검수할 OCR 결과 폴더를 여세요.")
             return
-        if self.dirty:
-            QMessageBox.information(self, "인물 저장", "인물 변경을 먼저 저장한 뒤 이전 페이지를 불러오세요.")
+        if not self.can_discard():
             return
-        rows_file, _ = QFileDialog.getOpenFileName(self, "이전 페이지의 rows.json 선택", str(self.root), "OCR 행 JSON (rows.json)")
-        if not rows_file:
-            return
-        image_file, _ = QFileDialog.getOpenFileName(self, "해당 페이지 원본 스캔 선택", "", "스캔 이미지 (*.jpg *.jpeg *.png *.tif *.tiff *.bmp)")
-        if not image_file:
-            return
-        try:
-            self.import_page_data(Path(rows_file), Path(image_file))
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            QMessageBox.warning(self, "이전 페이지 불러오기", str(exc))
+        current = self.page_name
+        self.open_folder(self.root, current)
 
     def import_page_data(self, rows_file, image_file):
         rows = read_json(rows_file, None)
@@ -515,8 +555,9 @@ class ReviewWindow(QMainWindow):
         self.orphan_row.blockSignals(True)
         self.orphan_row.clear()
         for index, row in enumerate(self.page.get("rows", [])):
-            count = len(orphan_columns(row, self.page_people, self.state))
-            self.orphan_row.addItem(f"행 {row.get('row_number', index + 1)} · 미배정 OCR {count}열", index)
+            regions = orphan_regions(row, self.page_people, self.state)
+            preview = " ".join(regions[0]["text"].split())[:22] if regions else ""
+            self.orphan_row.addItem(f"행 {row.get('row_number', index + 1)} · OCR 영역 {len(regions)}개 · {preview}", index)
         self.orphan_row.blockSignals(False)
         self.refresh_orphan_columns()
 
@@ -526,15 +567,20 @@ class ReviewWindow(QMainWindow):
         self.preview_link_sources = None
         self.orphan_list.blockSignals(True)
         self.orphan_list.clear()
+        self.orphan_preview.clear()
         self.continuation_target.clear()
         index = self.orphan_row.currentData()
         if index is not None:
             row = self.page["rows"][index]
-            for column in orphan_columns(row, self.page_people, self.state):
-                text = str(column.get("text") or "")
-                item = QListWidgetItem(text[:42] + ("…" if len(text) > 42 else ""))
-                item.setData(Qt.ItemDataRole.UserRole, column)
-                item.setToolTip(text)
+            for number, region in enumerate(orphan_regions(row, self.page_people, self.state), 1):
+                box = region["bbox"]
+                snippet = " ".join(region["text"].split())
+                label = (f"영역 {number} · x {box['x']}–{box['x'] + box['width']}, "
+                         f"y {box['y']}–{box['y'] + box['height']} · {len(region['columns'])}열\n"
+                         f"{snippet[:78]}{'…' if len(snippet) > 78 else ''}")
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, region)
+                item.setToolTip(region["text"])
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(Qt.CheckState.Unchecked)
                 self.orphan_list.addItem(item)
@@ -546,13 +592,21 @@ class ReviewWindow(QMainWindow):
         self.render_scan()
 
     def checked_orphan_columns(self):
+        return [column for i in range(self.orphan_list.count())
+                if self.orphan_list.item(i).checkState() == Qt.CheckState.Checked
+                for column in self.orphan_list.item(i).data(Qt.ItemDataRole.UserRole)["columns"]]
+
+    def checked_orphan_regions(self):
         return [self.orphan_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.orphan_list.count())
                 if self.orphan_list.item(i).checkState() == Qt.CheckState.Checked]
 
     def preview_orphan(self, current, _previous):
         self.preview_link_sources = None
         if current:
-            self.evidence.setText(str(current.data(Qt.ItemDataRole.UserRole).get("text") or ""))
+            region = current.data(Qt.ItemDataRole.UserRole)
+            self.orphan_preview.setPlainText(region["text"])
+            self.preview_link_sources = [{"bbox": region["bbox"], "text": region["text"]}]
+            self.render_scan()
 
     def orphan_selection_changed(self, *_):
         self.preview_link_sources = None
@@ -562,7 +616,7 @@ class ReviewWindow(QMainWindow):
         target_id = self.continuation_target.currentData()
         row_index = self.orphan_row.currentData()
         if not target_id or row_index is None:
-            QMessageBox.information(self, "기록 연결", "같은 행의 이전 페이지 인물이 필요합니다. 이전 OCR 페이지를 먼저 불러오세요.")
+            QMessageBox.information(self, "기록 연결", "같은 행의 이전 페이지 인물이 필요합니다. 페이지 목록과 이전 페이지 OCR 결과를 확인하세요.")
             return
         if self.dirty:
             QMessageBox.information(self, "인물 저장", "인물 변경을 먼저 저장하세요.")
@@ -577,7 +631,7 @@ class ReviewWindow(QMainWindow):
         if not self.persist():
             self.state["continuation_links"].pop()
             return
-        self.refresh_continuation_list()
+        self.refresh_orphan_columns()
         self.statusBar().showMessage("이전 인물에 원문 기록을 연결했습니다. 검수한 인물 기록은 그대로 유지됩니다.", 6000)
 
     def refresh_continuation_list(self):
@@ -608,7 +662,7 @@ class ReviewWindow(QMainWindow):
             link["review_status"] = "confirmed"
             return
         self.preview_link_sources = None
-        self.refresh_continuation_list()
+        self.refresh_orphan_columns()
         self.render_scan()
 
     def mark_dirty(self, *_):
@@ -625,7 +679,7 @@ class ReviewWindow(QMainWindow):
         if folder:
             self.open_folder(Path(folder))
 
-    def open_folder(self, path):
+    def open_folder(self, path, selected_page=None):
         root = find_output_root(str(path))
         if root is None:
             QMessageBox.warning(self, "폴더 오류", "ocr_results.json을 찾을 수 없습니다.")
@@ -646,18 +700,26 @@ class ReviewWindow(QMainWindow):
         self.base_people, self.base_rels, self.page_results = merge_review_sources(
             self.base_people, self.base_rels, self.page_results, self.state
         )
+        discovered, warnings = discover_page_outputs(root, self.page_results, self.base_people)
+        self.base_people, self.base_rels, self.page_results = merge_review_sources(
+            self.base_people, self.base_rels, self.page_results, {"supplemental_pages": discovered}
+        )
+        self.page_results.sort(key=page_sort_key)
         self.state_digest = file_digest(root / "review_state.json")
         self.dirty = False
         self.selected_id = None
         self.folder_label.setText(str(root))
         self.pages.blockSignals(True)
         self.pages.clear()
-        for page in pages:
-            name = str(page.get("source_page") or Path(page.get("source_image", "page")).name)
-            self.pages.addItem(name)
+        for page in self.page_results:
+            self.pages.addItem(page_name(page))
+        if selected_page and self.pages.findText(selected_page) >= 0:
+            self.pages.setCurrentIndex(self.pages.findText(selected_page))
         self.pages.blockSignals(False)
         self.search.clear()
         self.change_page()
+        if warnings:
+            self.statusBar().showMessage("일부 페이지를 읽지 못했습니다: " + "; ".join(warnings), 12000)
 
     def relationships(self):
         return [effective_relationship(r, self.state) for r in self.base_rels + self.state["manual_relationships"]]
@@ -809,7 +871,8 @@ class ReviewWindow(QMainWindow):
         person = next((p for p in self.page_people if p.get("person_id") == self.selected_id), None)
         focus = self.focus.currentData()
         if self.tabs.currentIndex() == 2:
-            sources = self.preview_link_sources if self.preview_link_sources is not None else self.checked_orphan_columns()
+            sources = self.preview_link_sources if self.preview_link_sources is not None else [
+                {"bbox": region["bbox"], "text": region["text"]} for region in self.checked_orphan_regions()]
         elif not person:
             sources = []
         elif focus == "name":

@@ -7,7 +7,7 @@ import numpy as np
 
 from jokbo_ocr import detect_large_printed_name_regions
 from person_data_model import ensure_person_uid
-from review_extensions import (merge_review_sources, previous_row_people, orphan_columns,
+from review_extensions import (merge_review_sources, previous_row_people, orphan_columns, orphan_regions,
                                make_continuation, apply_continuations, recover_name_candidates)
 
 
@@ -38,12 +38,26 @@ class ContinuationTests(unittest.TestCase):
     def test_nameless_row_includes_all_text_except_generation(self):
         self.assertEqual([c["column_id"] for c in orphan_columns(self.row, [])], ["c1", "c2", "c3"])
 
+    def test_adjacent_orphan_columns_form_one_region_with_original_evidence(self):
+        row = {"row_id": "r", "columns": [column("a", 600, "甲"), column("b", 575, "乙"),
+                                             column("c", 450, "丙")]}
+        regions = orphan_regions(row, [])
+        self.assertEqual([[c["column_id"] for c in r["columns"]] for r in regions], [["a", "b"], ["c"]])
+        self.assertEqual(regions[0]["bbox"], {"x": 575, "y": 100, "width": 43, "height": 80})
+        self.assertEqual(regions[0]["text"], "甲\n乙")
+        self.assertEqual(regions[0]["columns"][0]["token_boxes"], row["columns"][0]["token_boxes"])
+
     def test_missing_immediate_previous_page_does_not_suggest_remote_page(self):
         third = {"source_image": "003.jpg", "rows": [{"row_id": "003_row_01", "row_number": 1}]}
         self.assertEqual(previous_row_people(third, third["rows"][0], [self.previous, third], self.people, self.state), [])
 
     def test_rejected_person_does_not_claim_columns(self):
         self.assertEqual(len(orphan_columns(self.row, self.people, {"people_updates": {"p3": {"review_status": "rejected"}}})), 3)
+
+    def test_confirmed_columns_are_not_offered_again(self):
+        state = {"continuation_links": [{"review_status": "confirmed", "source_row_id": self.row["row_id"],
+                                         "columns": [self.row["columns"][0]]}]}
+        self.assertEqual([c["column_id"] for c in orphan_columns(self.row, self.people, state)], ["c2"])
 
     def test_link_preserves_text_coordinates_and_reviewed_biography(self):
         source = deepcopy(self.page)

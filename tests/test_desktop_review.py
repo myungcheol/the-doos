@@ -162,12 +162,51 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual((self.root / "ocr_results.json").read_bytes(), original)
         self.window.open_folder(self.root)
         self.assertIn("p0", [p["person_id"] for p in self.window.base_people])
+        self.window.pages.setCurrentIndex(self.window.pages.findText("sample.png"))
         self.assertEqual(self.window.continuation_list.count(), 1)
         self.window.continuation_list.setCurrentRow(0)
         self.window.detach_continuation()
         exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
         self.assertNotIn("continuations", next(p for p in exports if p["person_id"] == "p0")["raw_data"]["record_ocr"])
         self.assertEqual((self.root / "ocr_results.json").read_bytes(), original)
+
+    def test_sibling_page_is_discovered_without_dialog_or_state_change(self):
+        original_state = (self.root / "review_state.json").read_bytes()
+        first = self.root / "001.png"
+        image = QImage(100, 100, QImage.Format.Format_RGB32)
+        image.fill(0xffffffff)
+        self.assertTrue(image.save(str(first)))
+        folder = self.root / "001"
+        folder.mkdir()
+        (folder / "rows.json").write_text(json.dumps([{"row_id": "001_row_01", "row_number": 1,
+                                                        "columns": []}]), encoding="utf-8")
+        (folder / "people_candidates.json").write_text(json.dumps([{"person_id": "first_person",
+            "source_page": "001.png", "source_row_id": "001_row_01", "name_hanja_candidate": "甲",
+            "bbox": {"x": 20, "y": 20, "width": 10, "height": 20}}]), encoding="utf-8")
+        (folder / "relationship_candidates.json").write_text("[]", encoding="utf-8")
+        self.window.import_previous_page()
+        self.assertEqual([self.window.pages.itemText(i) for i in range(self.window.pages.count())],
+                         ["001.png", "sample.png"])
+        self.assertEqual(self.window.page_name, "sample.png")
+        self.window.pages.setCurrentIndex(0)
+        self.assertEqual(self.window.page_people[0]["person_id"], "first_person")
+        self.assertEqual((self.root / "review_state.json").read_bytes(), original_state)
+
+    def test_orphan_region_preview_and_attachment_preserve_columns(self):
+        self.window.page["rows"] = [{"row_id": "sample_row_01", "row_number": 1,
+            "columns": [{"column_id": "a", "text": "甲", "bbox": {"x": 70, "y": 10, "width": 15, "height": 40}},
+                        {"column_id": "b", "text": "乙", "bbox": {"x": 50, "y": 10, "width": 15, "height": 40}}]}]
+        self.window.refresh_orphan_rows()
+        self.assertEqual(self.window.orphan_list.count(), 1)
+        item = self.window.orphan_list.item(0)
+        self.assertIn("x 50–85", item.text())
+        self.assertIn("甲 乙", item.text())
+        self.window.orphan_list.setCurrentItem(item)
+        self.assertEqual(self.window.orphan_preview.toPlainText(), "甲\n乙")
+        self.window.tabs.setCurrentIndex(2)
+        self.assertEqual(self.window.view.sources[0]["bbox"], {"x": 50, "y": 10, "width": 35, "height": 40})
+        item.setCheckState(Qt.CheckState.Checked)
+        self.assertEqual([c["column_id"] for c in self.window.checked_orphan_columns()], ["a", "b"])
 
     def test_zoom_controls_belong_to_image_panel(self):
         self.assertIs(self.window.scan_tools.parent(), self.window.view.parent())

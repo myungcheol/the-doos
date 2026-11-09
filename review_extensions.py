@@ -88,6 +88,9 @@ def orphan_columns(row, people, state=None):
                   and state.get("people_updates", {}).get(p.get("person_id"), {}).get("review_status", p.get("review_status")) != "rejected"]
     right_edge = max(((p.get("bbox") or {}).get("x", 0) + (p.get("bbox") or {}).get("width", 0)
                       for p in row_people), default=None)
+    attached_boxes = [column.get("bbox") for link in state.get("continuation_links", [])
+                      if link.get("review_status") == "confirmed" and link.get("source_row_id") == row.get("row_id")
+                      for column in link.get("columns", [])]
     columns = []
     for column in row.get("columns", []):
         b = column.get("bbox") or {}
@@ -95,12 +98,36 @@ def orphan_columns(row, people, state=None):
         compact = re.sub(r"\s+", "", text)
         if not b.get("width") or not b.get("height") or not compact.strip("|"):
             continue
+        if b in attached_boxes:
+            continue
         if re.fullmatch(r"[一二三四五六七八九十百〇零0-9]+世", compact):
             continue
         if right_edge is not None and b.get("x", 0) + b["width"] / 2 < right_edge:
             continue
         columns.append(deepcopy(column))
     return sorted(columns, key=lambda c: c["bbox"]["x"], reverse=True)
+
+
+def orphan_regions(row, people, state=None):
+    """Group adjacent unassigned OCR columns for review without changing evidence."""
+    regions = []
+    for column in orphan_columns(row, people, state):
+        box = column["bbox"]
+        if not regions or regions[-1]["left"] - (box["x"] + box["width"]) > 32:
+            regions.append({"columns": [], "left": box["x"], "top": box["y"],
+                            "right": box["x"] + box["width"], "bottom": box["y"] + box["height"]})
+        region = regions[-1]
+        region["columns"].append(column)
+        region["left"] = min(region["left"], box["x"])
+        region["top"] = min(region["top"], box["y"])
+        region["right"] = max(region["right"], box["x"] + box["width"])
+        region["bottom"] = max(region["bottom"], box["y"] + box["height"])
+    return [{"columns": region["columns"],
+             "bbox": {"x": region["left"], "y": region["top"],
+                      "width": region["right"] - region["left"],
+                      "height": region["bottom"] - region["top"]},
+             "text": "\n".join(str(column.get("text") or "") for column in region["columns"])}
+            for region in regions]
 
 
 def make_continuation(page, row, columns, target, state):
