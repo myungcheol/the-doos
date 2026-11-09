@@ -220,6 +220,12 @@ pip install -r requirements-review.txt
 
 검수 UI는 Streamlit 1.47 이상을 사용합니다. 이미지 클릭/드래그 이동은 프로젝트에 포함된 로컬 Streamlit 컴포넌트로 처리하므로 별도 이미지 좌표 패키지가 필요하지 않습니다.
 
+선택적으로 PySide6 데스크톱 검수 앱을 사용하려면 다음 의존성도 설치합니다.
+
+```bash
+pip install -r requirements-desktop.txt
+```
+
 ## 4. OCR 실행
 
 프로젝트 폴더에서 `jokbo_ocr.py`를 실행합니다.
@@ -388,6 +394,18 @@ output/
 `person_id`는 현재 OCR 결과 안에서 후보를 가리키는 로컬 식별자입니다. 여러 판본에 걸쳐 사용할 인물 ID는 검수 UI에서 생성하는 `person_uid`를 사용합니다.
 
 ## 6. 검수 UI 실행과 사용법
+
+### 6.0 PySide6 데스크톱 검수 앱
+
+기존 Streamlit 앱과 별도로 데스크톱 창을 실행할 수 있습니다. 그래픽 데스크톱 환경과 `requirements-desktop.txt` 설치가 필요합니다.
+
+```bash
+python desktop_review.py output/
+```
+
+폴더 인자를 생략하면 창에서 OCR 결과 폴더를 선택합니다. 왼쪽 스캔에서 인물을 클릭하고 드래그로 이동하며, `Ctrl+휠` 또는 `+`/`−`로 확대·축소합니다. 오른쪽에서 인물 정보와 검수 상태를 저장하거나 관계 후보를 승인·거절하고, 부모를 지정한 뒤 자녀들을 연결할 수 있습니다. OCR 항목을 선택하고 왼쪽 박스에 마우스를 올리면 원문이 이미지 위에 표시됩니다. 배우자는 JSON 배열로 편집하며 기존 항목의 유형과 나머지 속성을 유지해야 합니다.
+
+저장 시 기존 `review_state.json` 형식과 JSON/CSV 내보내기를 사용합니다. 저장 전에 다른 프로그램이 검수 상태를 변경했는지 확인하므로 충돌 시 폴더를 다시 열어야 합니다. 두 UI에서 같은 폴더를 동시에 편집하지 마세요. 이 초기 데스크톱 버전에서는 판본 메타데이터 편집, 공용 레지스트리 갱신·기존 UID 연결, 관계 후보의 부모/자녀 교체, 관계 되돌리기 기능은 제공하지 않습니다. 이러한 작업은 기존 Streamlit UI를 사용하세요. 데스크톱에서 생성한 UID는 검수 상태와 내보내기에 저장되며 공용 레지스트리는 자동 변경하지 않습니다.
 
 ### 6.1 실행
 
@@ -879,6 +897,7 @@ python jokbo_ocr.py --help
 | PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `jokbo_ocr.py`, `tests/test_paddle_adapter.py`, `tests/test_paddle_optimization.py` |
 | 부자관계 추론의 판면/기하 규칙 | `jokbo_ocr.py`, `tests/test_relationship_layout.py` |
 | 인물 선택, 인명·관계 검수, 입력폼, 저장/내보내기, 이미지 overlay payload | `review_app.py` |
+| 선택적 PySide6 데스크톱 검수 앱 | `desktop_review.py`, `requirements-desktop.txt`, `tests/test_desktop_review.py` |
 | 실제 줌/팬, 클릭, bbox·관계선의 브라우저 렌더링 | `components/jokbo_image_viewer/index.html` |
 | 관계 목록 번호/필터, 관계선 끝점, OCR focus 안전 처리 | `review_helpers.py`, `tests/test_review_helpers.py` |
 | 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `person_info_extractor.py`, `tests/test_person_info_extractor.py` |
