@@ -1,0 +1,1369 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-09T00:32:41+00:00",
+  "persons": {
+    "PER_DA180FF18EBB4A92B4B3DB5F7348D552": {
+      "person_uid": "PER_DA180FF18EBB4A92B4B3DB5F7348D552",
+      "canonical_name_hanja": "杜慶寧",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_314B1207A0195C539FF6262A2386F3BF",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_01",
+          "row_number": 1,
+          "source_column_id": "001_row_01_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 524,
+            "y": 117,
+            "width": 32,
+            "height": 99
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "杜慶寧",
+        "sex_marker": null,
+        "gender": null,
+        "generation_number": null,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": "年壬子三月生 / 先杜陵人",
+        "death_text": null,
+        "office_title": "托故公時為兵部 / 尚書上直吉 / 諫以此見於朝\n年間貶秋為蘇州 / 刺史公典其二子 / 中書舍人之建右拾 / 遗之逢同舟浮海",
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": "年壬子三月生\n先杜陵人\n宋太祖時社太后\n親族也\n太宗至道元年欲\n真廢秦王\n有達杜太后之遗\n托故公時為兵部\n尚書上直吉\n諫以此見於朝\n及真宗即位成平\n年間貶秋為蘇州\n刺史公典其二子\n中書舍人之建右拾\n遗之逢同舟浮海\n而行中流遇风漂\n到于海東\n高麗周宮池縣宮池\n今萬滇群山島當\n朝穆宗七年也\n東朝聞中朝中朝",
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_01_name_region_01.png",
+          "bbox": {
+            "x": 524,
+            "y": 117,
+            "width": 32,
+            "height": 99
+          }
+        },
+        "name_ocr": {
+          "raw_text": "杜慶寧",
+          "normalized_name_candidate": "杜慶寧",
+          "leading_marker": null,
+          "inferred_gender": null,
+          "confidence": 79.52,
+          "bbox": {
+            "x": 524,
+            "y": 117,
+            "width": 32,
+            "height": 99
+          },
+          "evidence_text": "杜慶寧",
+          "hypotheses": [
+            {
+              "text": "杜慶寧",
+              "variant": "row_ocr_reuse",
+              "confidence": 79.52
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "年壬子三月生\n先杜陵人\n宋太祖時社太后\n親族也\n太宗至道元年欲\n真廢秦王\n有達杜太后之遗\n托故公時為兵部\n尚書上直吉\n諫以此見於朝\n及真宗即位成平\n年間貶秋為蘇州\n刺史公典其二子\n中書舍人之建右拾\n遗之逢同舟浮海\n而行中流遇风漂\n到于海東\n高麗周宮池縣宮池\n今萬滇群山島當\n朝穆宗七年也\n東朝聞中朝中朝",
+          "source_row_id": "001_row_01",
+          "source_column_ids": [
+            "001_row_01_col_04",
+            "001_row_01_col_05",
+            "001_row_01_col_06",
+            "001_row_01_col_07",
+            "001_row_01_col_08",
+            "001_row_01_col_09",
+            "001_row_01_col_10",
+            "001_row_01_col_11",
+            "001_row_01_col_12",
+            "001_row_01_col_13",
+            "001_row_01_col_14",
+            "001_row_01_col_15",
+            "001_row_01_col_16",
+            "001_row_01_col_17",
+            "001_row_01_col_18",
+            "001_row_01_col_19",
+            "001_row_01_col_20",
+            "001_row_01_col_21",
+            "001_row_01_col_22",
+            "001_row_01_col_23",
+            "001_row_01_col_24"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [
+              "年壬子三月生 / 先杜陵人"
+            ],
+            "columns": []
+          },
+          "death_text": {
+            "text": [],
+            "columns": []
+          },
+          "office_title": {
+            "text": [
+              "托故公時為兵部 / 尚書上直吉 / 諫以此見於朝",
+              "年間貶秋為蘇州 / 刺史公典其二子 / 中書舍人之建右拾 / 遗之逢同舟浮海"
+            ],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_314B1207A0195C539FF6262A2386F3BF",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_01",
+          "row_number": 1,
+          "source_column_id": "001_row_01_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 524,
+            "y": 117,
+            "width": 32,
+            "height": 99
+          }
+        }
+      }
+    },
+    "PER_86F6C59BA82C4DA79A4CC78FD64FA5EF": {
+      "person_uid": "PER_86F6C59BA82C4DA79A4CC78FD64FA5EF",
+      "canonical_name_hanja": "之建",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_C135C4418966548E8341B3400A316CD3",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_02",
+          "row_number": 2,
+          "source_column_id": "001_row_02_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 529,
+            "y": 236,
+            "width": 25,
+            "height": 84
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "之建",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": null,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_02_name_region_01.png",
+          "bbox": {
+            "x": 529,
+            "y": 236,
+            "width": 25,
+            "height": 84
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子之建",
+          "normalized_name_candidate": "之建",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 99.27,
+          "bbox": {
+            "x": 529,
+            "y": 236,
+            "width": 25,
+            "height": 84
+          },
+          "evidence_text": "子之建",
+          "hypotheses": [
+            {
+              "text": "子之建",
+              "variant": "row_ocr_reuse",
+              "confidence": 99.27
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "開寶八年乙亥十月\n十五日生\n淳化五年甲午官至\n中書舍人成平年\n間父子被祸漂\n于東周萬頃群山\n岛\n高德宗敬康王朝\n世襲父爵封杜陵\n君\n高麗文宗二年戊子\n卒0禮葬于今萬\n项縣主山壬坐之原\n故因號杜州曰杜\n山又云杜陵東屏\n杜氏貫社陵焉\n夫人洛陽洪氏丙子\n生庚寅卒0葬于\n公之基附右",
+          "source_row_id": "001_row_02",
+          "source_column_ids": [
+            "001_row_02_col_04",
+            "001_row_02_col_05",
+            "001_row_02_col_06",
+            "001_row_02_col_07",
+            "001_row_02_col_08",
+            "001_row_02_col_09",
+            "001_row_02_col_10",
+            "001_row_02_col_11",
+            "001_row_02_col_12",
+            "001_row_02_col_13",
+            "001_row_02_col_14",
+            "001_row_02_col_15",
+            "001_row_02_col_16",
+            "001_row_02_col_17",
+            "001_row_02_col_18",
+            "001_row_02_col_19",
+            "001_row_02_col_20",
+            "001_row_02_col_21",
+            "001_row_02_col_22"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [
+              "開寶八年乙亥十月 / 十五日生 / 淳化五年甲午官至",
+              "夫人洛陽洪氏丙子 / 生庚寅卒0葬于 / 公之基附右"
+            ],
+            "columns": []
+          },
+          "death_text": {
+            "text": [
+              "高麗文宗二年戊子 / 卒0禮葬于今萬 / 项縣主山壬坐之原",
+              "夫人洛陽洪氏丙子 / 生庚寅卒0葬于 / 公之基附右"
+            ],
+            "columns": []
+          },
+          "office_title": {
+            "text": [
+              "十五日生 / 淳化五年甲午官至 / 中書舍人成平年 / 間父子被祸漂"
+            ],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [
+              "杜氏貫社陵焉 / 夫人洛陽洪氏丙子 / 生庚寅卒0葬于"
+            ],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [
+              "高麗文宗二年戊子 / 卒0禮葬于今萬 / 项縣主山壬坐之原 / 故因號杜州曰杜",
+              "夫人洛陽洪氏丙子 / 生庚寅卒0葬于 / 公之基附右"
+            ],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [
+              "项縣主山壬坐之原 / 故因號杜州曰杜 / 山又云杜陵東屏"
+            ],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_C135C4418966548E8341B3400A316CD3",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_02",
+          "row_number": 2,
+          "source_column_id": "001_row_02_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 529,
+            "y": 236,
+            "width": 25,
+            "height": 84
+          }
+        }
+      }
+    },
+    "PER_4DDFACB6EE524D6C801A2831C9B47930": {
+      "person_uid": "PER_4DDFACB6EE524D6C801A2831C9B47930",
+      "canonical_name_hanja": "之逢",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_90E36E13B64651C18BD015FD0594908F",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_02",
+          "row_number": 2,
+          "source_column_id": "001_row_02_name_region_02",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 75,
+            "y": 228,
+            "width": 26,
+            "height": 91
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "之逢",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": null,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_02_name_region_02.png",
+          "bbox": {
+            "x": 75,
+            "y": 228,
+            "width": 26,
+            "height": 91
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子之逢",
+          "normalized_name_candidate": "之逢",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 96.07,
+          "bbox": {
+            "x": 75,
+            "y": 228,
+            "width": 26,
+            "height": 91
+          },
+          "evidence_text": "子之逢",
+          "hypotheses": [
+            {
+              "text": "子之逢",
+              "variant": "row_ocr_reuse",
+              "confidence": 96.07
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "子之逢",
+          "source_row_id": "001_row_02",
+          "source_column_ids": [],
+          "method": null
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [],
+            "columns": []
+          },
+          "death_text": {
+            "text": [],
+            "columns": []
+          },
+          "office_title": {
+            "text": [],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_90E36E13B64651C18BD015FD0594908F",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_02",
+          "row_number": 2,
+          "source_column_id": "001_row_02_name_region_02",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 75,
+            "y": 228,
+            "width": 26,
+            "height": 91
+          }
+        }
+      }
+    },
+    "PER_42306B874D4F4FA183B07BDC2B7AE084": {
+      "person_uid": "PER_42306B874D4F4FA183B07BDC2B7AE084",
+      "canonical_name_hanja": "遂寵",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_591A0A8D117F5F65898B6B0997B1D336",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_03",
+          "row_number": 3,
+          "source_column_id": "001_row_03_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 527,
+            "y": 369,
+            "width": 26,
+            "height": 85
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "遂寵",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": 3,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_03_name_region_01.png",
+          "bbox": {
+            "x": 527,
+            "y": 369,
+            "width": 26,
+            "height": 85
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子遂寵",
+          "normalized_name_candidate": "遂寵",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 74.89,
+          "bbox": {
+            "x": 527,
+            "y": 369,
+            "width": 26,
+            "height": 85
+          },
+          "evidence_text": "子遂寵",
+          "hypotheses": [
+            {
+              "text": "子遂寵",
+              "variant": "row_ocr_reuse",
+              "confidence": 74.89
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "高麗穆宗八年乙\n生\n顯宗二十年己巳登\n科原徒功臣大\n軍壬寅九月二十\n一日卒0基于老\n基下同原\n配淑夫人石氏甲辰\n三月二日生壬申\n八月卒0基同原\n公基失傳有設壇\n漕縣面天洞\n于\n就林\n4\n夫人京王\n大",
+          "source_row_id": "001_row_03",
+          "source_column_ids": [
+            "001_row_03_col_05",
+            "001_row_03_col_06",
+            "001_row_03_col_07",
+            "001_row_03_col_08",
+            "001_row_03_col_09",
+            "001_row_03_col_10",
+            "001_row_03_col_11",
+            "001_row_03_col_12",
+            "001_row_03_col_13",
+            "001_row_03_col_14",
+            "001_row_03_col_15",
+            "001_row_03_col_16",
+            "001_row_03_col_17",
+            "001_row_03_col_18",
+            "001_row_03_col_19",
+            "001_row_03_col_20",
+            "001_row_03_col_21"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [
+              "高麗穆宗八年乙 / 生 / 顯宗二十年己巳登",
+              "配淑夫人石氏甲辰 / 三月二日生壬申 / 八月卒0基同原"
+            ],
+            "columns": []
+          },
+          "death_text": {
+            "text": [
+              "軍壬寅九月二十 / 一日卒0基于老 / 基下同原",
+              "三月二日生壬申 / 八月卒0基同原 / 公基失傳有設壇"
+            ],
+            "columns": []
+          },
+          "office_title": {
+            "text": [
+              "顯宗二十年己巳登 / 科原徒功臣大 / 軍壬寅九月二十"
+            ],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [
+              "基下同原 / 配淑夫人石氏甲辰 / 三月二日生壬申",
+              "4 / 夫人京王 / 大"
+            ],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [
+              "一日卒0基于老 / 基下同原 / 配淑夫人石氏甲辰 / 三月二日生壬申 / 八月卒0基同原 / 公基失傳有設壇 / 漕縣面天洞"
+            ],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_591A0A8D117F5F65898B6B0997B1D336",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_03",
+          "row_number": 3,
+          "source_column_id": "001_row_03_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 527,
+            "y": 369,
+            "width": 26,
+            "height": 85
+          }
+        }
+      }
+    },
+    "PER_60DAA82DD2F5443BAA26EE6B342169C1": {
+      "person_uid": "PER_60DAA82DD2F5443BAA26EE6B342169C1",
+      "canonical_name_hanja": "孟",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_262D57DF0A265C8CB7C5F249BCEE3146",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_04",
+          "row_number": 4,
+          "source_column_id": "001_row_04_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 524,
+            "y": 505,
+            "width": 27,
+            "height": 91
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "孟",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": 4,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_04_name_region_01.png",
+          "bbox": {
+            "x": 524,
+            "y": 505,
+            "width": 27,
+            "height": 91
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子孟",
+          "normalized_name_candidate": "孟",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 99.3,
+          "bbox": {
+            "x": 524,
+            "y": 505,
+            "width": 27,
+            "height": 91
+          },
+          "evidence_text": "子孟",
+          "hypotheses": [
+            {
+              "text": "子孟",
+              "variant": "row_ocr_reuse",
+              "confidence": 99.3
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "高麗靖宗七年年\n二月日生举進\n士基萬頃邑主山\n坐\n配宜人李氏基同\n原公之墓合室\n有設壇",
+          "source_row_id": "001_row_04",
+          "source_column_ids": [
+            "001_row_04_col_04",
+            "001_row_04_col_05",
+            "001_row_04_col_06",
+            "001_row_04_col_07",
+            "001_row_04_col_08",
+            "001_row_04_col_09",
+            "001_row_04_col_10"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [
+              "高麗靖宗七年年 / 二月日生举進 / 士基萬頃邑主山"
+            ],
+            "columns": []
+          },
+          "death_text": {
+            "text": [],
+            "columns": []
+          },
+          "office_title": {
+            "text": [],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [
+              "坐 / 配宜人李氏基同 / 原公之墓合室"
+            ],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [
+              "配宜人李氏基同 / 原公之墓合室 / 有設壇"
+            ],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_262D57DF0A265C8CB7C5F249BCEE3146",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_04",
+          "row_number": 4,
+          "source_column_id": "001_row_04_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 524,
+            "y": 505,
+            "width": 27,
+            "height": 91
+          }
+        }
+      }
+    },
+    "PER_0A19F7ECE2B742E59FFB19485B68AFAC": {
+      "person_uid": "PER_0A19F7ECE2B742E59FFB19485B68AFAC",
+      "canonical_name_hanja": "孟文",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_3F2DE74DCC04561B82D4C31B5205D8DC",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_04",
+          "row_number": 4,
+          "source_column_id": "001_row_04_name_region_02",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 321,
+            "y": 504,
+            "width": 26,
+            "height": 86
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "孟文",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": 4,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_04_name_region_02.png",
+          "bbox": {
+            "x": 321,
+            "y": 504,
+            "width": 26,
+            "height": 86
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子孟文",
+          "normalized_name_candidate": "孟文",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 99.54,
+          "bbox": {
+            "x": 321,
+            "y": 504,
+            "width": 26,
+            "height": 86
+          },
+          "evidence_text": "子孟文",
+          "hypotheses": [
+            {
+              "text": "子孟文",
+              "variant": "row_ocr_reuse",
+              "confidence": 99.54
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "丙戌四月十九日\n生甲戌十一月辛\n葬于考基下壬\n坐之原\n配金海金氏癸巳八\n月二十九日生丙\n戌十二月二日卒\n基同原合定\n父倉永官道明祖\n知郡事森日基失\n傳",
+          "source_row_id": "001_row_04",
+          "source_column_ids": [
+            "001_row_04_col_12",
+            "001_row_04_col_13",
+            "001_row_04_col_14",
+            "001_row_04_col_15",
+            "001_row_04_col_16",
+            "001_row_04_col_17",
+            "001_row_04_col_18",
+            "001_row_04_col_19",
+            "001_row_04_col_20",
+            "001_row_04_col_21",
+            "001_row_04_col_22"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [
+              "丙戌四月十九日 / 生甲戌十一月辛 / 葬于考基下壬",
+              "配金海金氏癸巳八 / 月二十九日生丙 / 戌十二月二日卒"
+            ],
+            "columns": []
+          },
+          "death_text": {
+            "text": [
+              "月二十九日生丙 / 戌十二月二日卒 / 基同原合定"
+            ],
+            "columns": []
+          },
+          "office_title": {
+            "text": [
+              "父倉永官道明祖 / 知郡事森日基失 / 傳"
+            ],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [
+              "坐之原 / 配金海金氏癸巳八 / 月二十九日生丙"
+            ],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [
+              "生甲戌十一月辛 / 葬于考基下壬 / 坐之原 / 配金海金氏癸巳八",
+              "戌十二月二日卒 / 基同原合定 / 父倉永官道明祖"
+            ],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_3F2DE74DCC04561B82D4C31B5205D8DC",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_04",
+          "row_number": 4,
+          "source_column_id": "001_row_04_name_region_02",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 321,
+            "y": 504,
+            "width": 26,
+            "height": 86
+          }
+        }
+      }
+    },
+    "PER_F2699A8328534CCE81EC4EAA6ADD568C": {
+      "person_uid": "PER_F2699A8328534CCE81EC4EAA6ADD568C",
+      "canonical_name_hanja": "邦",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_9C489E0C240C50549F10F7D53C93D5A2",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_05",
+          "row_number": 5,
+          "source_column_id": "001_row_05_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 524,
+            "y": 640,
+            "width": 26,
+            "height": 88
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "邦",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": 5,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_05_name_region_01.png",
+          "bbox": {
+            "x": 524,
+            "y": 640,
+            "width": 26,
+            "height": 88
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子邦",
+          "normalized_name_candidate": "邦",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 99.76,
+          "bbox": {
+            "x": 524,
+            "y": 640,
+            "width": 26,
+            "height": 88
+          },
+          "evidence_text": "子邦",
+          "hypotheses": [
+            {
+              "text": "子",
+              "variant": "row_ocr_reference",
+              "confidence": 99.99
+            },
+            {
+              "text": "子邦",
+              "variant": "clahe_vertical",
+              "confidence": 99.76
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "庚寅中寶文殿\n士寅行中書門\n下侍郎主董事卒\n於平章館閣社廷\n于扶安縣石佛山\n南麓艮坐之原\n配貞夫人南平文\n氏。基合封有碣\n床石人石",
+          "source_row_id": "001_row_05",
+          "source_column_ids": [
+            "001_row_05_col_06",
+            "001_row_05_col_07",
+            "001_row_05_col_08",
+            "001_row_05_col_09",
+            "001_row_05_col_10",
+            "001_row_05_col_11",
+            "001_row_05_col_12",
+            "001_row_05_col_13",
+            "001_row_05_col_14"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [],
+            "columns": []
+          },
+          "death_text": {
+            "text": [
+              "士寅行中書門 / 下侍郎主董事卒 / 於平章館閣社廷"
+            ],
+            "columns": []
+          },
+          "office_title": {
+            "text": [
+              "庚寅中寶文殿 / 士寅行中書門 / 下侍郎主董事卒 / 於平章館閣社廷 / 于扶安縣石佛山"
+            ],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [
+              "南麓艮坐之原 / 配貞夫人南平文 / 氏。基合封有碣"
+            ],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [
+              "于扶安縣石佛山 / 南麓艮坐之原 / 配貞夫人南平文 / 氏。基合封有碣 / 床石人石"
+            ],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_9C489E0C240C50549F10F7D53C93D5A2",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_05",
+          "row_number": 5,
+          "source_column_id": "001_row_05_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 524,
+            "y": 640,
+            "width": 26,
+            "height": 88
+          }
+        }
+      }
+    },
+    "PER_F711A8F663D84CD4A109FEDD4D78C3EF": {
+      "person_uid": "PER_F711A8F663D84CD4A109FEDD4D78C3EF",
+      "canonical_name_hanja": "景",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_EB371E05251A53FB8AF25EBA03E59D24",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_06",
+          "row_number": 6,
+          "source_column_id": "001_row_06_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 522,
+            "y": 773,
+            "width": 26,
+            "height": 84
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "景",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": 6,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_06_name_region_01.png",
+          "bbox": {
+            "x": 522,
+            "y": 773,
+            "width": 26,
+            "height": 84
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子景",
+          "normalized_name_candidate": "景",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 99.74,
+          "bbox": {
+            "x": 522,
+            "y": 773,
+            "width": 26,
+            "height": 84
+          },
+          "evidence_text": "子景",
+          "hypotheses": [
+            {
+              "text": "子景",
+              "variant": "row_ocr_reuse",
+              "confidence": 99.74
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "子",
+          "source_row_id": "001_row_06",
+          "source_column_ids": [
+            "001_row_06_col_05"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [],
+            "columns": []
+          },
+          "death_text": {
+            "text": [],
+            "columns": []
+          },
+          "office_title": {
+            "text": [],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_EB371E05251A53FB8AF25EBA03E59D24",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_06",
+          "row_number": 6,
+          "source_column_id": "001_row_06_name_region_01",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 522,
+            "y": 773,
+            "width": 26,
+            "height": 84
+          }
+        }
+      }
+    },
+    "PER_7C4207FE161F44438C0CA4D2BFEF6B56": {
+      "person_uid": "PER_7C4207FE161F44438C0CA4D2BFEF6B56",
+      "canonical_name_hanja": "景升",
+      "aliases": [],
+      "source_occurrences": [
+        {
+          "source_occurrence_id": "OCC_016E741E7F035A749DAD1D6EDF1177A3",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_06",
+          "row_number": 6,
+          "source_column_id": "001_row_06_name_region_02",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 398,
+            "y": 772,
+            "width": 27,
+            "height": 88
+          }
+        }
+      ],
+      "reviewed_data": {
+        "name_hanja": "景升",
+        "sex_marker": "子",
+        "gender": "male",
+        "generation_number": 6,
+        "courtesy_name_hanja": null,
+        "pen_name_hanja": null,
+        "birth_text": null,
+        "death_text": null,
+        "office_title": null,
+        "spouses": [],
+        "burial_text": null,
+        "biography_text": null,
+        "notes": null,
+        "review_status": "needs_review",
+        "information_review_status": "needs_review"
+      },
+      "raw_data_latest": {
+        "image": {
+          "source_image": "scan/genealogy/001.jpg",
+          "image_file": "output/001/columns/001_row_06_name_region_02.png",
+          "bbox": {
+            "x": 398,
+            "y": 772,
+            "width": 27,
+            "height": 88
+          }
+        },
+        "name_ocr": {
+          "raw_text": "子景升",
+          "normalized_name_candidate": "景升",
+          "leading_marker": "子",
+          "inferred_gender": "male",
+          "confidence": 99.75,
+          "bbox": {
+            "x": 398,
+            "y": 772,
+            "width": 27,
+            "height": 88
+          },
+          "evidence_text": "子景升",
+          "hypotheses": [
+            {
+              "text": "景",
+              "variant": "row_ocr_reference",
+              "confidence": 99.97
+            },
+            {
+              "text": "子景升",
+              "variant": "clahe_vertical",
+              "confidence": 99.75
+            }
+          ]
+        },
+        "record_ocr": {
+          "text": "中浪常\n中兰常\n今\n于",
+          "source_row_id": "001_row_06",
+          "source_column_ids": [
+            "001_row_06_col_10",
+            "001_row_06_col_11",
+            "001_row_06_col_12",
+            "001_row_06_col_13"
+          ],
+          "method": "row_columns_bbox_keyword_context_v1"
+        },
+        "field_ocr": {
+          "birth_text": {
+            "text": [],
+            "columns": []
+          },
+          "death_text": {
+            "text": [],
+            "columns": []
+          },
+          "office_title": {
+            "text": [],
+            "columns": []
+          },
+          "spouse_text": {
+            "text": [],
+            "columns": []
+          },
+          "burial_text": {
+            "text": [],
+            "columns": []
+          },
+          "courtesy_name_hanja": {
+            "text": [],
+            "columns": []
+          },
+          "pen_name_hanja": {
+            "text": [],
+            "columns": []
+          }
+        },
+        "source_occurrence": {
+          "source_occurrence_id": "OCC_016E741E7F035A749DAD1D6EDF1177A3",
+          "edition_id": "jokbo-1987",
+          "publication_year": 1987,
+          "volume": null,
+          "printed_page": null,
+          "scan_page": "001.jpg",
+          "source_image": "scan/genealogy/001.jpg",
+          "source_row_id": "001_row_06",
+          "row_number": 6,
+          "source_column_id": "001_row_06_name_region_02",
+          "column_number_right_to_left": null,
+          "position_in_column": 1,
+          "bbox": {
+            "x": 398,
+            "y": 772,
+            "width": 27,
+            "height": 88
+          }
+        }
+      }
+    }
+  }
+}

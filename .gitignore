@@ -15,6 +15,7 @@ data/exports/*.tmp
 data/exports/*.bak
 data/exports/import.sql
 output/
+.venv/
 
 # python
 __pycache__/

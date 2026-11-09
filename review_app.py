@@ -11,11 +11,16 @@ from typing import Any
 
 import cv2
 import numpy as np
+import pandas as pd
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 from person_info_extractor import extract_person_info_draft
+from person_data_model import (
+    build_person_registry, build_raw_data, build_reviewed_data, ensure_person_uid,
+    make_source_occurrence, person_local_key, registry_options, strip_name_marker,
+)
 from review_helpers import (
     person_number_map, format_person_reference, filter_relationships_for_person,
     format_relationship_label,
@@ -42,9 +47,11 @@ def find_output_root(raw_path: str) -> Path | None:
 
 def effective_name(person: dict[str, Any], state: dict[str, Any]) -> str:
     update = state.get("people_updates", {}).get(person.get("person_id"), {})
-    return (update.get("transcribed_name_hanja")
-            or person.get("transcribed_name_hanja")
-            or person.get("name_hanja_candidate") or "(이름 미인식)")
+    candidate = (update.get("transcribed_name_hanja")
+                 or person.get("transcribed_name_hanja")
+                 or person.get("name_hanja_candidate") or "")
+    normalized, _, _ = strip_name_marker(candidate)
+    return normalized or "(이름 미인식)"
 
 
 def effective_person_status(person: dict[str, Any], state: dict[str, Any]) -> str:
@@ -95,32 +102,104 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
     )
     with (root / "reviewed_people.csv").open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=[
-            "person_id", "source_page", "name_hanja_candidate", "transcribed_name_hanja",
-            "review_status", "generation_number", "courtesy_name_hanja", "pen_name_hanja",
-            "birth_text", "death_text", "office_title", "spouse_text", "burial_text",
-            "biography_text", "notes", "information_review_status", "source_record_ocr_text",
+            "person_uid", "person_id", "source_page", "name_hanja_candidate", "raw_name_ocr",
+            "transcribed_name_hanja", "sex_marker", "gender", "review_status",
+            "generation_number", "courtesy_name_hanja", "pen_name_hanja",
+            "birth_text", "death_text", "office_title", "spouse_text", "spouses",
+            "burial_text", "biography_text", "notes", "information_review_status",
+            "source_record_ocr_text", "raw_data", "reviewed_data", "source_occurrences",
             "bbox", "image_file", "ocr_confidence",
         ], extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(people)
+        csv_people = []
+        for person in people:
+            row = dict(person)
+            for nested_key in ("spouses", "raw_data", "reviewed_data", "source_occurrences", "bbox"):
+                if nested_key in row:
+                    row[nested_key] = json.dumps(row[nested_key], ensure_ascii=False)
+            csv_people.append(row)
+        writer.writerows(csv_people)
     with (root / "reviewed_relationships.csv").open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=[
             "relationship_id", "source_page", "type", "parent_candidate_id",
-            "parent_name_hanja_candidate", "child_candidate_id", "child_name_hanja_candidate",
-            "relationship_basis", "review_status", "warning",
+            "parent_name_hanja_candidate", "parent_person_uid", "child_candidate_id",
+            "child_name_hanja_candidate", "child_person_uid", "relationship_basis",
+            "review_status", "warning",
         ], extrasaction="ignore")
         writer.writeheader()
         writer.writerows(relationships)
 
 
 def build_review_data(root: Path, base_people: list[dict[str, Any]],
-                      base_relationships: list[dict[str, Any]], state: dict[str, Any]):
+                      base_relationships: list[dict[str, Any]], state: dict[str, Any],
+                      page_results: list[dict[str, Any]] | None = None):
+    page_results = page_results or []
+    page_result_map = {
+        str(item.get("source_page") or Path(item.get("source_image", "page")).name): item
+        for item in page_results
+    }
+    edition = state.get("edition", {"edition_id": "jokbo-1987", "publication_year": 1987})
+    page_metadata = state.get("page_metadata", {})
     people = []
+    by_page_people: dict[str, list[dict[str, Any]]] = {}
+    for raw in base_people:
+        by_page_people.setdefault(str(raw.get("source_page", "")), []).append(raw)
+    draft_cache: dict[str, dict[str, Any]] = {}
     for raw in base_people:
         person = dict(raw)
+        local_key = person_local_key(person, edition.get("edition_id"))
+        uid = state.get("person_uid_map", {}).get(local_key) or person.get("person_uid")
+        if not uid:
+            uid = ensure_person_uid(person, state)
+        person["person_uid"] = str(uid)
+        # Keep the unmodified OCR name permanently, while normalizing the candidate
+        # name used in review and relationship labels.
+        raw_name = str(person.get("raw_name_ocr") or person.get("name_hanja_candidate") or "")
+        normalized_name, marker, gender = strip_name_marker(raw_name)
+        person["raw_name_ocr"] = raw_name
+        person["raw_name_marker"] = marker
+        person["name_hanja_candidate"] = normalized_name
+        if marker:
+            person.setdefault("sex_marker", marker)
+            person.setdefault("gender", gender)
         update = state.get("people_updates", {}).get(person.get("person_id"), {})
         person.update(update)
+        cleaned_review_name, update_marker, update_gender = strip_name_marker(
+            person.get("transcribed_name_hanja") or person.get("name_hanja_candidate")
+        )
+        if person.get("transcribed_name_hanja"):
+            person["transcribed_name_hanja"] = cleaned_review_name
+        if update_marker and not person.get("sex_marker"):
+            person["sex_marker"] = update_marker
+            person["gender"] = update_gender
+
+        source_page = str(person.get("source_page", ""))
+        page_result = page_result_map.get(source_page)
+        cache_key = f"{source_page}::{person.get('person_id')}"
+        if cache_key not in draft_cache:
+            if page_result:
+                draft_cache[cache_key] = extract_person_info_draft(
+                    raw, page_result, by_page_people.get(source_page, [])
+                )
+            else:
+                draft_cache[cache_key] = {}
+        draft = dict(draft_cache[cache_key] or {})
+        if isinstance(update.get("auto_extraction_draft"), dict):
+            draft.update(update["auto_extraction_draft"])
+        occurrence = make_source_occurrence(
+            raw, page_result, edition, page_metadata.get(source_page, {}),
+            by_page_people.get(source_page, []),
+        )
+        person["source_occurrences"] = [occurrence]
+        person["raw_data"] = build_raw_data(raw, page_result, draft, occurrence)
+        person["source_record_ocr_text"] = (
+            update.get("source_record_ocr_text")
+            or draft.get("source_record_ocr_text")
+            or raw.get("evidence_text")
+        )
+        person["reviewed_data"] = build_reviewed_data(person)
         people.append(person)
+
     rels = [effective_relationship(rel, state) for rel in base_relationships]
     for manual in state.get("manual_relationships", []):
         rels.append(effective_relationship(dict(manual), state))
@@ -130,8 +209,10 @@ def build_review_data(root: Path, base_people: list[dict[str, Any]],
         child = by_id.get(rel.get("child_candidate_id"), {})
         if parent:
             rel["parent_name_hanja_candidate"] = effective_name(parent, state)
+            rel["parent_person_uid"] = parent.get("person_uid")
         if child:
             rel["child_name_hanja_candidate"] = effective_name(child, state)
+            rel["child_person_uid"] = child.get("person_uid")
     return people, rels
 
 
@@ -175,12 +256,15 @@ def parse_optional_generation(value: str) -> int | None:
         raise ValueError("세대는 숫자로 입력하거나 비워 두세요.") from exc
 
 
-def fit_display(image: np.ndarray, max_width: int = 950, max_height: int = 720) -> tuple[Image.Image, float]:
-    """Fit the complete page into a bounded viewport while preserving coordinates."""
+def fit_display(image: np.ndarray, max_width: int = 950, max_height: int = 720,
+                zoom_factor: float = 1.0) -> tuple[Image.Image, float]:
+    """Fit the full page, then apply an unbounded user-selected zoom factor."""
     h, w = image.shape[:2]
-    scale = min(1.0, max_width / max(1, w), max_height / max(1, h))
+    fit_scale = min(1.0, max_width / max(1, w), max_height / max(1, h))
+    scale = fit_scale * max(0.05, float(zoom_factor))
     out_w, out_h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
-    resized = cv2.resize(image, (out_w, out_h), interpolation=cv2.INTER_AREA) if scale < 1 else image.copy()
+    interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+    resized = cv2.resize(image, (out_w, out_h), interpolation=interpolation) if abs(scale - 1) > 1e-6 else image.copy()
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     return Image.fromarray(rgb), scale
 
@@ -189,8 +273,10 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
                  relationships: list[dict[str, Any]], state: dict[str, Any],
                  selected_id: str | None = None, pending_parent_id: str | None = None,
                  active_parent_id: str | None = None,
-                 max_width: int = 950, max_height: int = 720) -> Image.Image:
-    base, scale = fit_display(image, max_width, max_height)
+                 max_width: int = 950, max_height: int = 720,
+                 zoom_factor: float = 1.0,
+                 ocr_boxes: list[dict[str, Any]] | None = None) -> Image.Image:
+    base, scale = fit_display(image, max_width, max_height, zoom_factor)
     draw = ImageDraw.Draw(base, "RGBA")
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", 15)
@@ -200,6 +286,33 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
         small_font = ImageFont.load_default()
     ox, oy = offset
     person_map = {p.get("person_id"): p for p in people}
+
+    # OCR evidence regions for the currently selected person. The name region
+    # and text columns use separate colors; character token boxes are optional.
+    for item in (ocr_boxes or []):
+        box = item.get("bbox") or {}
+        if not box:
+            continue
+        x0 = (float(box.get("x", 0)) - ox) * scale
+        y0 = (float(box.get("y", 0)) - oy) * scale
+        x1 = (float(box.get("x", 0)) + float(box.get("width", 0)) - ox) * scale
+        y1 = (float(box.get("y", 0)) + float(box.get("height", 0)) - oy) * scale
+        color = (168, 85, 247, 235) if item.get("kind") == "name" else (14, 165, 233, 225)
+        draw.rectangle((x0, y0, x1, y1), outline=color, width=max(2, int(round(2 * min(scale, 3)))))
+        label = str(item.get("label") or item.get("text") or "OCR")[:24]
+        label_top = min(max(0, y1 + 2), max(0, base.height - 18))
+        text_box = draw.textbbox((x0, label_top), label, font=small_font)
+        draw.rectangle(text_box, fill=(15, 23, 42, 205))
+        draw.text((x0, label_top), label, fill=(255, 255, 255, 255), font=small_font)
+        for token in item.get("token_boxes") or []:
+            token_box = token.get("bbox") or {}
+            if not token_box:
+                continue
+            tx0 = (float(token_box.get("x", 0)) - ox) * scale
+            ty0 = (float(token_box.get("y", 0)) - oy) * scale
+            tx1 = (float(token_box.get("x", 0)) + float(token_box.get("width", 0)) - ox) * scale
+            ty1 = (float(token_box.get("y", 0)) + float(token_box.get("height", 0)) - oy) * scale
+            draw.rectangle((tx0, ty0, tx1, ty1), outline=(250, 204, 21, 220), width=max(1, int(round(scale))))
 
     # Confirmed links are always visible. When a parent is active, also show
     # its unreviewed candidate links, using a different color to avoid implying
@@ -280,16 +393,17 @@ def find_person_at_click(people: list[dict[str, Any]], x: float, y: float,
 
 
 def save_state(root: Path, state: dict[str, Any], base_people: list[dict[str, Any]],
-               base_relationships: list[dict[str, Any]]) -> None:
+               base_relationships: list[dict[str, Any]],
+               page_results: list[dict[str, Any]] | None = None) -> None:
     state["updated_at"] = __import__("datetime").datetime.now().astimezone().isoformat(timespec="seconds")
     (root / "review_state.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    people, rels = build_review_data(root, base_people, base_relationships, state)
+    people, rels = build_review_data(root, base_people, base_relationships, state, page_results)
     write_exports(root, people, rels)
 
 
 def main() -> None:
-    st.title("족보 OCR 검수 v6.4")
-    st.caption("기존 부모·자녀 연결선을 확인하고, 부모 한 명에게 여러 자녀를 연결할 수 있습니다. 인물 정보는 저장된 OCR 텍스트에서 검수용 초안을 만들 수 있습니다.")
+    st.title("족보 OCR 검수 v6.5")
+    st.caption("이미지를 확대해 OCR 글자 영역을 확인하고, 인물별 원본 OCR과 검수 데이터를 분리 저장합니다. 인물은 영구 UUID로 식별하며 부모·자녀 관계는 해당 ID를 참조합니다.")
 
     with st.sidebar:
         st.header("작업 폴더")
@@ -303,6 +417,16 @@ def main() -> None:
             "오른쪽 검수 패널 높이", 500, 1000, 780, 20,
             help="오른쪽 인물/관계 입력 영역만 내부 스크롤됩니다. 왼쪽 페이지 이미지는 그대로 보입니다.",
         )
+        zoom_factor = st.number_input(
+            "왼쪽 이미지 확대 배율", min_value=0.25, max_value=None,
+            value=1.0, step=0.25, key="page_zoom_factor",
+            help="1.0은 화면 맞춤. 1보다 크게 입력하면 확대됩니다. 고정된 최대 배율은 없습니다.",
+        )
+        if st.button(
+            "이미지 화면 맞춤", use_container_width=True,
+            on_click=lambda: st.session_state.update({"page_zoom_factor": 1.0}),
+        ):
+            st.rerun()
         click_mode = st.radio("이미지 클릭 모드", ["부모 → 자녀 연결", "인물 선택 / 이름 검수"], index=0)
 
     root = find_output_root(raw_root)
@@ -323,12 +447,55 @@ def main() -> None:
     state.setdefault("people_updates", {})
     state.setdefault("relationship_updates", {})
     state.setdefault("manual_relationships", [])
-    people, relationships = build_review_data(root, all_people, all_relationships, state)
+    state.setdefault("person_uid_map", {})
+    state.setdefault("edition", {"edition_id": "jokbo-1987", "publication_year": 1987, "volume": None})
+    state.setdefault("page_metadata", {})
+    # Assign permanent IDs once and keep them in review_state.json. Location is
+    # provenance, not identity, so a revised edition can reuse the same ID.
+    uid_count_before = len(state["person_uid_map"])
+    for base_person in all_people:
+        ensure_person_uid(base_person, state)
+    if len(state["person_uid_map"]) != uid_count_before:
+        (root / "review_state.json").write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    with st.sidebar:
+        st.divider()
+        st.subheader("판본 및 인물 ID")
+        edition_id = st.text_input("판본 ID", value=str(state["edition"].get("edition_id") or "jokbo-1987"), key="edition_id_input")
+        publication_year = st.number_input(
+            "발행 연도", min_value=1000, max_value=None,
+            value=int(state["edition"].get("publication_year") or 1987), step=1,
+            key="publication_year_input",
+        )
+        volume = st.text_input("권/책", value=str(state["edition"].get("volume") or ""), key="edition_volume_input")
+        registry_file = st.text_input(
+            "공용 인물 레지스트리 파일", value="person_registry.json",
+            help="다른 판본/연도 결과에서도 동일 파일을 지정하면 기존 인물 ID를 재사용할 수 있습니다.",
+        )
+    state["edition"] = {
+        "edition_id": edition_id.strip() or f"jokbo-{int(publication_year)}",
+        "publication_year": int(publication_year), "volume": volume.strip() or None,
+    }
+    registry_path = Path(registry_file or "person_registry.json").expanduser()
+    if not registry_path.is_absolute():
+        # Resolve relative to the project working directory, not the OCR output
+        # folder, so multiple edition/output folders can share one registry.
+        registry_path = (Path.cwd() / registry_path).resolve()
+    registry_data = read_json(registry_path, {"schema_version": 1, "persons": {}})
+    people, relationships = build_review_data(root, all_people, all_relationships, state, page_results)
 
     page_names = [item.get("source_page", Path(item.get("source_image", "page")).name) for item in page_results]
     page_col, spacer_col = st.columns([1, 2])
     with page_col:
         selected_page_name = st.selectbox("검수할 페이지", page_names)
+    page_printed_key = f"printed_page_{selected_page_name}"
+    page_metadata = state["page_metadata"].setdefault(selected_page_name, {})
+    printed_page = st.text_input(
+        "족보에 인쇄된 쪽수 (모르면 비움)",
+        value=str(page_metadata.get("printed_page") or ""), key=page_printed_key,
+    )
+    state["page_metadata"][selected_page_name]["printed_page"] = printed_page.strip() or None
     previous_page = st.session_state.get("active_review_page")
     previous_mode = st.session_state.get("active_click_mode")
     if previous_page != selected_page_name or previous_mode != click_mode:
@@ -376,7 +543,7 @@ def main() -> None:
                     if not (r.get("source_page") == selected_page_name and
                             r.get("relationship_id") == last_manual.get("relationship_id"))
                 ]
-                save_state(root, state, all_people, all_relationships)
+                save_state(root, state, all_people, all_relationships, page_results)
                 st.session_state["last_click_message"] = "마지막으로 추가한 수동 관계를 취소했습니다."
                 st.rerun()
         else:
@@ -425,28 +592,77 @@ def main() -> None:
             st.info(message)
 
     image, offset, image_label = get_page_image(page_result, page_dir)
-    # Bound both dimensions: a portrait scan is shown in full, instead of extending far below the fold.
     image_max_width = 1050
-    # Keep the scan's height compatible with the right-hand fixed-height review pane.
     effective_image_height = min(max_height, max(320, int(detail_panel_height) - 110))
-    display_image, display_scale = fit_display(image, image_max_width, effective_image_height)
-    selected_id = st.session_state.get("selected_person_id")
+    selected_id = (
+        st.session_state.get(f"person_select_{selected_page_name}")
+        or st.session_state.get("selected_person_id")
+    )
+    if selected_id not in page_person_lookup:
+        selected_id = None
+    selected_for_overlay = page_person_lookup.get(selected_id) if selected_id else None
+    selected_draft = (
+        extract_person_info_draft(selected_for_overlay, page_result, page_people)
+        if selected_for_overlay else {}
+    )
+    ocr_focus_options = {
+        "전체 인물 기록 OCR": "all",
+        "이름 OCR": "name",
+        "출생 OCR": "birth_text",
+        "사망 OCR": "death_text",
+        "관직 OCR": "office_title",
+        "배우자 OCR": "spouse_text",
+        "묘소 OCR": "burial_text",
+        "자(字) OCR": "courtesy_name_hanja",
+        "호(號) OCR": "pen_name_hanja",
+    }
+    with st.sidebar:
+        ocr_focus_label = st.selectbox(
+            "이미지에 표시할 OCR Bounding Box", list(ocr_focus_options),
+            key=f"ocr_focus_{selected_page_name}",
+            help="선택 인물의 이름 또는 인물 정보 OCR 영역을 원본 이미지에서 강조합니다.",
+        )
+    ocr_boxes: list[dict[str, Any]] = []
+    if selected_for_overlay:
+        focus = ocr_focus_options[ocr_focus_label]
+        if focus == "name":
+            ocr_boxes = [{
+                "kind": "name", "label": "이름 OCR: " + str(selected_for_overlay.get("raw_name_ocr") or selected_for_overlay.get("name_hanja_candidate") or ""),
+                "bbox": selected_for_overlay.get("bbox") or {},
+            }]
+        else:
+            columns = selected_draft.get("columns") or []
+            if focus != "all":
+                wanted = {x.get("column_id") for x in (selected_draft.get("field_sources") or {}).get(focus, [])}
+                columns = [x for x in columns if x.get("column_id") in wanted]
+            ocr_boxes = [{
+                "kind": "record", "label": str(col.get("text") or "OCR"),
+                "bbox": col.get("bbox") or {}, "token_boxes": col.get("token_boxes") or [],
+            } for col in columns]
+    _, display_scale = fit_display(
+        image, image_max_width, effective_image_height, zoom_factor
+    )
     pending_parent_id = st.session_state.get("pending_parent_id")
     overlay = draw_overlay(
         image, offset, page_people, page_rels, state,
         selected_id=selected_id, pending_parent_id=pending_parent_id,
         active_parent_id=pending_parent_id if click_mode == "부모 → 자녀 연결" else None,
         max_width=image_max_width, max_height=effective_image_height,
+        zoom_factor=zoom_factor, ocr_boxes=ocr_boxes,
     )
 
     image_col, detail_col = st.columns([1.8, 1], gap="large")
     with image_col:
         st.subheader(f"원본 페이지 · {selected_page_name}")
-        st.caption(f"{image_label} · 페이지 전체 보기 · 인물 박스를 직접 클릭할 수 있습니다. (표시 높이 최대 {effective_image_height}px)")
-        click_value = streamlit_image_coordinates(
-            overlay, width=overlay.width,
-            key=f"page_click_{selected_page_name}_{click_mode}", cursor="crosshair",
+        st.caption(
+            f"{image_label} · 확대 {zoom_factor:g}x · 왼쪽 영역 안에서 스크롤 가능 · "
+            "인물 번호를 직접 클릭할 수 있습니다. 보라색은 이름 OCR, 파란색은 인물 정보 OCR 영역입니다."
         )
+        with st.container(height=int(effective_image_height) + 35, border=True):
+            click_value = streamlit_image_coordinates(
+                overlay, width=overlay.width,
+                key=f"page_click_{selected_page_name}_{click_mode}_{zoom_factor}", cursor="crosshair",
+            )
         if click_value and isinstance(click_value, dict) and "x" in click_value and "y" in click_value:
             click_event = (click_value.get("timestamp"), click_value.get("x"), click_value.get("y"))
             event_key = f"last_click_{selected_page_name}_{click_mode}"
@@ -514,7 +730,7 @@ def main() -> None:
                         "confidence": 1.0, "review_status": "confirmed", "warning": None,
                     }
                     state["manual_relationships"].append(manual)
-                    save_state(root, state, all_people, all_relationships)
+                    save_state(root, state, all_people, all_relationships, page_results)
                     st.session_state["last_click_message"] = (
                         f"연결 저장: {effective_name(parent, state)} → {effective_name(person, state)}. "
                         f"부모 {effective_name(parent, state)} 선택을 유지합니다. "
@@ -565,16 +781,78 @@ def main() -> None:
                             f"{h.get('text')} ({h.get('confidence')})" for h in hypotheses[:6]
                         ))
                     update = state["people_updates"].get(selected_person_id, {})
+                    current_uid = selected_person.get("person_uid") or state.get("person_uid_map", {}).get(
+                        person_local_key(selected_person, state.get("edition", {}).get("edition_id")), ""
+                    )
+                    st.code(f"person_uid: {current_uid}", language="text")
+                    reusable_ids = registry_options(registry_data, exclude_uid=current_uid)
+                    if reusable_ids:
+                        reuse_choice = st.selectbox(
+                            "이 인물을 기존 등록 인물과 동일인으로 연결",
+                            [""] + [uid for uid, _ in reusable_ids],
+                            format_func=lambda uid: "새 인물 ID 유지" if not uid else next(
+                                (label for option_uid, label in reusable_ids if option_uid == uid), uid
+                            ),
+                            key=f"reuse_person_uid_{selected_page_name}_{selected_person_id}",
+                        )
+                        if st.button(
+                            "선택한 기존 인물 ID 사용", key=f"apply_reuse_uid_{selected_person_id}",
+                            disabled=not bool(reuse_choice), use_container_width=True,
+                        ):
+                            state.setdefault("person_uid_map", {})[
+                                person_local_key(selected_person, state.get("edition", {}).get("edition_id"))
+                            ] = reuse_choice
+                            save_state(root, state, all_people, all_relationships, page_results)
+                            st.session_state["last_click_message"] = f"기존 인물 ID {reuse_choice}를 연결했습니다."
+                            st.rerun()
+                    else:
+                        st.caption("다른 판본에서 등록한 인물이 있으면 공용 레지스트리 파일을 지정한 뒤 기존 ID를 재사용할 수 있습니다.")
 
-                    def person_value(field: str, fallback: Any = "") -> str:
+                    def person_value(field: str, fallback: Any = "") -> Any:
                         value = update.get(field, selected_person.get(field, fallback))
-                        return "" if value is None else str(value)
+                        if value is None:
+                            return ""
+                        if isinstance(value, (list, dict)):
+                            return value
+                        return str(value)
 
                     current_transcription = (
                         person_value("transcribed_name_hanja")
                         or person_value("name_hanja_candidate")
                     )
+                    raw_name_ocr = str(selected_person.get("raw_name_ocr") or selected_person.get("name_hanja_candidate") or "")
+                    normalized_ocr_name, inferred_marker, inferred_gender = strip_name_marker(raw_name_ocr)
                     row_ocr_text = get_person_row_text(page_result, selected_person)
+                    with st.expander("원본 OCR 데이터(raw_data)", expanded=True):
+                        st.write(f"**이름 OCR 원문:** `{raw_name_ocr}`")
+                        st.write(f"**이름 후보(子/女 제외):** `{normalized_ocr_name}`")
+                        if inferred_marker:
+                            st.caption(f"앞 글자 표식: {inferred_marker} ({'아들' if inferred_marker == '子' else '딸'}) · 이 표식은 이름에서 분리해 보관합니다.")
+                        source_occurrence = (selected_person.get("source_occurrences") or [{}])[0]
+                        st.caption(
+                            f"출처: {source_occurrence.get('publication_year') or '?'}년 판본 "
+                            f"{source_occurrence.get('edition_id') or '?'} · "
+                            f"인쇄 쪽수 {source_occurrence.get('printed_page') or '(미입력)'} · "
+                            f"스캔 {source_occurrence.get('scan_page') or '?'} · "
+                            f"행 {source_occurrence.get('row_number') or '?'} · "
+                            f"오른쪽부터 {source_occurrence.get('column_number_right_to_left') or '?'}번째 열 · "
+                            f"열 내 {source_occurrence.get('position_in_column') or '?'}번째"
+                        )
+                        st.json({
+                            "image": {
+                                "source_image": page_result.get("source_image"),
+                                "image_file": selected_person.get("image_file"),
+                                "bbox": selected_person.get("bbox"),
+                            },
+                            "name_ocr": {
+                                "raw_text": raw_name_ocr,
+                                "confidence": selected_person.get("ocr_confidence"),
+                                "evidence_text": selected_person.get("evidence_text"),
+                                "hypotheses": selected_person.get("ranked_ocr_hypotheses") or [],
+                            },
+                            "record_ocr": selected_draft.get("source_record_ocr_text", ""),
+                            "field_ocr": selected_draft.get("evidence", {}),
+                        }, expanded=False)
                     with st.expander("해당 인물의 원문 OCR 참고", expanded=True):
                         st.caption(
                             f"출처 행: {selected_person.get('source_row_id') or '정보 없음'} · "
@@ -602,7 +880,7 @@ def main() -> None:
                         current_update["auto_extraction_draft"] = draft
                         current_update["information_review_status"] = "needs_review"
                         state["people_updates"][selected_person_id] = current_update
-                        save_state(root, state, all_people, all_relationships)
+                        save_state(root, state, all_people, all_relationships, page_results)
                         if populated_fields:
                             st.session_state["last_click_message"] = (
                                 "OCR 초안을 추가했습니다: " + ", ".join(populated_fields)
@@ -640,7 +918,14 @@ def main() -> None:
                                 st.caption(auto_draft["message"])
 
                     with st.form(f"person_form_{selected_person_id}"):
-                        corrected_name = st.text_input("검수한 한자 이름", value=current_transcription)
+                        corrected_name = st.text_input("검수한 한자 이름 (子/女 제외)", value=current_transcription)
+                        marker_options = {"표식 없음": None, "子 (아들)": "子", "女 (딸)": "女"}
+                        current_marker = person_value("sex_marker") or inferred_marker
+                        marker_reverse = {value: label for label, value in marker_options.items()}
+                        marker_label = st.selectbox(
+                            "자녀 표식 / 성별", list(marker_options),
+                            index=list(marker_options).index(marker_reverse.get(current_marker, "표식 없음")),
+                        )
                         st.markdown("**인물의 추가 정보**")
                         gen_col, courtesy_col, pen_col = st.columns(3)
                         generation_input = gen_col.text_input(
@@ -664,8 +949,31 @@ def main() -> None:
                         office_title = st.text_input(
                             "관직·품계·봉호", value=person_value("office_title")
                         )
-                        spouse_text = st.text_input(
-                            "배우자·배우자 본관", value=person_value("spouse_text")
+                        existing_spouses = person_value("spouses", None)
+                        if not isinstance(existing_spouses, list):
+                            legacy_spouse = person_value("spouse_text")
+                            existing_spouses = ([{"type": "wife", "name_and_record": legacy_spouse, "notes": ""}]
+                                                if legacy_spouse else [])
+                        spouse_rows = []
+                        for spouse in existing_spouses:
+                            kind = spouse.get("type", "wife")
+                            spouse_rows.append({
+                                "구분": {"wife": "부인", "concubine": "첩", "other": "기타"}.get(kind, "부인"),
+                                "이름·본관·원문": spouse.get("name_and_record", spouse.get("name_text", "")),
+                                "비고": spouse.get("notes", ""),
+                            })
+                        spouse_df = pd.DataFrame(spouse_rows, columns=["구분", "이름·본관·원문", "비고"])
+                        st.caption("부인과 첩을 여러 명 등록할 수 있습니다. 행을 추가해 각각 입력하세요.")
+                        spouses_editor = st.data_editor(
+                            spouse_df, key=f"spouses_editor_{selected_person_id}",
+                            num_rows="dynamic", hide_index=True, use_container_width=True,
+                            column_config={
+                                "구분": st.column_config.SelectboxColumn(
+                                    "구분", options=["부인", "첩", "기타"], required=True,
+                                ),
+                                "이름·본관·원문": st.column_config.TextColumn("이름·본관·원문"),
+                                "비고": st.column_config.TextColumn("비고"),
+                            },
                         )
                         burial_text = st.text_input(
                             "묘소·장지", value=person_value("burial_text")
@@ -693,15 +1001,44 @@ def main() -> None:
                                 st.error(str(exc))
                             else:
                                 updated_person = dict(update)
+                                cleaned_name, marker_from_name, inferred_from_name = strip_name_marker(corrected_name)
+                                selected_marker = (
+                                    marker_from_name if marker_label == "표식 없음" and marker_from_name
+                                    else marker_options[marker_label]
+                                )
+                                spouse_type_map = {"부인": "wife", "첩": "concubine", "기타": "other"}
+                                reviewed_spouses = []
+                                for row in spouses_editor.to_dict(orient="records"):
+                                    raw_text_value = row.get("이름·본관·원문")
+                                    raw_notes_value = row.get("비고")
+                                    text_value = "" if pd.isna(raw_text_value) else str(raw_text_value).strip()
+                                    notes_value = "" if pd.isna(raw_notes_value) else str(raw_notes_value).strip()
+                                    if not text_value and not notes_value:
+                                        continue
+                                    raw_type_value = row.get("구분")
+                                    type_value = "부인" if pd.isna(raw_type_value) or not raw_type_value else str(raw_type_value)
+                                    reviewed_spouses.append({
+                                        "type": spouse_type_map.get(type_value, "wife"),
+                                        "name_and_record": text_value,
+                                        "notes": notes_value,
+                                        "review_status": "needs_review" if not mark_information_reviewed else "confirmed",
+                                    })
+                                legacy_spouse_text = " / ".join(
+                                    ("첩: " if item["type"] == "concubine" else "부인: " if item["type"] == "wife" else "기타: ") + item["name_and_record"]
+                                    for item in reviewed_spouses if item.get("name_and_record")
+                                ) or None
                                 updated_person.update({
-                                    "transcribed_name_hanja": corrected_name.strip() or None,
+                                    "transcribed_name_hanja": cleaned_name or None,
+                                    "sex_marker": selected_marker,
+                                    "gender": {"子": "male", "女": "female"}.get(selected_marker),
                                     "generation_number": generation_number,
                                     "courtesy_name_hanja": courtesy_name.strip() or None,
                                     "pen_name_hanja": pen_name.strip() or None,
                                     "birth_text": birth_text.strip() or None,
                                     "death_text": death_text.strip() or None,
                                     "office_title": office_title.strip() or None,
-                                    "spouse_text": spouse_text.strip() or None,
+                                    "spouses": reviewed_spouses,
+                                    "spouse_text": legacy_spouse_text,
                                     "burial_text": burial_text.strip() or None,
                                     "biography_text": biography_text.strip() or None,
                                     "notes": notes.strip() or None,
@@ -711,7 +1048,7 @@ def main() -> None:
                                     "transcription_status": "manually_verified" if mark_confirmed else "pending_manual_verification",
                                 })
                                 state["people_updates"][selected_person_id] = updated_person
-                                save_state(root, state, all_people, all_relationships)
+                                save_state(root, state, all_people, all_relationships, page_results)
                                 st.success("인명과 인물 정보를 저장했습니다.")
                                 st.rerun()
 
@@ -819,12 +1156,12 @@ def main() -> None:
                                         "review_status": "confirmed", "relationship_basis": "manually_reviewed_candidate",
                                         "warning": None,
                                     }
-                                    save_state(root, state, all_people, all_relationships)
+                                    save_state(root, state, all_people, all_relationships, page_results)
                                     st.success("관계를 승인했습니다.")
                                     st.rerun()
                             if reject_rel:
                                 state["relationship_updates"][selected_rel_key] = {"review_status": "rejected"}
-                                save_state(root, state, all_people, all_relationships)
+                                save_state(root, state, all_people, all_relationships, page_results)
                                 st.success("관계 후보를 거절했습니다.")
                                 st.rerun()
 
@@ -854,7 +1191,7 @@ def main() -> None:
                             ]
                         else:
                             state["relationship_updates"][cancel_rel_key] = {"review_status": "rejected"}
-                        save_state(root, state, all_people, all_relationships)
+                        save_state(root, state, all_people, all_relationships, page_results)
                         st.session_state["last_click_message"] = "선택한 관계 연결을 취소했습니다."
                         st.rerun()
 
@@ -871,8 +1208,20 @@ def main() -> None:
 
     st.divider()
     st.subheader("검수 결과 내보내기")
-    people_export, rel_export = build_review_data(root, all_people, all_relationships, state)
+    people_export, rel_export = build_review_data(
+        root, all_people, all_relationships, state, page_results
+    )
     write_exports(root, people_export, rel_export)
+    registry_data = build_person_registry(people_export, registry_data)
+    try:
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(json.dumps(registry_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as exc:
+        st.error(f"인물 레지스트리를 저장하지 못했습니다: {registry_path} · {exc}")
+    # Persist edition/source-location metadata and permanent person UID mappings.
+    (root / "review_state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     export_col1, export_col2 = st.columns(2)
     with export_col1:
         st.download_button("검수 인물 JSON", json.dumps(people_export, ensure_ascii=False, indent=2),
@@ -884,8 +1233,12 @@ def main() -> None:
                            file_name="reviewed_relationships.json", mime="application/json")
         st.download_button("검수 관계 CSV", (root / "reviewed_relationships.csv").read_bytes(),
                            file_name="reviewed_relationships.csv", mime="text/csv")
+    st.download_button(
+        "인물 ID 레지스트리 JSON", json.dumps(registry_data, ensure_ascii=False, indent=2),
+        file_name="person_registry.json", mime="application/json",
+    )
 
-    st.caption(f"검수 상태는 `{root / 'review_state.json'}`에 자동 저장됩니다. 원본 OCR 후보 파일은 덮어쓰지 않습니다. 인물별 추가 정보와 OCR 자동 추출 근거, 정보 검수 상태도 함께 저장됩니다.")
+    st.caption(f"검수 상태는 `{root / 'review_state.json'}`에 저장됩니다. 사람의 고유 ID는 위치와 무관한 UUID이며, 판본·쪽·열·이미지 좌표는 `source_occurrences`에 출처 정보로 기록됩니다. 공용 인물 레지스트리: `{registry_path}`")
 
 
 if __name__ == "__main__":
