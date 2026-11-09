@@ -64,6 +64,29 @@ class DesktopReviewTests(unittest.TestCase):
         exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
         self.assertEqual(exports[0]["raw_data"]["name_ocr"]["raw_text"], "子甲")
 
+    def test_spouse_ocr_draft_is_visible_and_unverified(self):
+        self.write("ocr_results.json", [{"source_page": "sample.png",
+                                         "source_image": str(self.root / "sample.png"),
+                                         "rows": [{"row_id": "r2", "columns": [
+                                             {"column_id": "c1", "text": "夫人洪氏",
+                                              "bbox": {"x": 5, "y": 30, "width": 20, "height": 40}},
+                                             {"column_id": "c2", "text": "庚寅卒",
+                                              "bbox": {"x": 1, "y": 30, "width": 3, "height": 40}},
+                                         ]}]}])
+        people = json.loads((self.root / "people_candidates.json").read_text(encoding="utf-8"))
+        people[1]["source_row_id"] = "r2"
+        self.write("people_candidates.json", people)
+        self.window.close()
+        self.window = ReviewWindow(str(self.root))
+        self.window.select_person_id("p2")
+        self.assertIn("夫人洪氏", self.window.inputs["spouse_text"].toPlainText())
+        self.assertEqual(json.loads(self.window.partners.toPlainText())[0]["type"], "other")
+        self.window.save_person()
+        state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        update = state["people_updates"]["p2"]
+        self.assertTrue(update["spouse_text"].startswith("夫人洪氏"))
+        self.assertEqual(update["spouses"][0]["review_status"], "needs_review")
+
     def test_bundled_font_covers_korean_and_hanja(self):
         self.assertTrue(self.font_loaded)
         font = QRawFont.fromFont(self.app.font())

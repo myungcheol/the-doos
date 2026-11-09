@@ -421,6 +421,7 @@ class ReviewWindow(QMainWindow):
     fields = {"transcribed_name_hanja": "검수한 이름", "generation_number": "세대",
               "courtesy_name_hanja": "자(字)", "pen_name_hanja": "호(號)",
               "birth_text": "출생", "death_text": "사망", "office_title": "관직",
+              "spouse_text": "배우자 원문 (검수 초안)",
               "burial_text": "묘소", "biography_text": "인물 기록", "notes": "메모"}
 
     def __init__(self, root=None):
@@ -576,7 +577,7 @@ class ReviewWindow(QMainWindow):
         form.addRow("OCR 강조", self.focus)
         self.inputs = {}
         for key, title in self.fields.items():
-            widget = QTextEdit() if key in ("biography_text", "notes") else QLineEdit()
+            widget = QTextEdit() if key in ("spouse_text", "biography_text", "notes") else QLineEdit()
             if isinstance(widget, QTextEdit):
                 widget.setFixedHeight(80)
                 widget.textChanged.connect(self.mark_dirty)
@@ -1204,7 +1205,11 @@ class ReviewWindow(QMainWindow):
         status = update.get("review_status", (person or {}).get("review_status", "needs_review"))
         self.name_status.setCurrentIndex(max(0, self.name_status.findData(status)))
         self.info_confirmed.setChecked(update.get("information_review_status", (person or {}).get("information_review_status")) == "confirmed")
-        self.partners.setPlainText(json.dumps(update.get("spouses", (person or {}).get("spouses") or []), ensure_ascii=False, indent=2))
+        spouses = update.get("spouses", (person or {}).get("spouses"))
+        if spouses is None and draft_values.get("spouse_text"):
+            spouses = [{"type": "other", "name_and_record": draft_values["spouse_text"],
+                        "notes": "OCR 초안 - 부인/첩 구분 검수 필요", "review_status": "needs_review"}]
+        self.partners.setPlainText(json.dumps(spouses or [], ensure_ascii=False, indent=2))
         self.attached_records.setPlainText("\n\n".join(
             f"{link.get('source_page')} · {link.get('source_row_id')}\n{link.get('text', '')}"
             for link in self.state.get("continuation_links", []) if link.get("review_status") == "confirmed"
@@ -1305,7 +1310,7 @@ class ReviewWindow(QMainWindow):
         old = self.state["people_updates"].get(self.selected_id)
         person = next(p for p in self.page_people if p.get("person_id") == self.selected_id)
         previous_spouses = (old or {}).get("spouses", person.get("spouses") or [])
-        if spouses != previous_spouses:
+        if spouses != previous_spouses and not values.get("spouse_text"):
             labels = {"wife": "부인", "concubine": "첩", "other": "기타"}
             values["spouse_text"] = " / ".join(
                 f"{labels.get(p.get('type'), '기타')}: {p.get('name_and_record') or p.get('name_text')}"

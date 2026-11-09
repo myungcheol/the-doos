@@ -84,27 +84,52 @@ def get_person_section_columns(
     return columns
 
 
-def _merge_context_ranges(indices: list[int], count: int, radius: int = 1) -> list[tuple[int, int]]:
-    ranges = sorted((max(0, i - radius), min(count - 1, i + radius)) for i in indices)
-    merged: list[list[int]] = []
-    for start, end in ranges:
-        if merged and start <= merged[-1][1] + 1:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-    return [(a, b) for a, b in merged]
+def _field_indices(columns: list[dict[str, Any]]) -> dict[str, list[int]]:
+    """Keep spouse biographies separate from the subject's keyword matches."""
+    spouse_pattern = FIELD_PATTERNS["spouse_text"]
+    spouse_start = next((i for i, col in enumerate(columns)
+                         if re.search(spouse_pattern, col["text"])), len(columns))
+    own_columns = columns[:spouse_start]
+    matches: dict[str, list[int]] = {}
+    for field, pattern in FIELD_PATTERNS.items():
+        if field == "spouse_text":
+            matches[field] = list(range(spouse_start, len(columns))) if spouse_start < len(columns) else []
+            continue
+        matches[field] = [i for i, col in enumerate(own_columns)
+                          if re.search(pattern, col["text"], flags=re.IGNORECASE)
+                          and not (field == "pen_name_hanja" and re.search(r"因[號号]", col["text"]))]
+
+    claimed = {i for field, indices in matches.items()
+               if field != "spouse_text" for i in indices}
+    for field in ("birth_text", "death_text"):
+        indices = matches[field]
+        matches[field] = sorted(set(indices) | {
+            i - 1 for i in indices if i > 0 and i - 1 not in claimed
+        })
+    # A burial sentence often continues into the following vertical column.
+    burial = matches["burial_text"]
+    if burial:
+        last = burial[-1]
+        if (last + 1 < spouse_start and last + 1 not in claimed
+                and re.search(r"葬|墓|塋|茔|墳|坟|壙|圹", columns[last]["text"])
+                and not re.search(r"坐之原|同原|附右|祔", columns[last]["text"])):
+            burial = [*burial, last + 1]
+    matches["burial_text"] = burial
+    return matches
 
 
-def _extract_context(columns: list[dict[str, Any]], pattern: str, radius: int = 1) -> tuple[str | None, list[str]]:
-    indices = [i for i, col in enumerate(columns) if re.search(pattern, col["text"], flags=re.IGNORECASE)]
-    if not indices:
-        return None, []
-    snippets = []
-    for start, end in _merge_context_ranges(indices, len(columns), radius=radius):
-        snippets.append(" / ".join(col["text"] for col in columns[start:end + 1]))
-    # Keep order as encountered in the traditional right-to-left reading flow.
-    value = "\n".join(dict.fromkeys(s for s in snippets if s.strip()))
-    return value or None, snippets
+def _field_column_text(field: str, text: str) -> str:
+    """Split a shared death/burial OCR column without inventing a smaller bbox."""
+    if field not in {"death_text", "burial_text"} or "葬" not in text:
+        return text
+    # The printed death statement may end immediately before 禮葬/葬.
+    match = re.search(r"禮?葬", text)
+    if not match:
+        return text
+    if field == "death_text":
+        return text[:match.start()].strip()
+    prefix = text[:match.start()]
+    return text[match.start():].strip() if re.search(FIELD_PATTERNS["death_text"], prefix) else text
 
 
 def get_field_source_columns(draft: dict[str, Any], field: str) -> list[dict[str, Any]]:
@@ -141,30 +166,22 @@ def extract_person_info_draft(
     draft_values: dict[str, str] = {"biography_text": section_text}
     evidence: dict[str, list[str]] = {"biography_text": [section_text]}
     field_sources: dict[str, list[dict[str, Any]]] = {}
-    for field, pattern in FIELD_PATTERNS.items():
-        value, snippets = _extract_context(columns, pattern, radius=1)
-        if value:
-            draft_values[field] = value
-            evidence[field] = snippets
-            matched = [
-                col for col in columns
-                if re.search(pattern, col["text"], flags=re.IGNORECASE)
-            ]
-            # Include context columns around keyword hits, matching the text snippets.
-            matched_ids = {col.get("column_id") for col in matched}
-            expanded_ids: set[str | None] = set(matched_ids)
-            for idx, col in enumerate(columns):
-                if col.get("column_id") in matched_ids:
-                    for neighbor in columns[max(0, idx - 1):min(len(columns), idx + 2)]:
-                        expanded_ids.add(neighbor.get("column_id"))
-            field_sources[field] = [
-                {
-                    "column_id": col.get("column_id"), "text": col.get("text"),
-                    "bbox": col.get("bbox"), "token_boxes": col.get("token_boxes") or [],
-                    "mean_confidence": col.get("mean_confidence"),
-                }
-                for col in columns if col.get("column_id") in expanded_ids
-            ]
+    for field, indices in _field_indices(columns).items():
+        selected = [(columns[i], _field_column_text(field, columns[i]["text"])) for i in indices]
+        selected = [(col, text) for col, text in selected if text]
+        if not selected:
+            continue
+        value = " / ".join(text for _, text in selected)
+        draft_values[field] = value
+        evidence[field] = [value]
+        field_sources[field] = [
+            {
+                "column_id": col.get("column_id"), "text": col.get("text"),
+                "bbox": col.get("bbox"), "token_boxes": col.get("token_boxes") or [],
+                "mean_confidence": col.get("mean_confidence"),
+            }
+            for col, _ in selected
+        ]
 
     return {
         "draft_values": draft_values,
@@ -182,6 +199,6 @@ def extract_person_info_draft(
         "source_row_id": row_id,
         "source_column_ids": [col["column_id"] for col in columns if col.get("column_id")],
         "message": "기존 OCR 열의 위치와 키워드를 이용해 추출한 검수용 초안입니다.",
-        "method": "row_columns_bbox_keyword_context_v1",
+        "method": "row_columns_bbox_field_boundaries_v2",
         "needs_review": True,
     }

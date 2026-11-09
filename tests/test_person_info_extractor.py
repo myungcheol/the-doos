@@ -60,6 +60,37 @@ class PersonInfoExtractorTests(unittest.TestCase):
         draft = extract_person_info_draft(self.people[1], self.page, self.people)
         self.assertIn("葬", draft["draft_values"]["burial_text"])
 
+    def test_spouse_columns_do_not_leak_into_subject_fields(self):
+        texts = [
+            "開寶八年乙亥十月", "十五日生", "淳化五年甲午官至", "中書舍人",
+            "間父子被祸漂", "高麗文宗二年戊子", "卒0禮葬于今萬",
+            "项縣主山壬坐之原", "故因號杜州曰杜", "杜氏貫杜陵焉",
+            "夫人洛陽洪氏丙子", "生庚寅卒0葬于", "公之基附右",
+        ]
+        person = {"person_id": "p", "source_row_id": "row", "bbox": {"x": 500, "y": 0, "width": 20, "height": 100}}
+        row = {"row_id": "row", "columns": [
+            {"column_id": None, "text": value,
+             "bbox": {"x": 480 - 25 * i, "y": 0, "width": 20, "height": 100}}
+            for i, value in enumerate(texts)
+        ]}
+        draft = extract_person_info_draft(person, {"rows": [row]}, [person])
+        values = draft["draft_values"]
+        self.assertEqual(values["birth_text"], " / ".join(texts[:2]))
+        self.assertEqual(values["office_title"], " / ".join(texts[2:4]))
+        self.assertEqual(values["death_text"], " / ".join([texts[5], "卒0"]))
+        self.assertEqual(values["burial_text"], " / ".join(["禮葬于今萬", texts[7]]))
+        self.assertEqual(values["spouse_text"], " / ".join(texts[10:]))
+        self.assertNotIn("courtesy_name_hanja", values)
+        self.assertNotIn("pen_name_hanja", values)
+        self.assertEqual(get_field_source_columns(draft, "courtesy_name_hanja"), [])
+        self.assertEqual(get_field_source_columns(draft, "pen_name_hanja"), [])
+        for field, expected in {
+            "birth_text": [0, 1], "office_title": [2, 3], "death_text": [5, 6],
+            "burial_text": [6, 7], "spouse_text": [10, 11, 12],
+        }.items():
+            self.assertEqual([source["bbox"]["x"] for source in get_field_source_columns(draft, field)],
+                             [row["columns"][i]["bbox"]["x"] for i in expected])
+
     def test_no_matching_columns_returns_empty_draft(self):
         person = {"person_id": "P3", "source_row_id": "missing", "bbox": {"x": 1, "y": 1, "width": 20, "height": 30}}
         draft = extract_person_info_draft(person, self.page, [person])
