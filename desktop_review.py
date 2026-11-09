@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QRectF
+from PySide6.QtCore import Qt, Signal, QRectF, QTimer
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
@@ -20,9 +21,30 @@ from PySide6.QtWidgets import (
 
 from person_data_model import ensure_person_uid, strip_name_marker
 from person_info_extractor import extract_person_info_draft, get_field_source_columns
+
+# OpenCV's Linux wheel may replace these variables during import, directing Qt
+# at cv2's plugin directory instead of PySide6's input-method plugins.
+_qt_environment = {key: os.environ.get(key) for key in ("QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_FONTDIR")}
 from review_app import (effective_name, effective_relationship,
                         find_output_root, get_page_image, parse_optional_generation,
                         relationship_key, save_state, would_create_cycle)
+import cv2
+
+
+def restore_qt_environment(previous, environment, cv2_dir):
+    """Undo only OpenCV's Qt overrides, preserving explicit user settings."""
+    qt_dir = Path(cv2_dir) / "qt"
+    for key, overridden in (("QT_QPA_PLATFORM_PLUGIN_PATH", qt_dir / "plugins"),
+                            ("QT_QPA_FONTDIR", qt_dir / "fonts")):
+        if environment.get(key) != str(overridden):
+            continue
+        if previous.get(key) is None:
+            environment.pop(key, None)
+        else:
+            environment[key] = previous[key]
+
+
+restore_qt_environment(_qt_environment, os.environ, Path(cv2.__file__).resolve().parent)
 
 
 STYLE = """
@@ -281,7 +303,9 @@ class ReviewWindow(QMainWindow):
         self.focus = QComboBox()
         for title, key in [("전체 기록", "all"), ("이름", "name"), ("출생", "birth_text"), ("사망", "death_text"), ("관직", "office_title"), ("배우자", "spouse_text"), ("묘소", "burial_text"), ("자", "courtesy_name_hanja"), ("호", "pen_name_hanja")]:
             self.focus.addItem(title, key)
-        self.focus.currentIndexChanged.connect(self.render_scan)
+        # Qt emits currentIndexChanged while the popup is still handling the
+        # selection. Redrawing the scene there can leave the popup visible.
+        self.focus.currentIndexChanged.connect(lambda: QTimer.singleShot(0, self.render_scan))
         form.addRow("OCR 강조", self.focus)
         self.inputs = {}
         for key, title in self.fields.items():
@@ -297,7 +321,13 @@ class ReviewWindow(QMainWindow):
         for title, marker in [("없음", None), ("子 (아들)", "子"), ("女 (딸)", "女")]:
             self.marker.addItem(title, marker)
         self.marker.currentIndexChanged.connect(self.mark_dirty)
-        form.addRow("자녀 표식", self.marker)
+        form.addRow("원문 자녀 표식", self.marker)
+        self.gender = QComboBox()
+        for title, value in [("미상", "unknown"), ("남성", "male"), ("여성", "female")]:
+            self.gender.addItem(title, value)
+        self.gender.currentIndexChanged.connect(self.mark_dirty)
+        self.gender.setToolTip("성별은 별도로 검수합니다. 子/女는 원문에 기록된 자녀 표식입니다.")
+        form.addRow("성별", self.gender)
         self.name_status = QComboBox()
         for title, status in [("검토 대기", "needs_review"), ("확인", "confirmed"), ("거절", "rejected")]:
             self.name_status.addItem(title, status)
@@ -489,6 +519,12 @@ class ReviewWindow(QMainWindow):
         if not marker and person:
             marker = strip_name_marker(person.get("raw_name_ocr") or person.get("name_hanja_candidate") or "")[1]
         self.marker.setCurrentIndex(max(0, self.marker.findData(marker)))
+        existing_gender = update.get("gender", (person or {}).get("gender"))
+        if existing_gender is None:
+            existing_gender = {"子": "male", "女": "female"}.get(marker, "unknown")
+        if self.gender.findData(existing_gender) < 0:
+            self.gender.addItem(f"기존 값: {existing_gender}", existing_gender)
+        self.gender.setCurrentIndex(self.gender.findData(existing_gender))
         status = update.get("review_status", (person or {}).get("review_status", "needs_review"))
         self.name_status.setCurrentIndex(max(0, self.name_status.findData(status)))
         self.info_confirmed.setChecked(update.get("information_review_status", (person or {}).get("information_review_status")) == "confirmed")
@@ -570,7 +606,7 @@ class ReviewWindow(QMainWindow):
         name, inferred_marker, _ = strip_name_marker(values["transcribed_name_hanja"] or "")
         marker = self.marker.currentData() or inferred_marker
         values.update({"transcribed_name_hanja": name or None, "sex_marker": marker,
-                       "gender": {"子": "male", "女": "female"}.get(marker), "spouses": spouses,
+                       "gender": self.gender.currentData(), "spouses": spouses,
                        "review_status": self.name_status.currentData(),
                        "information_review_status": "confirmed" if self.info_confirmed.isChecked() else "needs_review",
                        "transcription_status": "manually_verified" if self.name_status.currentData() == "confirmed" else "pending_manual_verification"})

@@ -7,9 +7,11 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
-    from PySide6.QtGui import QImage, QRawFont
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage, QInputMethodEvent, QRawFont
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox
-    from desktop_review import ReviewWindow, configure_application
+    from desktop_review import ReviewWindow, configure_application, restore_qt_environment
 except ImportError:
     QApplication = None
 
@@ -74,6 +76,60 @@ class DesktopReviewTests(unittest.TestCase):
         self.window.person_results.setCurrentItem(item)
         self.assertEqual(self.window.selected_id, "p2")
         self.assertTrue(item.text().strip().startswith("2."))
+
+    def test_focus_popup_closes_after_selection(self):
+        self.window.show()
+        self.window.select_person_id("p1")
+        self.window.focus.showPopup()
+        self.app.processEvents()
+        view = self.window.focus.view()
+        index = view.model().index(1, 0)
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(index).center())
+        self.app.processEvents()
+        self.assertEqual(self.window.focus.currentData(), "name")
+        self.assertFalse(view.isVisible())
+
+    def test_korean_input_method_commit(self):
+        self.window.select_person_id("p1")
+        field = self.window.inputs["transcribed_name_hanja"]
+        field.clear()
+        event = QInputMethodEvent("한", [])
+        QApplication.sendEvent(field, event)
+        commit = QInputMethodEvent()
+        commit.setCommitString("한글")
+        QApplication.sendEvent(field, commit)
+        self.assertEqual(field.text(), "한글")
+        self.assertTrue(self.window.dirty)
+
+    def test_opencv_qt_overrides_restore_explicit_settings(self):
+        environment = {"QT_QPA_PLATFORM_PLUGIN_PATH": "/opencv/qt/plugins", "QT_QPA_FONTDIR": "/opencv/qt/fonts"}
+        restore_qt_environment({"QT_QPA_PLATFORM_PLUGIN_PATH": "/custom/plugins", "QT_QPA_FONTDIR": None}, environment, "/opencv")
+        self.assertEqual(environment, {"QT_QPA_PLATFORM_PLUGIN_PATH": "/custom/plugins"})
+
+    def test_other_qt_settings_are_not_modified(self):
+        environment = {"QT_QPA_PLATFORM_PLUGIN_PATH": "/custom/plugins"}
+        restore_qt_environment({}, environment, "/opencv")
+        self.assertEqual(environment["QT_QPA_PLATFORM_PLUGIN_PATH"], "/custom/plugins")
+
+    def test_gender_is_separate_from_marker_and_persisted(self):
+        self.window.select_person_id("p1")
+        self.assertEqual(self.window.marker.currentData(), "子")
+        self.assertEqual(self.window.gender.currentData(), "male")
+        self.window.gender.setCurrentIndex(self.window.gender.findData("female"))
+        self.window.save_person()
+        state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["people_updates"]["p1"]["gender"], "female")
+        self.assertEqual(state["people_updates"]["p1"]["sex_marker"], "子")
+        exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
+        self.assertEqual(exports[0]["reviewed_data"]["gender"], "female")
+        self.assertEqual(exports[0]["raw_data"]["name_ocr"]["raw_text"], "子甲")
+
+    def test_unknown_gender_does_not_reinfer_from_marker(self):
+        self.window.select_person_id("p1")
+        self.window.gender.setCurrentIndex(self.window.gender.findData("unknown"))
+        self.window.save_person()
+        exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
+        self.assertEqual(exports[0]["reviewed_data"]["gender"], "unknown")
 
     def test_external_state_change_is_not_overwritten(self):
         self.window.select_person_id("p1")

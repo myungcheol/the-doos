@@ -1158,7 +1158,8 @@ def main() -> None:
                                 updated_person.update({
                                     "transcribed_name_hanja": cleaned_name or None,
                                     "sex_marker": selected_marker,
-                                    "gender": {"子": "male", "女": "female"}.get(selected_marker),
+                                    # Preserve a separately reviewed gender from the desktop UI.
+                                    "gender": update.get("gender", selected_person.get("gender") or {"子": "male", "女": "female"}.get(selected_marker)),
                                     "generation_number": generation_number,
                                     "courtesy_name_hanja": courtesy_name.strip() or None,
                                     "pen_name_hanja": pen_name.strip() or None,
