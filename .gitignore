@@ -14,6 +14,7 @@ data/review/*.bak
 data/exports/*.tmp
 data/exports/*.bak
 data/exports/import.sql
+output/
 
 # python
 __pycache__/
