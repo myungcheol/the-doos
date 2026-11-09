@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; overflow: hidden; background: transparent; }
+    #viewer {
+      width: 100%;
+      box-sizing: border-box;
+      overflow: auto;
+      border: 1px solid rgba(128, 128, 128, .55);
+      border-radius: 8px;
+      background: #20242b;
+      cursor: grab;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #viewer.panning { cursor: grabbing; }
+    #page-image {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+    }
+    #hint {
+      position: sticky;
+      left: 8px;
+      bottom: 6px;
+      display: inline-block;
+      margin: 6px;
+      padding: 3px 7px;
+      border-radius: 5px;
+      color: #fff;
+      background: rgba(15, 23, 42, .78);
+      font: 11px sans-serif;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewer" role="img" aria-label="족보 페이지 이미지. 드래그하여 이동하고 짧게 클릭하여 인물을 선택합니다.">
+    <img id="page-image" alt="족보 원본 및 OCR Bounding Box" draggable="false" />
+    <div id="hint">드래그: 이미지 이동 · 클릭: 인물 선택</div>
+  </div>
+  <script>
+    const viewer = document.getElementById("viewer");
+    const image = document.getElementById("page-image");
+    let activePointer = null;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let initialScrollLeft = 0;
+    let initialScrollTop = 0;
+    let lastSource = "";
+    let lastHeight = 0;
+
+    function postToStreamlit(type, payload = {}) {
+      window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, "*");
+    }
+
+    function sendClick(clientX, clientY) {
+      const rect = image.getBoundingClientRect();
+      const displayWidth = Math.max(1, image.clientWidth);
+      const displayHeight = Math.max(1, image.clientHeight);
+      const x = (clientX - rect.left) * image.naturalWidth / displayWidth;
+      const y = (clientY - rect.top) * image.naturalHeight / displayHeight;
+      postToStreamlit("streamlit:setComponentValue", {
+        value: { x, y, timestamp: Date.now() },
+        dataType: "json"
+      });
+    }
+
+    viewer.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !image.complete || !image.naturalWidth) return;
+      activePointer = event.pointerId;
+      moved = false;
+      startX = event.clientX;
+      startY = event.clientY;
+      initialScrollLeft = viewer.scrollLeft;
+      initialScrollTop = viewer.scrollTop;
+      viewer.classList.add("panning");
+      try { viewer.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+
+    viewer.addEventListener("pointermove", (event) => {
+      if (activePointer !== event.pointerId) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      if (moved) {
+        viewer.scrollLeft = initialScrollLeft - dx;
+        viewer.scrollTop = initialScrollTop - dy;
+      }
+    });
+
+    function finishPointer(event) {
+      if (activePointer !== event.pointerId) return;
+      if (!moved && image.complete && image.naturalWidth) sendClick(event.clientX, event.clientY);
+      activePointer = null;
+      viewer.classList.remove("panning");
+    }
+    viewer.addEventListener("pointerup", finishPointer);
+    viewer.addEventListener("pointercancel", (event) => {
+      if (activePointer === event.pointerId) {
+        activePointer = null;
+        viewer.classList.remove("panning");
+      }
+    });
+    viewer.addEventListener("lostpointercapture", () => {
+      activePointer = null;
+      viewer.classList.remove("panning");
+    });
+    viewer.addEventListener("dragstart", (event) => event.preventDefault());
+
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "streamlit:render") return;
+      const args = data.args || {};
+      const height = Math.max(240, Number(args.viewport_height) || 650);
+      viewer.style.height = `${height}px`;
+      if (lastHeight !== height) {
+        lastHeight = height;
+        postToStreamlit("streamlit:setFrameHeight", { height: height + 4 });
+      }
+      const nextSource = args.image_data || "";
+      if (nextSource && nextSource !== lastSource) {
+        lastSource = nextSource;
+        image.src = nextSource;
+      }
+    });
+
+    postToStreamlit("streamlit:componentReady", { apiVersion: 1 });
+    postToStreamlit("streamlit:setFrameHeight", { height: 654 });
+  </script>
+</body>
+</html>

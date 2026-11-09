@@ -58,3 +58,41 @@ def format_relationship_label(
         relationship.get("child_candidate_id"), person_lookup, number_map, name_getter
     )
     return f"{status} · {parent} → {child}"
+
+
+def relationship_bbox_anchors(
+    parent_bbox: dict[str, Any], child_bbox: dict[str, Any]
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return (parent bottom-center, child top-center) in source-image coordinates."""
+    parent_x = float(parent_bbox.get("x", 0))
+    parent_y = float(parent_bbox.get("y", 0))
+    parent_width = float(parent_bbox.get("width", 0))
+    parent_height = float(parent_bbox.get("height", 0))
+    child_x = float(child_bbox.get("x", 0))
+    child_y = float(child_bbox.get("y", 0))
+    child_width = float(child_bbox.get("width", 0))
+    return (
+        (parent_x + parent_width / 2.0, parent_y + parent_height),
+        (child_x + child_width / 2.0, child_y),
+    )
+
+
+def resolve_person_field_value(
+    field: str,
+    updates: dict[str, Any],
+    person: dict[str, Any],
+    draft_values: dict[str, Any],
+    fallback: Any = "",
+) -> Any:
+    """Prioritize reviewer edits, then source values, then automatic OCR drafts."""
+    if field in updates:
+        value = updates[field]
+    elif person.get(field) not in (None, ""):
+        value = person[field]
+    else:
+        value = draft_values.get(field, fallback)
+    if value is None:
+        return ""
+    if isinstance(value, (list, dict)):
+        return value
+    return str(value)

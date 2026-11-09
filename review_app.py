@@ -2,6 +2,7 @@
 """Local Streamlit review UI for Jokbo OCR v6 outputs."""
 from __future__ import annotations
 
+import base64
 import csv
 import io
 import json
@@ -13,8 +14,8 @@ import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image, ImageDraw, ImageFont
-from streamlit_image_coordinates import streamlit_image_coordinates
 
 from person_info_extractor import extract_person_info_draft
 from person_data_model import (
@@ -23,10 +24,30 @@ from person_data_model import (
 )
 from review_helpers import (
     person_number_map, format_person_reference, filter_relationships_for_person,
-    format_relationship_label,
+    format_relationship_label, relationship_bbox_anchors, resolve_person_field_value,
 )
 
 st.set_page_config(page_title="Jokbo OCR 검수", page_icon="📜", layout="wide")
+
+_IMAGE_VIEWER_DIR = Path(__file__).resolve().parent / "components" / "jokbo_image_viewer"
+jokbo_image_viewer = components.declare_component(
+    "jokbo_image_viewer", path=str(_IMAGE_VIEWER_DIR)
+)
+
+# Keep semantically different overlays far apart in hue and brightness.
+# Two greens, two blues, and two oranges intentionally use clearly distinct shades.
+REVIEW_COLORS = {
+    "person_needs_review": (249, 115, 22, 240),   # bright orange
+    "person_confirmed": (132, 204, 22, 240),      # lime green
+    "person_selected": (37, 99, 235, 250),        # cobalt blue
+    "parent_selected": (168, 85, 247, 250),       # violet
+    "relation_confirmed": (22, 101, 52, 220),     # forest green
+    "relation_active_confirmed": (8, 145, 178, 250),  # teal blue
+    "relation_candidate": (154, 52, 18, 245),     # burnt orange
+    "ocr_name": (219, 39, 119, 240),              # magenta
+    "ocr_record": (14, 165, 233, 230),            # sky blue
+    "ocr_token": (250, 204, 21, 230),             # yellow
+}
 
 
 def read_json(path: Path, default: Any) -> Any:
@@ -34,6 +55,14 @@ def read_json(path: Path, default: Any) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
+
+
+def image_data_url(image: Image.Image) -> str:
+    """Encode a rendered PIL image for the local drag-pan Streamlit component."""
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def find_output_root(raw_path: str) -> Path | None:
@@ -297,7 +326,7 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
         y0 = (float(box.get("y", 0)) - oy) * scale
         x1 = (float(box.get("x", 0)) + float(box.get("width", 0)) - ox) * scale
         y1 = (float(box.get("y", 0)) + float(box.get("height", 0)) - oy) * scale
-        color = (168, 85, 247, 235) if item.get("kind") == "name" else (14, 165, 233, 225)
+        color = REVIEW_COLORS["ocr_name"] if item.get("kind") == "name" else REVIEW_COLORS["ocr_record"]
         draw.rectangle((x0, y0, x1, y1), outline=color, width=max(2, int(round(2 * min(scale, 3)))))
         label = str(item.get("label") or item.get("text") or "OCR")[:24]
         label_top = min(max(0, y1 + 2), max(0, base.height - 18))
@@ -312,7 +341,7 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
             ty0 = (float(token_box.get("y", 0)) - oy) * scale
             tx1 = (float(token_box.get("x", 0)) + float(token_box.get("width", 0)) - ox) * scale
             ty1 = (float(token_box.get("y", 0)) + float(token_box.get("height", 0)) - oy) * scale
-            draw.rectangle((tx0, ty0, tx1, ty1), outline=(250, 204, 21, 220), width=max(1, int(round(scale))))
+            draw.rectangle((tx0, ty0, tx1, ty1), outline=REVIEW_COLORS["ocr_token"], width=max(1, int(round(scale))))
 
     # Confirmed links are always visible. When a parent is active, also show
     # its unreviewed candidate links, using a different color to avoid implying
@@ -331,14 +360,18 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
         if not parent or not child:
             continue
         pb, cb = parent.get("bbox") or {}, child.get("bbox") or {}
-        pc = ((float(pb.get("x", 0)) + float(pb.get("width", 0)) / 2 - ox) * scale,
-              (float(pb.get("y", 0)) + float(pb.get("height", 0)) / 2 - oy) * scale)
-        cc = ((float(cb.get("x", 0)) + float(cb.get("width", 0)) / 2 - ox) * scale,
-              (float(cb.get("y", 0)) + float(cb.get("height", 0)) / 2 - oy) * scale)
+        # Connect at the parent's lower edge and the child's upper edge so
+        # relationship lines do not run through the vertical name glyphs.
+        parent_anchor, child_anchor = relationship_bbox_anchors(pb, cb)
+        pc = ((parent_anchor[0] - ox) * scale, (parent_anchor[1] - oy) * scale)
+        cc = ((child_anchor[0] - ox) * scale, (child_anchor[1] - oy) * scale)
         active_edge = active_parent_edge and status == "confirmed"
         active_candidate = active_parent_edge and status != "confirmed"
-        line_color = ((37, 99, 235, 245) if active_edge else
-                      (217, 119, 6, 235) if active_candidate else (22, 163, 74, 190))
+        line_color = (
+            REVIEW_COLORS["relation_active_confirmed"] if active_edge else
+            REVIEW_COLORS["relation_candidate"] if active_candidate else
+            REVIEW_COLORS["relation_confirmed"]
+        )
         line_width = 6 if active_edge else (3 if active_candidate else 3)
         draw.line([pc, cc], fill=line_color, width=line_width)
         if active_edge:
@@ -349,7 +382,7 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
             base_x, base_y = cc[0] - ux * 13, cc[1] - uy * 13
             draw.polygon([cc, (base_x + px * 6, base_y + py * 6),
                           (base_x - px * 6, base_y - py * 6)],
-                         fill=(37, 99, 235, 245))
+                         fill=line_color)
 
     for index, person in enumerate(people, start=1):
         bbox = person.get("bbox") or {}
@@ -359,12 +392,13 @@ def draw_overlay(image: np.ndarray, offset: tuple[int, int], people: list[dict[s
         y1 = (float(bbox.get("y", 0)) + float(bbox.get("height", 0)) - oy) * scale
         pid = person.get("person_id")
         status = effective_person_status(person, state)
-        color = (245, 158, 11, 230) if status != "confirmed" else (22, 163, 74, 230)
+        color = (REVIEW_COLORS["person_needs_review"] if status != "confirmed"
+                 else REVIEW_COLORS["person_confirmed"])
         width = 4 if pid == selected_id or pid == pending_parent_id else 2
         if pid == selected_id:
-            color = (37, 99, 235, 240)
+            color = REVIEW_COLORS["person_selected"]
         elif pid == pending_parent_id:
-            color = (147, 51, 234, 245)
+            color = REVIEW_COLORS["parent_selected"]
         draw.rectangle((x0, y0, x1, y1), outline=color, width=width)
         label = f"{index}. {effective_name(person, state)}"
         label_top = max(0, y0 - 21)
@@ -616,12 +650,10 @@ def main() -> None:
         "자(字) OCR": "courtesy_name_hanja",
         "호(號) OCR": "pen_name_hanja",
     }
-    with st.sidebar:
-        ocr_focus_label = st.selectbox(
-            "이미지에 표시할 OCR Bounding Box", list(ocr_focus_options),
-            key=f"ocr_focus_{selected_page_name}",
-            help="선택 인물의 이름 또는 인물 정보 OCR 영역을 원본 이미지에서 강조합니다.",
-        )
+    ocr_focus_key = f"ocr_focus_{selected_page_name}"
+    if ocr_focus_key not in st.session_state:
+        st.session_state[ocr_focus_key] = "전체 인물 기록 OCR"
+    ocr_focus_label = st.session_state.get(ocr_focus_key, "전체 인물 기록 OCR")
     ocr_boxes: list[dict[str, Any]] = []
     if selected_for_overlay:
         focus = ocr_focus_options[ocr_focus_label]
@@ -655,14 +687,16 @@ def main() -> None:
     with image_col:
         st.subheader(f"원본 페이지 · {selected_page_name}")
         st.caption(
-            f"{image_label} · 확대 {zoom_factor:g}x · 왼쪽 영역 안에서 스크롤 가능 · "
-            "인물 번호를 직접 클릭할 수 있습니다. 보라색은 이름 OCR, 파란색은 인물 정보 OCR 영역입니다."
+            f"{image_label} · 확대 {zoom_factor:g}x · 마우스로 드래그해 이동, 스크롤바로도 이동 가능 · "
+            "짧게 클릭하면 인물을 선택합니다."
         )
-        with st.container(height=int(effective_image_height) + 35, border=True):
-            click_value = streamlit_image_coordinates(
-                overlay, width=overlay.width,
-                key=f"page_click_{selected_page_name}_{click_mode}_{zoom_factor}", cursor="crosshair",
-            )
+        click_value = jokbo_image_viewer(
+            image_data=image_data_url(overlay),
+            viewport_height=int(effective_image_height),
+            height=int(effective_image_height) + 4,
+            key=f"page_image_{selected_page_name}_{click_mode}_{zoom_factor}",
+            default=None,
+        )
         if click_value and isinstance(click_value, dict) and "x" in click_value and "y" in click_value:
             click_event = (click_value.get("timestamp"), click_value.get("x"), click_value.get("y"))
             event_key = f"last_click_{selected_page_name}_{click_mode}"
@@ -743,7 +777,28 @@ def main() -> None:
                     st.rerun()
 
         with st.expander("색상 안내", expanded=False):
-            st.markdown("🟠 미검수 인물 · 🟢 확인된 인물 · 🔵 선택된 인물 · 🟣 연결할 부모 · 🟢 일반 확정 관계 · 🔵 선택 부모의 확정 관계 · 🟠 선택 부모의 검토 후보")
+            legend = [
+                ("#F97316", "밝은 주황", "미검수 인물 테두리"),
+                ("#84CC16", "라임 그린", "확인된 인물 테두리"),
+                ("#2563EB", "코발트 블루", "현재 선택한 인물"),
+                ("#A855F7", "보라", "부모 선택 대기"),
+                ("#166534", "짙은 숲색", "일반 확정 관계선"),
+                ("#0891B2", "청록 블루", "선택 부모의 확정 관계선"),
+                ("#9A3412", "짙은 러스트", "선택 부모의 미검수 관계 후보"),
+                ("#DB2777", "마젠타", "이름 OCR Bounding Box"),
+                ("#0EA5E9", "하늘색", "인물 정보 OCR Bounding Box"),
+                ("#FACC15", "노랑", "문자 단위 OCR Bounding Box"),
+            ]
+            for start_idx in range(0, len(legend), 2):
+                cols = st.columns(2)
+                for col, (hex_color, color_name, meaning) in zip(cols, legend[start_idx:start_idx + 2]):
+                    col.markdown(
+                        f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
+                        f'<span style="display:inline-block;width:18px;height:18px;flex:0 0 18px;'
+                        f'background:{hex_color};border:1px solid #64748b;border-radius:4px"></span>'
+                        f'<span><b>{color_name}</b> <code>{hex_color}</code><br><small>{meaning}</small></span></div>',
+                        unsafe_allow_html=True,
+                    )
 
     with detail_col:
         # Native fixed-height scroll pane keeps the left scan in view while
@@ -768,6 +823,15 @@ def main() -> None:
                     st.session_state["selected_person_id"] = selected_person_id
                     selected_person = next(p for p in page_people if p["person_id"] == selected_person_id)
                 if selected_person:
+                    focus_before = st.session_state.get(ocr_focus_key, "전체 인물 기록 OCR")
+                    st.selectbox(
+                        "왼쪽 이미지에서 확인할 OCR 항목",
+                        list(ocr_focus_options),
+                        key=ocr_focus_key,
+                        help="항목을 선택하면 왼쪽 원본 이미지에서 해당 OCR 영역의 Bounding Box를 강조합니다.",
+                    )
+                    st.caption(f"왼쪽 이미지 강조 항목: {st.session_state.get(ocr_focus_key, focus_before)}")
+
                     crop_path = Path(str(selected_person.get("image_file", "")))
                     if not crop_path.exists():
                         crop_path = page_dir / "columns" / f"{selected_person.get('source_column_id', '')}.png"
@@ -781,6 +845,11 @@ def main() -> None:
                             f"{h.get('text')} ({h.get('confidence')})" for h in hypotheses[:6]
                         ))
                     update = state["people_updates"].get(selected_person_id, {})
+                    # Precompute field-level OCR values as soon as an individual is selected.
+                    auto_draft = update.get("auto_extraction_draft") or extract_person_info_draft(
+                        selected_person, page_result, page_people
+                    )
+                    draft_values = auto_draft.get("draft_values", {}) if isinstance(auto_draft, dict) else {}
                     current_uid = selected_person.get("person_uid") or state.get("person_uid_map", {}).get(
                         person_local_key(selected_person, state.get("edition", {}).get("edition_id")), ""
                     )
@@ -809,12 +878,9 @@ def main() -> None:
                         st.caption("다른 판본에서 등록한 인물이 있으면 공용 레지스트리 파일을 지정한 뒤 기존 ID를 재사용할 수 있습니다.")
 
                     def person_value(field: str, fallback: Any = "") -> Any:
-                        value = update.get(field, selected_person.get(field, fallback))
-                        if value is None:
-                            return ""
-                        if isinstance(value, (list, dict)):
-                            return value
-                        return str(value)
+                        return resolve_person_field_value(
+                            field, update, selected_person, draft_values, fallback
+                        )
 
                     current_transcription = (
                         person_value("transcribed_name_hanja")
@@ -864,34 +930,19 @@ def main() -> None:
                             key=f"row_ocr_{selected_person_id}",
                         )
 
-                    if st.button(
-                        "OCR로 인물 정보 초안 채우기",
-                        key=f"extract_person_info_{selected_person_id}",
-                        use_container_width=True,
-                        help="새 OCR 추론을 실행하지 않고 저장된 OCR 열과 좌표를 이용해 생몰·관직·배우자·묘소 정보를 추출합니다.",
-                    ):
-                        draft = extract_person_info_draft(selected_person, page_result, page_people)
-                        current_update = dict(state["people_updates"].get(selected_person_id, {}))
-                        populated_fields = []
-                        for field, value in draft.get("draft_values", {}).items():
-                            if value and not current_update.get(field) and not selected_person.get(field):
-                                current_update[field] = value
-                                populated_fields.append(field)
-                        current_update["auto_extraction_draft"] = draft
-                        current_update["information_review_status"] = "needs_review"
-                        state["people_updates"][selected_person_id] = current_update
-                        save_state(root, state, all_people, all_relationships, page_results)
-                        if populated_fields:
-                            st.session_state["last_click_message"] = (
-                                "OCR 초안을 추가했습니다: " + ", ".join(populated_fields)
-                                + ". 기존에 입력된 항목은 덮어쓰지 않았습니다."
-                            )
-                        else:
-                            st.session_state["last_click_message"] = draft.get("message", "추출을 마쳤습니다.")
-                        st.rerun()
+                    # Information OCR is prepared automatically for the selected person.
+                    # Persisted/manual values always take precedence over these draft values.
+                    populated_draft_fields = [
+                        field for field, value in draft_values.items() if value
+                    ]
+                    if populated_draft_fields:
+                        st.info(
+                            "OCR 정보 초안을 자동으로 입력했습니다. 원본 이미지와 대조한 뒤 저장하세요. "
+                            "아직 검수 전인 값입니다."
+                        )
+                    else:
+                        st.caption("이 인물에서 자동 추출할 수 있는 정보가 없습니다. 원문 OCR 영역을 직접 확인해 주세요.")
 
-                    update = state["people_updates"].get(selected_person_id, {})
-                    auto_draft = update.get("auto_extraction_draft")
                     if auto_draft:
                         with st.expander("OCR 자동 추출 근거 및 원문 영역", expanded=True):
                             st.caption(
@@ -951,8 +1002,13 @@ def main() -> None:
                         )
                         existing_spouses = person_value("spouses", None)
                         if not isinstance(existing_spouses, list):
+                            existing_spouses = []
+                        if not existing_spouses:
                             legacy_spouse = person_value("spouse_text")
-                            existing_spouses = ([{"type": "wife", "name_and_record": legacy_spouse, "notes": ""}]
+                            # OCR alone cannot reliably distinguish wife from concubine;
+                            # keep the extracted text unclassified until a reviewer decides.
+                            existing_spouses = ([{"type": "other", "name_and_record": legacy_spouse,
+                                                  "notes": "OCR 초안 - 부인/첩 구분 검수 필요"}]
                                                 if legacy_spouse else [])
                         spouse_rows = []
                         for spouse in existing_spouses:
@@ -1044,6 +1100,7 @@ def main() -> None:
                                     "notes": notes.strip() or None,
                                     "information_review_status": "confirmed" if mark_information_reviewed else "needs_review",
                                     "source_record_ocr_text": (auto_draft or {}).get("source_record_ocr_text") or person_value("source_record_ocr_text") or None,
+                                    "auto_extraction_draft": auto_draft,
                                     "review_status": "confirmed" if mark_confirmed else "needs_review",
                                     "transcription_status": "manually_verified" if mark_confirmed else "pending_manual_verification",
                                 })
