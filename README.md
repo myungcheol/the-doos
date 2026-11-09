@@ -909,7 +909,7 @@ python jokbo_ocr.py --help
 6. **커밋:** `git diff`와 `git status`로 스캔·레지스트리·검수 결과의 의도치 않은 변경이 없는지 확인합니다. 관련 테스트와 **이 README만** 갱신하고 별도 버전별 README를 만들지 않습니다.
 7. **공유:** 적용 결과, 테스트 범위, 한계, 커밋 SHA를 보고합니다. `main` 반영은 사용자의 작업 요청에 따라 수행하고, 다른 작업자의 변경이 생겼다면 덮어쓰기/강제 push를 하지 않습니다.
 
-코딩 에이전트가 작업할 때 추가로 지켜야 할 상세 원칙은 [AGENTS.md](AGENTS.md)를 참고하세요.
+코딩 에이전트가 작업할 때 추가로 지켜야 할 상세 원칙은 [AGENTS.md](AGENTS.md)를 참고하세요. 중요한 문제 해결·설계 판단·성능 실험의 이유와 결과는 [docs/WORKLOG.md](docs/WORKLOG.md)에 남깁니다. 사소한 변경은 Git 커밋 메시지로 충분하며, 자세한 기록 기준은 AGENTS.md의 **Development history**를 따릅니다.
 
 ---
 

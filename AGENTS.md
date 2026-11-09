@@ -57,8 +57,21 @@ This file is the **canonical repository-level instruction file** for coding agen
    ```
    For viewer edits, also check JavaScript syntax and **manually verify in Streamlit** if an environment is available. Never claim actual browser or PaddleOCR inference testing when it was not performed.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.
-6. Update the **single consolidated README.md** (especially workflow/code map and change history) for meaningful behavior changes; do not add versioned README clones.
-7. If the user requests GitHub updates, commit only intended files and push after tests; do not force-push, overwrite others' work, or claim success before verifying the remote branch/commit. Report precise tests and unverified areas.
+6. Update the **single consolidated README.md** (especially workflow/code map and change history) for meaningful behavior changes; do not add versioned README clones. Follow **Development history** below to decide whether a WORKLOG entry is warranted.
+7. If the user requests GitHub updates, commit only intended files and push after tests; do not force-push, overwrite others' work, or claim success before verifying the remote branch/commit. Report precise tests and unverified areas. Include the resulting commit SHA in the worklog when practical; see the guidance below.
+
+## Development history
+
+The **Git history is the source of truth for what changed**; [docs/WORKLOG.md](docs/WORKLOG.md) explains **why decisions were made**, failed approaches, evidence, and remaining risks. README.md describes **how the project currently works**, not a chronological diary.
+
+- Before architectural changes, nontrivial bug investigations, data-model changes, or OCR/performance tuning, consult relevant entries in `docs/WORKLOG.md`. For routine edits, do not read the entire growing log just to begin.
+- After **significant** work, append a dated entry: problem/context, root cause or hypothesis, approach and trade-offs, tests and measurements (with environment/conditions), unresolved limitations, and related Git commit SHA or link.
+- Record rejected approaches and their reasons when they could prevent repeated investigation. Do not claim an unrun test passed; distinguish unit tests, actual OCR inference, and manual Streamlit/browser testing.
+- Do **not** add a worklog entry for every typo, formatting fix, or trivial change already clear from the commit message. Keep entries concise and searchable; use headings and paths/symbols.
+- Preserve earlier entries as historical records. If a conclusion becomes outdated, add a dated correction or superseding entry rather than silently rewriting or deleting history.
+- Avoid duplicate release notes: user-facing features and current instructions go in `README.md`; detailed technical rationale belongs in `docs/WORKLOG.md`; concise change summaries belong in Git commit messages.
+- When a commit SHA is not yet known because the worklog is part of the same commit, link to the related commit in a **subsequent** entry or use a stable reference such as `same commit as this entry`. Do not amend or make an extra commit solely to fill in the SHA.
+- Never log private family/person data, secrets, or large raw OCR excerpts unnecessarily. The tracked `person_registry.json` must not be modified as a side effect of documenting work.
 
 ## Fast commands
 
