@@ -9,8 +9,9 @@ import os
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
-from PySide6.QtCore import Qt, Signal, QRectF, QTimer
+from PySide6.QtCore import Qt, Signal, QRectF, QTimer, QObject, QThread, Slot
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
@@ -32,6 +33,46 @@ from review_app import (effective_name, effective_relationship,
                         find_output_root, get_page_image, parse_optional_generation,
                         relationship_key, save_state, would_create_cycle)
 import cv2
+
+
+def crop_selected_region(image, bbox, offset):
+    """Crop an original-coordinate selection from a full page or offset ROI."""
+    height, width = image.shape[:2]
+    x1 = max(0, int(bbox["x"] - offset[0]))
+    y1 = max(0, int(bbox["y"] - offset[1]))
+    x2 = min(width, int(bbox["x"] + bbox["width"] - offset[0]))
+    y2 = min(height, int(bbox["y"] + bbox["height"] - offset[1]))
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("선택한 영역이 이미지 밖에 있습니다.")
+    return image[y1:y2, x1:x2].copy()
+
+
+class RegionOcrWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.paddle_ocr = None
+
+    @Slot(object)
+    def recognize(self, request):
+        try:
+            from jokbo_ocr import initialize_paddle_ocr, run_name_ocr_variants
+            if request["engine"] == "paddleocr" and self.paddle_ocr is None:
+                self.paddle_ocr = initialize_paddle_ocr(SimpleNamespace(
+                    paddle_version="PP-OCRv5", paddle_lang="chinese_cht", paddle_device="cpu",
+                    paddle_cpu_threads=4, paddle_enable_mkldnn=False,
+                ))
+            crop = request["crop"]
+            _, variants, _ = run_name_ocr_variants(
+                crop, {"x": 0, "y": 0, "width": crop.shape[1], "height": crop.shape[0]},
+                lang="chi_tra_vert", padding=0, engine=request["engine"],
+                paddle_ocr=self.paddle_ocr, paddle_min_confidence=101,
+            )
+            result = {"request": request, "variants": variants}
+        except Exception as exc:
+            result = {"request": request, "error": f"{type(exc).__name__}: {exc}"}
+        self.finished.emit(result)
 
 
 def restore_qt_environment(previous, environment, cv2_dir):
@@ -189,6 +230,7 @@ class OcrFocusSelector(QWidget):
 class ScanView(QGraphicsView):
     selected = Signal(str)
     hovered = Signal(str)
+    region_selected = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -200,6 +242,32 @@ class ScanView(QGraphicsView):
         self.sources = []
         self.offset = (0, 0)
         self.down = None
+        self.overlays_visible = True
+        self.region_mode = False
+        self.selection_bbox = None
+        self.selection_start = None
+        self.selection_rect = None
+
+    def set_region_mode(self, enabled):
+        self.region_mode = enabled
+        self.setCursor(Qt.CursorShape.CrossCursor if enabled else Qt.CursorShape.ArrowCursor)
+
+    def set_overlays_visible(self, visible):
+        self.overlays_visible = visible
+        self.draw_selection()
+
+    def draw_selection(self):
+        if self.selection_rect is not None and self.selection_rect.scene() is self.scene():
+            self.scene().removeItem(self.selection_rect)
+        self.selection_rect = None
+        if not self.selection_bbox:
+            return
+        box = self.selection_bbox
+        pen = QPen(QColor("#facc15"), 3)
+        pen.setCosmetic(True)
+        self.selection_rect = self.scene().addRect(
+            box["x"] - self.offset[0], box["y"] - self.offset[1], box["width"], box["height"], pen
+        )
 
     def show_page(self, pixmap, offset, people, selected, sources, relationships):
         self.people, self.sources, self.offset = people, sources, offset
@@ -207,6 +275,10 @@ class ScanView(QGraphicsView):
         scene.clear()
         scene.addPixmap(pixmap)
         scene.setSceneRect(QRectF(pixmap.rect()))
+        self.selection_rect = None
+        if not self.overlays_visible:
+            self.draw_selection()
+            return
         boxes = {p.get("person_id"): p.get("bbox") or {} for p in people}
         for rel in relationships:
             if rel.get("review_status") == "rejected":
@@ -243,6 +315,7 @@ class ScanView(QGraphicsView):
                     token_pen = QPen(QColor("#facc15"), 2)
                     token_pen.setCosmetic(True)
                     scene.addRect(tb["x"] - offset[0], tb["y"] - offset[1], tb["width"], tb["height"], token_pen)
+        self.draw_selection()
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -254,10 +327,29 @@ class ScanView(QGraphicsView):
             super().wheelEvent(event)
 
     def mousePressEvent(self, event):
+        if self.region_mode and event.button() == Qt.MouseButton.LeftButton:
+            self.selection_start = self.mapToScene(event.position().toPoint())
+            self.selection_bbox = None
+            self.draw_selection()
+            event.accept()
+            return
         self.down = event.position()
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self.region_mode and self.selection_start is not None:
+            rectangle = QRectF(self.selection_start, self.mapToScene(event.position().toPoint())).normalized()
+            rectangle = rectangle.intersected(self.sceneRect())
+            self.selection_start = None
+            if rectangle.width() >= 3 and rectangle.height() >= 3:
+                self.selection_bbox = {"x": int(rectangle.left()) + self.offset[0],
+                                       "y": int(rectangle.top()) + self.offset[1],
+                                       "width": max(1, int(rectangle.width())),
+                                       "height": max(1, int(rectangle.height()))}
+                self.draw_selection()
+                self.region_selected.emit(self.selection_bbox)
+            event.accept()
+            return
         if self.down is not None and (event.position() - self.down).manhattanLength() < 5:
             point = self.mapToScene(event.position().toPoint())
             x, y = point.x() + self.offset[0], point.y() + self.offset[1]
@@ -270,6 +362,17 @@ class ScanView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self.region_mode and self.selection_start is not None:
+            rectangle = QRectF(self.selection_start, self.mapToScene(event.position().toPoint())).normalized()
+            rectangle = rectangle.intersected(self.sceneRect())
+            if self.selection_rect is None:
+                pen = QPen(QColor("#facc15"), 3)
+                pen.setCosmetic(True)
+                self.selection_rect = self.scene().addRect(rectangle, pen)
+            else:
+                self.selection_rect.setRect(rectangle)
+            event.accept()
+            return
         if self.down is None:
             point = self.mapToScene(event.position().toPoint())
             x, y = point.x() + self.offset[0], point.y() + self.offset[1]
@@ -281,6 +384,7 @@ class ScanView(QGraphicsView):
 
 
 class ReviewWindow(QMainWindow):
+    ocr_request = Signal(object)
     fields = {"transcribed_name_hanja": "검수한 이름", "generation_number": "세대",
               "courtesy_name_hanja": "자(字)", "pen_name_hanja": "호(號)",
               "birth_text": "출생", "death_text": "사망", "office_title": "관직",
@@ -297,6 +401,10 @@ class ReviewWindow(QMainWindow):
         self.loading = False
         self.dirty = False
         self.preview_link_sources = None
+        self.region_page = None
+        self.region_bbox = None
+        self.ocr_thread = None
+        self.ocr_running = False
         outer = QWidget()
         self.setCentralWidget(outer)
         layout = QVBoxLayout(outer)
@@ -349,6 +457,14 @@ class ReviewWindow(QMainWindow):
         recover = QPushButton("누락 인명 후보 찾기")
         recover.clicked.connect(self.recover_people)
         scan_tools_layout.addWidget(recover)
+        self.hide_boxes = QPushButton("검수 박스 숨기기")
+        self.hide_boxes.setCheckable(True)
+        self.hide_boxes.toggled.connect(self.toggle_scan_boxes)
+        scan_tools_layout.addWidget(self.hide_boxes)
+        self.select_ocr_region = QPushButton("OCR 영역 드래그")
+        self.select_ocr_region.setCheckable(True)
+        self.select_ocr_region.toggled.connect(self.toggle_region_mode)
+        scan_tools_layout.addWidget(self.select_ocr_region)
         scan_tools_layout.addStretch(1)
         left_layout.addWidget(self.scan_tools)
         self.evidence = QLabel("OCR 박스에 마우스를 올려 원문을 확인하세요.")
@@ -370,9 +486,11 @@ class ReviewWindow(QMainWindow):
         self.previous_view = ScanView()
         self.previous_view.selected.connect(self.select_continuation_target)
         self.previous_view.hovered.connect(self.evidence.setText)
+        self.previous_view.region_selected.connect(lambda box: self.set_selected_region(self.previous_page, self.previous_view, box))
         self.view = ScanView()
         self.view.selected.connect(self.select_person_id)
         self.view.hovered.connect(self.evidence.setText)
+        self.view.region_selected.connect(lambda box: self.set_selected_region(self.page, self.view, box))
         self.image_views.addWidget(self.view, 1)
         self.image_views.addWidget(self.previous_view, 1)
         left_layout.addLayout(self.image_views, 1)
@@ -508,6 +626,21 @@ class ReviewWindow(QMainWindow):
         continuation_scroll.setWidgetResizable(True)
         continuation_scroll.setWidget(continuation_panel)
         tabs.addTab(continuation_scroll, "이어진 기록")
+        region_panel = QWidget()
+        region_layout = QVBoxLayout(region_panel)
+        self.region_label = QLabel("이미지에서 OCR 영역 드래그를 켜고 사각형을 선택하세요.")
+        self.region_label.setWordWrap(True)
+        region_layout.addWidget(self.region_label)
+        self.run_region_ocr_button = QPushButton("선택 영역 OCR 실행")
+        self.run_region_ocr_button.setEnabled(False)
+        self.run_region_ocr_button.clicked.connect(self.run_region_ocr)
+        region_layout.addWidget(self.run_region_ocr_button)
+        self.region_candidates = QListWidget()
+        region_layout.addWidget(self.region_candidates, 1)
+        self.apply_region_candidate_button = QPushButton("선택 후보를 현재 인물 이름에 입력")
+        self.apply_region_candidate_button.clicked.connect(self.apply_region_candidate)
+        region_layout.addWidget(self.apply_region_candidate_button)
+        tabs.addTab(region_panel, "선택 영역 OCR")
         tabs.currentChanged.connect(self.render_scan)
         tabs.currentChanged.connect(lambda index: save.setVisible(index == 0))
         right_layout.addWidget(save)
@@ -762,6 +895,107 @@ class ReviewWindow(QMainWindow):
             if not view.sceneRect().isEmpty():
                 view.fitInView(view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
+    def toggle_scan_boxes(self, hidden):
+        for view in (self.view, self.previous_view):
+            view.set_overlays_visible(not hidden)
+        self.render_scan()
+
+    def toggle_region_mode(self, enabled):
+        for view in (self.view, self.previous_view):
+            view.set_region_mode(enabled)
+        if enabled:
+            self.hide_boxes.setChecked(True)
+            self.statusBar().showMessage("이미지에서 OCR로 읽을 부분을 드래그하세요.", 5000)
+
+    def set_selected_region(self, page, view, bbox):
+        if page is None:
+            return
+        for other in (self.view, self.previous_view):
+            if other is not view:
+                other.selection_bbox = None
+                other.draw_selection()
+        self.region_page, self.region_bbox = page, dict(bbox)
+        self.region_candidates.clear()
+        self.run_region_ocr_button.setEnabled(not self.ocr_running)
+        self.region_label.setText(
+            f"{page_name(page)} · 원본 좌표 x {bbox['x']}–{bbox['x'] + bbox['width']}, "
+            f"y {bbox['y']}–{bbox['y'] + bbox['height']}"
+        )
+        self.tabs.setCurrentIndex(3)
+
+    def run_region_ocr(self):
+        if self.region_page is None or self.region_bbox is None or self.ocr_running:
+            return
+        view = self.view if self.region_page is self.page else self.previous_view
+        image = self.source_image if view is self.view else self.previous_source_image
+        if image is None:
+            self.region_label.setText("선택한 페이지의 원본 이미지를 읽을 수 없습니다.")
+            return
+        try:
+            crop = crop_selected_region(image, self.region_bbox, view.offset)
+        except ValueError as exc:
+            self.region_label.setText(str(exc))
+            return
+        if self.ocr_thread is None:
+            self.ocr_thread = QThread(self)
+            self.ocr_worker = RegionOcrWorker()
+            self.ocr_worker.moveToThread(self.ocr_thread)
+            self.ocr_request.connect(self.ocr_worker.recognize)
+            self.ocr_worker.finished.connect(self.show_region_ocr_result)
+            self.ocr_thread.finished.connect(self.ocr_worker.deleteLater)
+            self.ocr_thread.start()
+        engine = self.region_page.get("ocr_engine") or next(
+            (page.get("ocr_engine") for page in self.page_results if page.get("ocr_engine")), "paddleocr"
+        )
+        request = {"page": page_name(self.region_page), "bbox": dict(self.region_bbox),
+                   "crop": crop, "engine": "paddleocr" if engine in ("both", "paddleocr") else "tesseract"}
+        self.ocr_running = True
+        self.run_region_ocr_button.setEnabled(False)
+        self.region_candidates.clear()
+        self.region_label.setText(f"{request['page']} · 선택한 영역을 OCR 처리 중입니다…")
+        self.ocr_request.emit(request)
+
+    @Slot(object)
+    def show_region_ocr_result(self, result):
+        self.ocr_running = False
+        self.run_region_ocr_button.setEnabled(self.region_page is not None)
+        request = result["request"]
+        if self.region_page is None or request["page"] != page_name(self.region_page) or request["bbox"] != self.region_bbox:
+            return
+        if result.get("error"):
+            self.region_label.setText(f"영역 OCR 오류: {result['error']}")
+            return
+        best_by_text = {}
+        for variant in result["variants"]:
+            value = str(variant.get("hanja_text") or "").strip()
+            if value and (value not in best_by_text or float(variant.get("mean_confidence") or 0) > float(best_by_text[value].get("mean_confidence") or 0)):
+                best_by_text[value] = variant
+        ranked = sorted(best_by_text.values(), key=lambda item: float(item.get("mean_confidence") or 0), reverse=True)
+        self.region_candidates.clear()
+        for variant in ranked:
+            confidence = variant.get("mean_confidence")
+            score = f"{confidence:.1f}" if isinstance(confidence, (int, float)) else "점수 없음"
+            item = QListWidgetItem(f"{variant['hanja_text']}  ·  {score}  ·  {variant.get('variant', '')}")
+            item.setData(Qt.ItemDataRole.UserRole, variant["hanja_text"])
+            item.setToolTip(str(variant.get("text") or ""))
+            self.region_candidates.addItem(item)
+        self.region_label.setText(f"{request['page']} · 한자 후보 {len(ranked)}개 · 원본 좌표 {request['bbox']}")
+        if not ranked:
+            errors = [str(variant.get("status")) for variant in result["variants"]
+                      if str(variant.get("status") or "").startswith("error:")]
+            self.region_candidates.addItem(errors[0] if errors else "인식된 한자 후보가 없습니다. 영역을 다시 선택해 보세요.")
+
+    def apply_region_candidate(self):
+        item = self.region_candidates.currentItem()
+        if not item or not item.data(Qt.ItemDataRole.UserRole):
+            return
+        if self.region_page is not self.page or not self.selected_id:
+            self.region_label.setText("현재 검수 페이지의 인물을 선택한 뒤 후보를 이름에 입력하세요.")
+            return
+        self.inputs["transcribed_name_hanja"].setText(item.data(Qt.ItemDataRole.UserRole))
+        self.mark_dirty()
+        self.tabs.setCurrentIndex(0)
+
     def page_directory(self, page):
         page_dir = Path(page.get("page_output_dir") or self.root / Path(str(page.get("source_image", page_name(page)))).stem)
         if not page_dir.is_absolute():
@@ -780,6 +1014,7 @@ class ReviewWindow(QMainWindow):
     def load_previous_page(self):
         self.previous_page = self.page_results[self.page_index - 1] if self.page_index > 0 else None
         self.previous_people = []
+        self.previous_source_image = None
         self.previous_pixmap, self.previous_offset = QPixmap(), (0, 0)
         if not self.previous_page:
             self.previous_scan_title.setText("이전 페이지 없음")
@@ -788,7 +1023,7 @@ class ReviewWindow(QMainWindow):
         self.previous_scan_title.setText(f"이전 페이지 · {previous_name}")
         self.previous_people = [person for person in self.base_people if person.get("source_page") == previous_name]
         try:
-            self.previous_pixmap, self.previous_offset, _ = self.load_page_visual(self.previous_page)
+            self.previous_pixmap, self.previous_offset, self.previous_source_image = self.load_page_visual(self.previous_page)
         except (OSError, ValueError) as exc:
             self.statusBar().showMessage(f"이전 페이지 이미지를 읽지 못했습니다: {exc}", 8000)
 
@@ -809,6 +1044,14 @@ class ReviewWindow(QMainWindow):
             self.pages.blockSignals(False)
             return
         self.dirty = False
+        self.region_page = None
+        self.region_bbox = None
+        self.region_candidates.clear()
+        self.run_region_ocr_button.setEnabled(False)
+        self.region_label.setText("이미지에서 OCR 영역 드래그를 켜고 사각형을 선택하세요.")
+        for view in (self.view, self.previous_view):
+            view.selection_bbox = None
+            view.draw_selection()
         self.page_index = self.pages.currentIndex()
         if self.page_index < 0:
             return
@@ -1084,6 +1327,9 @@ class ReviewWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.can_discard():
+            if self.ocr_thread is not None:
+                self.ocr_thread.quit()
+                self.ocr_thread.wait()
             event.accept()
         else:
             event.ignore()

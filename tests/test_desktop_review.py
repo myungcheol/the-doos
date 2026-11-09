@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
@@ -11,7 +12,8 @@ try:
     from PySide6.QtGui import QImage, QInputMethodEvent, QRawFont
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox
-    from desktop_review import ReviewComboBox, ReviewWindow, configure_application, restore_qt_environment
+    from desktop_review import (ReviewComboBox, ReviewWindow, RegionOcrWorker, configure_application,
+                                crop_selected_region, restore_qt_environment)
 except ImportError:
     QApplication = None
 
@@ -222,6 +224,66 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(self.window.view.sources[0]["bbox"], {"x": 50, "y": 10, "width": 35, "height": 40})
         item.setCheckState(Qt.CheckState.Checked)
         self.assertEqual([c["column_id"] for c in self.window.checked_orphan_columns()], ["a", "b"])
+
+    def test_region_crop_uses_original_coordinates_with_and_without_roi_offset(self):
+        image = np.arange(100 * 100, dtype=np.uint8).reshape(100, 100)
+        box = {"x": 31, "y": 42, "width": 8, "height": 9}
+        np.testing.assert_array_equal(crop_selected_region(image, box, (0, 0)), image[42:51, 31:39])
+        roi = image[30:80, 20:70]
+        np.testing.assert_array_equal(crop_selected_region(roi, box, (20, 30)), image[42:51, 31:39])
+
+    def test_hidden_boxes_allow_drag_selection_and_candidates_appear_in_panel(self):
+        original_state = (self.root / "review_state.json").read_bytes()
+        self.window.show()
+        self.window.hide_boxes.setChecked(True)
+        self.window.select_ocr_region.setChecked(True)
+        self.assertFalse(self.window.view.overlays_visible)
+        self.assertTrue(self.window.view.region_mode)
+        viewport = self.window.view.viewport()
+        start = self.window.view.mapFromScene(10, 12)
+        end = self.window.view.mapFromScene(40, 48)
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(viewport, pos=end)
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=end)
+        self.assertEqual(self.window.tabs.currentIndex(), 3)
+        self.assertEqual(self.window.region_page, self.window.page)
+        self.assertGreater(self.window.region_bbox["width"], 0)
+        self.assertTrue(self.window.run_region_ocr_button.isEnabled())
+        variants = [
+            {"hanja_text": "甲乙", "mean_confidence": 60, "variant": "원본"},
+            {"hanja_text": "甲乙", "mean_confidence": 80, "variant": "대비"},
+            {"hanja_text": "丙丁", "mean_confidence": 50, "variant": "확대"},
+        ]
+        with patch("jokbo_ocr.initialize_paddle_ocr", return_value=object()), patch(
+            "jokbo_ocr.run_name_ocr_variants", return_value=("甲乙", variants, None)
+        ):
+            QTest.mouseClick(self.window.run_region_ocr_button, Qt.MouseButton.LeftButton)
+            for _ in range(50):
+                self.app.processEvents()
+                if self.window.region_candidates.count() == 2:
+                    break
+                QTest.qWait(10)
+        self.assertEqual(self.window.region_candidates.count(), 2)
+        self.assertIn("甲乙", self.window.region_candidates.item(0).text())
+        self.assertIn("대비", self.window.region_candidates.item(0).text())
+        self.window.select_person_id("p1")
+        self.window.region_candidates.setCurrentRow(0)
+        self.window.apply_region_candidate()
+        self.assertEqual(self.window.inputs["transcribed_name_hanja"].text(), "甲乙")
+        self.assertEqual((self.root / "review_state.json").read_bytes(), original_state)
+
+    def test_selected_crop_runs_existing_ocr_variants_without_writing_review_state(self):
+        original = (self.root / "review_state.json").read_bytes()
+        worker = RegionOcrWorker()
+        captured = []
+        worker.finished.connect(captured.append)
+        crop = np.full((20, 10, 3), 255, dtype=np.uint8)
+        with patch("jokbo_ocr.run_name_ocr_variants", return_value=("甲乙", [{"hanja_text": "甲乙"}], crop)) as recognize:
+            worker.recognize({"page": "sample.png", "bbox": {"x": 7, "y": 8, "width": 10, "height": 20},
+                              "crop": crop, "engine": "tesseract"})
+        self.assertEqual(captured[0]["variants"][0]["hanja_text"], "甲乙")
+        self.assertEqual(recognize.call_args.kwargs["padding"], 0)
+        self.assertEqual((self.root / "review_state.json").read_bytes(), original)
 
     def test_zoom_controls_belong_to_image_panel(self):
         self.assertIs(self.window.scan_tools.parent(), self.window.view.parent())
