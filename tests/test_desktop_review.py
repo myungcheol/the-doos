@@ -214,6 +214,8 @@ class DesktopReviewTests(unittest.TestCase):
     def test_zoom_controls_belong_to_image_panel(self):
         self.assertIs(self.window.scan_tools.parent(), self.window.view.parent())
         self.assertIs(self.window.previous_view.parent(), self.window.view.parent())
+        self.assertIs(self.window.image_views.itemAt(0).widget(), self.window.view)
+        self.assertIs(self.window.image_views.itemAt(1).widget(), self.window.previous_view)
 
     def test_recovery_persists_unverified_candidate_without_renumbering(self):
         self.window.select_person_id("p1")
