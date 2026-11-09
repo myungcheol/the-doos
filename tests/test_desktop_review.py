@@ -266,10 +266,11 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(self.window.region_candidates.count(), 2)
         self.assertIn("甲乙", self.window.region_candidates.item(0).text())
         self.assertIn("대비", self.window.region_candidates.item(0).text())
-        self.window.select_person_id("p1")
         self.window.region_candidates.setCurrentRow(0)
-        self.window.apply_region_candidate()
-        self.assertEqual(self.window.inputs["transcribed_name_hanja"].text(), "甲乙")
+        self.window.copy_region_candidate()
+        self.assertEqual(QApplication.clipboard().text(), "甲乙")
+        self.assertIsNone(self.window.selected_id)
+        self.assertFalse(self.window.dirty)
         self.assertEqual((self.root / "review_state.json").read_bytes(), original_state)
 
     def test_selected_crop_runs_existing_ocr_variants_without_writing_review_state(self):
@@ -283,6 +284,7 @@ class DesktopReviewTests(unittest.TestCase):
                               "crop": crop, "engine": "tesseract"})
         self.assertEqual(captured[0]["variants"][0]["hanja_text"], "甲乙")
         self.assertEqual(recognize.call_args.kwargs["padding"], 0)
+        self.assertEqual(recognize.call_args.kwargs["scale"], 3.0)
         self.assertEqual((self.root / "review_state.json").read_bytes(), original)
 
     def test_zoom_controls_belong_to_image_panel(self):
@@ -290,6 +292,13 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertIs(self.window.previous_view.parent(), self.window.view.parent())
         self.assertIs(self.window.image_views.itemAt(0).widget(), self.window.view)
         self.assertIs(self.window.image_views.itemAt(1).widget(), self.window.previous_view)
+        before = self.window.view.transform().m11()
+        self.window.scale_scans(1.25)
+        self.assertAlmostEqual(self.window.view.transform().m11(), before * 1.25)
+        self.assertIn(f"현재 {self.window.view.transform().m11() * 100:.0f}%", self.window.zoom_label.text())
+        self.assertIn("이전 없음", self.window.zoom_label.text())
+        self.window.fit_scans()
+        self.assertIn(f"현재 {self.window.view.transform().m11() * 100:.0f}%", self.window.zoom_label.text())
 
     def test_recovery_persists_unverified_candidate_without_renumbering(self):
         self.window.select_person_id("p1")

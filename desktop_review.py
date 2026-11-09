@@ -66,7 +66,7 @@ class RegionOcrWorker(QObject):
             crop = request["crop"]
             _, variants, _ = run_name_ocr_variants(
                 crop, {"x": 0, "y": 0, "width": crop.shape[1], "height": crop.shape[0]},
-                lang="chi_tra_vert", padding=0, engine=request["engine"],
+                lang="chi_tra_vert", scale=3.0, padding=0, engine=request["engine"],
                 paddle_ocr=self.paddle_ocr, paddle_min_confidence=101,
             )
             result = {"request": request, "variants": variants}
@@ -231,6 +231,7 @@ class ScanView(QGraphicsView):
     selected = Signal(str)
     hovered = Signal(str)
     region_selected = Signal(object)
+    zoom_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -322,6 +323,7 @@ class ScanView(QGraphicsView):
             self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
             factor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
             self.scale(factor, factor)
+            self.zoom_changed.emit()
             event.accept()
         else:
             super().wheelEvent(event)
@@ -465,6 +467,9 @@ class ReviewWindow(QMainWindow):
         self.select_ocr_region.setCheckable(True)
         self.select_ocr_region.toggled.connect(self.toggle_region_mode)
         scan_tools_layout.addWidget(self.select_ocr_region)
+        self.zoom_label = QLabel("현재 -- · 이전 --")
+        self.zoom_label.setObjectName("muted")
+        scan_tools_layout.addWidget(self.zoom_label)
         scan_tools_layout.addStretch(1)
         left_layout.addWidget(self.scan_tools)
         self.evidence = QLabel("OCR 박스에 마우스를 올려 원문을 확인하세요.")
@@ -486,10 +491,12 @@ class ReviewWindow(QMainWindow):
         self.previous_view = ScanView()
         self.previous_view.selected.connect(self.select_continuation_target)
         self.previous_view.hovered.connect(self.evidence.setText)
+        self.previous_view.zoom_changed.connect(self.update_zoom_label)
         self.previous_view.region_selected.connect(lambda box: self.set_selected_region(self.previous_page, self.previous_view, box))
         self.view = ScanView()
         self.view.selected.connect(self.select_person_id)
         self.view.hovered.connect(self.evidence.setText)
+        self.view.zoom_changed.connect(self.update_zoom_label)
         self.view.region_selected.connect(lambda box: self.set_selected_region(self.page, self.view, box))
         self.image_views.addWidget(self.view, 1)
         self.image_views.addWidget(self.previous_view, 1)
@@ -631,15 +638,19 @@ class ReviewWindow(QMainWindow):
         self.region_label = QLabel("이미지에서 OCR 영역 드래그를 켜고 사각형을 선택하세요.")
         self.region_label.setWordWrap(True)
         region_layout.addWidget(self.region_label)
+        ocr_source = QLabel("원본 이미지의 선택 영역을 사용하며, 화면 확대율과 무관하게 OCR 내부에서 3배 확대합니다.")
+        ocr_source.setWordWrap(True)
+        region_layout.addWidget(ocr_source)
         self.run_region_ocr_button = QPushButton("선택 영역 OCR 실행")
         self.run_region_ocr_button.setEnabled(False)
         self.run_region_ocr_button.clicked.connect(self.run_region_ocr)
         region_layout.addWidget(self.run_region_ocr_button)
         self.region_candidates = QListWidget()
+        self.region_candidates.itemDoubleClicked.connect(self.copy_region_candidate)
         region_layout.addWidget(self.region_candidates, 1)
-        self.apply_region_candidate_button = QPushButton("선택 후보를 현재 인물 이름에 입력")
-        self.apply_region_candidate_button.clicked.connect(self.apply_region_candidate)
-        region_layout.addWidget(self.apply_region_candidate_button)
+        self.copy_region_candidate_button = QPushButton("선택한 한자 후보 복사")
+        self.copy_region_candidate_button.clicked.connect(self.copy_region_candidate)
+        region_layout.addWidget(self.copy_region_candidate_button)
         tabs.addTab(region_panel, "선택 영역 OCR")
         tabs.currentChanged.connect(self.render_scan)
         tabs.currentChanged.connect(lambda index: save.setVisible(index == 0))
@@ -889,11 +900,18 @@ class ReviewWindow(QMainWindow):
     def scale_scans(self, factor):
         for view in (self.previous_view, self.view):
             view.scale(factor, factor)
+        self.update_zoom_label()
 
     def fit_scans(self):
         for view in (self.previous_view, self.view):
             if not view.sceneRect().isEmpty():
                 view.fitInView(view.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.update_zoom_label()
+
+    def update_zoom_label(self):
+        def percentage(view):
+            return f"{view.transform().m11() * 100:.0f}%" if not view.sceneRect().isEmpty() else "없음"
+        self.zoom_label.setText(f"현재 {percentage(self.view)} · 이전 {percentage(self.previous_view)}")
 
     def toggle_scan_boxes(self, hidden):
         for view in (self.view, self.previous_view):
@@ -985,16 +1003,13 @@ class ReviewWindow(QMainWindow):
                       if str(variant.get("status") or "").startswith("error:")]
             self.region_candidates.addItem(errors[0] if errors else "인식된 한자 후보가 없습니다. 영역을 다시 선택해 보세요.")
 
-    def apply_region_candidate(self):
-        item = self.region_candidates.currentItem()
+    def copy_region_candidate(self, item=None):
+        if not isinstance(item, QListWidgetItem):
+            item = self.region_candidates.currentItem()
         if not item or not item.data(Qt.ItemDataRole.UserRole):
             return
-        if self.region_page is not self.page or not self.selected_id:
-            self.region_label.setText("현재 검수 페이지의 인물을 선택한 뒤 후보를 이름에 입력하세요.")
-            return
-        self.inputs["transcribed_name_hanja"].setText(item.data(Qt.ItemDataRole.UserRole))
-        self.mark_dirty()
-        self.tabs.setCurrentIndex(0)
+        QApplication.clipboard().setText(item.data(Qt.ItemDataRole.UserRole))
+        self.statusBar().showMessage("한자 후보를 클립보드에 복사했습니다.", 4000)
 
     def page_directory(self, page):
         page_dir = Path(page.get("page_output_dir") or self.root / Path(str(page.get("source_image", page_name(page)))).stem)
