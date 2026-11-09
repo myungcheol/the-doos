@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 import uuid
@@ -12,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PySide6.QtCore import Qt, Signal, QRectF, QTimer, QObject, QThread, Slot
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QPen, QPixmap, QPainter
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QImage, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
     QGridLayout,
@@ -248,6 +249,31 @@ class ScanView(QGraphicsView):
         self.selection_bbox = None
         self.selection_start = None
         self.selection_rect = None
+        self.original_pixmap = QPixmap()
+        self.image_source = None
+        self.image_item = None
+        self.enlarged_pixmaps = {}
+
+    def update_image_quality(self):
+        """Resample the display only; keep the scene in source-image coordinates."""
+        if self.image_item is None or self.original_pixmap.isNull():
+            return
+        zoom = self.transform().m11() * self.devicePixelRatioF()
+        factor = min(4, max(1, math.ceil(zoom)))
+        while factor > 1 and self.original_pixmap.width() * self.original_pixmap.height() * factor * factor > 12_000_000:
+            factor -= 1
+        if factor == 1 or self.image_source is None:
+            display = self.original_pixmap
+        else:
+            if factor not in self.enlarged_pixmaps:
+                enlarged = cv2.resize(self.image_source, None, fx=factor, fy=factor, interpolation=cv2.INTER_LANCZOS4)
+                rgb = cv2.cvtColor(enlarged, cv2.COLOR_BGR2RGB)
+                qimage = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
+                self.enlarged_pixmaps[factor] = QPixmap.fromImage(qimage.copy())
+            display = self.enlarged_pixmaps[factor]
+        if self.image_item.pixmap().cacheKey() != display.cacheKey():
+            self.image_item.setPixmap(display)
+            self.image_item.setScale(1 / factor)
 
     def set_region_mode(self, enabled):
         self.region_mode = enabled
@@ -270,12 +296,17 @@ class ScanView(QGraphicsView):
             box["x"] - self.offset[0], box["y"] - self.offset[1], box["width"], box["height"], pen
         )
 
-    def show_page(self, pixmap, offset, people, selected, sources, relationships):
+    def show_page(self, pixmap, offset, people, selected, sources, relationships, image_source=None):
         self.people, self.sources, self.offset = people, sources, offset
+        if self.original_pixmap.cacheKey() != pixmap.cacheKey():
+            self.enlarged_pixmaps.clear()
+        self.original_pixmap = pixmap
+        self.image_source = image_source
         scene = self.scene()
         scene.clear()
-        scene.addPixmap(pixmap)
+        self.image_item = scene.addPixmap(pixmap)
         scene.setSceneRect(QRectF(pixmap.rect()))
+        self.update_image_quality()
         self.selection_rect = None
         if not self.overlays_visible:
             self.draw_selection()
@@ -909,6 +940,8 @@ class ReviewWindow(QMainWindow):
         self.update_zoom_label()
 
     def update_zoom_label(self):
+        for view in (self.view, self.previous_view):
+            view.update_image_quality()
         def percentage(view):
             return f"{view.transform().m11() * 100:.0f}%" if not view.sceneRect().isEmpty() else "없음"
         self.zoom_label.setText(f"현재 {percentage(self.view)} · 이전 {percentage(self.previous_view)}")
@@ -1021,7 +1054,6 @@ class ReviewWindow(QMainWindow):
 
     def load_page_visual(self, page):
         image, offset, _ = get_page_image(page, str(self.page_directory(page)))
-        from PySide6.QtGui import QImage
         rgb = image[:, :, ::-1].copy()
         qimage = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
         return QPixmap.fromImage(qimage), offset, image
@@ -1214,11 +1246,13 @@ class ReviewWindow(QMainWindow):
         else:
             self.evidence.setText("OCR 박스에 마우스를 올려 원문을 확인하세요.")
         self.view.show_page(self.pixmap, self.offset, self.page_people, self.selected_id, sources,
-                            [r for r in self.relationships() if r.get("source_page") == self.page_name])
+                            [r for r in self.relationships() if r.get("source_page") == self.page_name],
+                            self.source_image)
         previous_target = self.continuation_target.currentData() if self.tabs.currentIndex() == 2 else None
         self.previous_view.show_page(
             self.previous_pixmap, self.previous_offset, self.previous_people, previous_target, [],
-            [r for r in self.relationships() if self.previous_page and r.get("source_page") == page_name(self.previous_page)]
+            [r for r in self.relationships() if self.previous_page and r.get("source_page") == page_name(self.previous_page)],
+            self.previous_source_image,
         )
 
     def refresh_relations(self):

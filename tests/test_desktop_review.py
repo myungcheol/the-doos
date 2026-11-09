@@ -8,7 +8,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, QPointF
     from PySide6.QtGui import QImage, QInputMethodEvent, QRawFont
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox
@@ -299,6 +299,19 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertIn("이전 없음", self.window.zoom_label.text())
         self.window.fit_scans()
         self.assertIn(f"현재 {self.window.view.transform().m11() * 100:.0f}%", self.window.zoom_label.text())
+
+    def test_high_zoom_uses_lanczos_display_without_changing_source_coordinates(self):
+        view = self.window.view
+        original = self.window.source_image.copy()
+        view.resetTransform()
+        view.scale(2.72, 2.72)
+        view.update_image_quality()
+        self.assertEqual(view.image_item.pixmap().width(), view.original_pixmap.width() * 3)
+        self.assertAlmostEqual(view.image_item.scale(), 1 / 3)
+        mapped = view.image_item.mapToScene(QPointF(30, 45))
+        self.assertAlmostEqual(mapped.x(), 10)
+        self.assertAlmostEqual(mapped.y(), 15)
+        np.testing.assert_array_equal(self.window.source_image, original)
 
     def test_recovery_persists_unverified_candidate_without_renumbering(self):
         self.window.select_person_id("p1")
