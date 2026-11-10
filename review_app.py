@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from person_info_extractor import extract_person_info_draft, get_field_source_columns
+from person_info_extractor import FIELD_LABELS, extract_person_info_draft, get_field_source_columns
 from person_data_model import (
     build_person_registry, build_raw_data, build_reviewed_data, ensure_person_uid,
     make_source_occurrence, person_local_key, registry_options, strip_name_marker,
@@ -26,6 +26,9 @@ from review_helpers import (
     format_relationship_label, relationship_bbox_anchors, resolve_person_field_value,
     resolve_ocr_focus,
 )
+from review_extensions import (continuation_field_parts, append_continuation_text,
+                               append_continuation_spouses, continuation_suppressions_for_save,
+                               continuation_needs_review)
 
 st.set_page_config(page_title="Jokbo OCR 검수", page_icon="📜", layout="wide")
 
@@ -220,6 +223,8 @@ def build_review_data(root: Path, base_people: list[dict[str, Any]],
             person.setdefault("gender", gender)
         update = state.get("people_updates", {}).get(person.get("person_id"), {})
         person.update(update)
+        if continuation_needs_review(continuation_field_parts(person, state), update):
+            person["information_review_status"] = "needs_review"
         cleaned_review_name, update_marker, update_gender = strip_name_marker(
             person.get("transcribed_name_hanja") or person.get("name_hanja_candidate")
         )
@@ -930,6 +935,8 @@ def main() -> None:
                         selected_person, page_result, page_people
                     )
                     draft_values = auto_draft.get("draft_values", {}) if isinstance(auto_draft, dict) else {}
+                    continuation_parts = continuation_field_parts(selected_person, state)
+                    suppressed_continuations = update.get("continuation_field_suppressions") or {}
                     current_uid = selected_person.get("person_uid") or state.get("person_uid_map", {}).get(
                         person_local_key(selected_person, state.get("edition", {}).get("edition_id")), ""
                     )
@@ -958,9 +965,14 @@ def main() -> None:
                         st.caption("다른 판본에서 등록한 인물이 있으면 공용 레지스트리 파일을 지정한 뒤 기존 ID를 재사용할 수 있습니다.")
 
                     def person_value(field: str, fallback: Any = "") -> Any:
-                        return resolve_person_field_value(
+                        value = resolve_person_field_value(
                             field, update, selected_person, draft_values, fallback
                         )
+                        if field in continuation_parts:
+                            return append_continuation_text(
+                                value, continuation_parts[field], suppressed_continuations.get(field, []),
+                                "\n" if field in ("biography_text", "spouse_text") else " / ")
+                        return value
 
                     current_transcription = (
                         person_value("transcribed_name_hanja")
@@ -1047,6 +1059,14 @@ def main() -> None:
                                 st.caption(f"{label} 근거: " + " · ".join(snippets))
                             if auto_draft.get("message"):
                                 st.caption(auto_draft["message"])
+                    if continuation_parts:
+                        with st.expander("다른 페이지에서 연결한 기록의 필드 초안", expanded=True):
+                            st.caption("연결된 OCR을 열 순서와 표식으로 분류한 미검수 초안입니다. 아래 입력란에 이어 붙여 표시합니다.")
+                            for field, items in continuation_parts.items():
+                                if field == "biography_text":
+                                    continue
+                                for item in items:
+                                    st.caption(f"{item.get('source_page')} · {FIELD_LABELS.get(field, field)}: {item['text']}")
 
                     with st.form(f"person_form_{selected_person_id}"):
                         corrected_name = st.text_input("검수한 한자 이름 (子/女 제외)", value=current_transcription)
@@ -1084,12 +1104,16 @@ def main() -> None:
                         if not isinstance(existing_spouses, list):
                             existing_spouses = []
                         if not existing_spouses:
-                            legacy_spouse = person_value("spouse_text")
+                            legacy_spouse = resolve_person_field_value(
+                                "spouse_text", update, selected_person, draft_values)
                             # OCR alone cannot reliably distinguish wife from concubine;
                             # keep the extracted text unclassified until a reviewer decides.
                             existing_spouses = ([{"type": "other", "name_and_record": legacy_spouse,
                                                   "notes": "OCR 초안 - 부인/첩 구분 검수 필요"}]
                                                 if legacy_spouse else [])
+                        existing_spouses = append_continuation_spouses(
+                            existing_spouses, continuation_parts.get("spouse_text", []),
+                            suppressed_continuations.get("spouses", []))
                         spouse_rows = []
                         for spouse in existing_spouses:
                             kind = spouse.get("type", "wife")
@@ -1128,7 +1152,8 @@ def main() -> None:
                         )
                         mark_information_reviewed = st.checkbox(
                             "추가 인물 정보(OCR 초안 포함)를 원본과 대조했습니다.",
-                            value=person_value("information_review_status") == "confirmed",
+                            value=(person_value("information_review_status") == "confirmed"
+                                   and not continuation_needs_review(continuation_parts, update)),
                         )
                         if st.form_submit_button("인명 및 인물 정보 저장", use_container_width=True):
                             try:
@@ -1185,6 +1210,13 @@ def main() -> None:
                                     "review_status": "confirmed" if mark_confirmed else "needs_review",
                                     "transcription_status": "manually_verified" if mark_confirmed else "pending_manual_verification",
                                 })
+                                updated_person["continuation_field_suppressions"] = continuation_suppressions_for_save(
+                                    suppressed_continuations,
+                                    {"birth_text": birth_text, "death_text": death_text,
+                                     "office_title": office_title, "spouse_text": legacy_spouse_text,
+                                     "burial_text": burial_text, "courtesy_name_hanja": courtesy_name,
+                                     "pen_name_hanja": pen_name, "biography_text": biography_text},
+                                    reviewed_spouses, continuation_parts)
                                 state["people_updates"][selected_person_id] = updated_person
                                 save_state(root, state, all_people, all_relationships, page_results)
                                 st.success("인명과 인물 정보를 저장했습니다.")

@@ -11,6 +11,7 @@ import re
 import uuid
 
 from person_data_model import ensure_person_uid, make_source_occurrence
+from person_info_extractor import extract_continuation_info_draft
 
 
 def page_name(page):
@@ -159,6 +160,98 @@ def make_continuation(page, row, columns, target, state):
             "source_occurrence": occurrence}
 
 
+def continuation_field_parts(person, state):
+    """Return unverified field snippets from confirmed links to this person."""
+    matching = [link for link in state.get("continuation_links", [])
+                if link.get("review_status") == "confirmed"
+                and (link.get("target_person_id") == person.get("person_id")
+                     or (person.get("person_uid") and link.get("target_person_uid") == person.get("person_uid")))]
+    matching.sort(key=lambda link: (page_sort_key({"source_page": link.get("source_page")}),
+                                    str(link.get("source_row_id") or "")))
+    result = {}
+    for link in matching:
+        draft = extract_continuation_info_draft(link.get("columns") or [])
+        for field, value in draft["draft_values"].items():
+            result.setdefault(field, []).append({
+                "continuation_id": link.get("continuation_id"),
+                "source_page": link.get("source_page"),
+                "source_row_id": link.get("source_row_id"),
+                "text": value,
+                "columns": draft["field_sources"].get(field, link.get("columns") or []),
+            })
+    return result
+
+
+def append_continuation_text(value, parts, suppressed=(), separator=" / "):
+    """Show linked OCR after the existing text, once per source snippet."""
+    result = str(value or "")
+    for part in parts:
+        snippet = str(part.get("text") or "").strip()
+        if snippet and part.get("continuation_id") not in suppressed and snippet not in result:
+            result = f"{result}{separator if result else ''}{snippet}"
+    return result
+
+
+def append_continuation_spouses(spouses, parts, suppressed=()):
+    """Offer linked spouse text as separate unverified entries for review."""
+    result = deepcopy(spouses) if isinstance(spouses, list) else []
+    for part in parts:
+        snippet = str(part.get("text") or "").strip()
+        if (not snippet or part.get("continuation_id") in suppressed
+                or any(snippet in str(item.get("name_and_record") or item.get("name_text") or "")
+                       for item in result if isinstance(item, dict))):
+            continue
+        result.append({"type": "other", "name_and_record": snippet,
+                       "notes": f"이어진 OCR 초안 · {part.get('source_page') or '출처 미상'} · 유형 검수 필요",
+                       "review_status": "needs_review"})
+    return result
+
+
+def continuation_suppressions_for_save(previous, values, spouses, parts):
+    """Remember reviewer removal of an offered snippet across later reloads."""
+    suppressed = {field: set(ids) for field, ids in (previous or {}).items()}
+    for field, items in parts.items():
+        if field not in values and field != "spouse_text":
+            continue
+        saved = str(values.get(field) or "")
+        for item in items:
+            link_id = item.get("continuation_id")
+            if not link_id:
+                continue
+            target = suppressed.setdefault(field, set())
+            if item.get("text") and item["text"] in saved:
+                target.discard(link_id)
+            else:
+                target.add(link_id)
+    for item in parts.get("spouse_text", []):
+        link_id = item.get("continuation_id")
+        if not link_id:
+            continue
+        target = suppressed.setdefault("spouses", set())
+        if any(str(item.get("text") or "") in str(spouse.get("name_and_record") or spouse.get("name_text") or "")
+               for spouse in spouses if isinstance(spouse, dict)):
+            target.discard(link_id)
+        else:
+            target.add(link_id)
+    return {field: sorted(ids) for field, ids in suppressed.items() if ids}
+
+
+def continuation_needs_review(parts, update):
+    """A newly attached snippet needs a fresh information review decision."""
+    suppressed = update.get("continuation_field_suppressions") or {}
+    spouses = update.get("spouses") or []
+    for field, items in parts.items():
+        saved = str(update.get(field) or "")
+        if field == "spouse_text":
+            saved += " ".join(str(item.get("name_and_record") or item.get("name_text") or "")
+                              for item in spouses if isinstance(item, dict))
+        for item in items:
+            if (item.get("continuation_id") not in suppressed.get(field, [])
+                    and item.get("text") not in saved):
+                return True
+    return False
+
+
 def apply_continuations(person, state):
     """Export additional evidence separately; never rewrite a reviewed biography."""
     links = [deepcopy(link) for link in state.get("continuation_links", [])
@@ -167,6 +260,19 @@ def apply_continuations(person, state):
         return
     person["raw_data"]["record_ocr"]["continuations"] = links
     person["source_occurrences"].extend(link["source_occurrence"] for link in links)
+    raw_fields = person["raw_data"].setdefault("field_ocr", {})
+    for link in links:
+        draft = extract_continuation_info_draft(link.get("columns") or [])
+        for field, value in draft["draft_values"].items():
+            if field == "biography_text":
+                continue
+            raw_fields.setdefault(field, {"text": [], "columns": []}).setdefault("continuations", []).append({
+                "continuation_id": link.get("continuation_id"),
+                "source_page": link.get("source_page"),
+                "source_row_id": link.get("source_row_id"),
+                "text": value,
+                "columns": draft["field_sources"].get(field, []),
+            })
 
 
 def recover_name_candidates(image, page, people, offset=(0, 0)):

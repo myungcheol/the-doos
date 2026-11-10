@@ -23,9 +23,13 @@ from PySide6.QtWidgets import (
 )
 
 from person_data_model import ensure_person_uid, strip_name_marker
-from person_info_extractor import extract_person_info_draft, get_field_source_columns
+from person_info_extractor import (FIELD_LABELS, extract_continuation_info_draft,
+                                   extract_person_info_draft, get_field_source_columns)
 from review_extensions import (merge_review_sources, page_name, page_sort_key, orphan_regions,
-                               previous_row_people, make_continuation, recover_name_candidates)
+                               previous_row_people, make_continuation, recover_name_candidates,
+                               continuation_field_parts, append_continuation_text,
+                               append_continuation_spouses, continuation_suppressions_for_save,
+                               continuation_needs_review)
 
 # OpenCV's Linux wheel may replace these variables during import, directing Qt
 # at cv2's plugin directory instead of PySide6's input-method plugins.
@@ -1182,9 +1186,15 @@ class ReviewWindow(QMainWindow):
         self.draft = extract_person_info_draft(person, self.page, self.page_people) if person else {}
         update = self.state["people_updates"].get(self.selected_id, {})
         draft_values = self.draft.get("draft_values") or {}
+        self.continuation_parts = continuation_field_parts(person, self.state) if person else {}
+        suppressed = update.get("continuation_field_suppressions") or {}
         self.raw_name.setText(str((person or {}).get("raw_name_ocr") or (person or {}).get("name_hanja_candidate") or ""))
         for key, widget in self.inputs.items():
             value = update.get(key, (person or {}).get(key, draft_values.get(key, "")))
+            if key in self.continuation_parts:
+                value = append_continuation_text(
+                    value, self.continuation_parts[key], suppressed.get(key, []),
+                    "\n" if key in ("biography_text", "spouse_text") else " / ")
             if key == "transcribed_name_hanja" and not value and person:
                 value = strip_name_marker(person.get("name_hanja_candidate") or person.get("raw_name_ocr") or "")[0]
             if isinstance(widget, QTextEdit):
@@ -1204,14 +1214,22 @@ class ReviewWindow(QMainWindow):
         self.gender.setCurrentIndex(self.gender.findData(existing_gender))
         status = update.get("review_status", (person or {}).get("review_status", "needs_review"))
         self.name_status.setCurrentIndex(max(0, self.name_status.findData(status)))
-        self.info_confirmed.setChecked(update.get("information_review_status", (person or {}).get("information_review_status")) == "confirmed")
+        self.info_confirmed.setChecked(
+            update.get("information_review_status", (person or {}).get("information_review_status")) == "confirmed"
+            and not continuation_needs_review(self.continuation_parts, update))
         spouses = update.get("spouses", (person or {}).get("spouses"))
         if spouses is None and draft_values.get("spouse_text"):
             spouses = [{"type": "other", "name_and_record": draft_values["spouse_text"],
                         "notes": "OCR 초안 - 부인/첩 구분 검수 필요", "review_status": "needs_review"}]
+        spouses = append_continuation_spouses(
+            spouses, self.continuation_parts.get("spouse_text", []), suppressed.get("spouses", []))
         self.partners.setPlainText(json.dumps(spouses or [], ensure_ascii=False, indent=2))
         self.attached_records.setPlainText("\n\n".join(
-            f"{link.get('source_page')} · {link.get('source_row_id')}\n{link.get('text', '')}"
+            f"{link.get('source_page')} · {link.get('source_row_id')}\n"
+            + "\n".join(f"{FIELD_LABELS.get(field, field)} 초안: {value}"
+                        for field, value in extract_continuation_info_draft(link.get("columns") or [])["draft_values"].items()
+                        if field != "biography_text")
+            + f"\n원문: {link.get('text', '')}"
             for link in self.state.get("continuation_links", []) if link.get("review_status") == "confirmed"
             and link.get("target_person_id") == self.selected_id
         ))
@@ -1316,6 +1334,9 @@ class ReviewWindow(QMainWindow):
                 f"{labels.get(p.get('type'), '기타')}: {p.get('name_and_record') or p.get('name_text')}"
                 for p in spouses if p.get("name_and_record") or p.get("name_text")
             ) or None
+        values["continuation_field_suppressions"] = continuation_suppressions_for_save(
+            (old or {}).get("continuation_field_suppressions"), values, spouses,
+            getattr(self, "continuation_parts", {}))
         self.state["people_updates"][self.selected_id] = {**(old or {}), **values}
         if not self.persist():
             if old is None:

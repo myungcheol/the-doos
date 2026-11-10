@@ -8,7 +8,11 @@ import numpy as np
 from jokbo_ocr import detect_large_printed_name_regions
 from person_data_model import ensure_person_uid
 from review_extensions import (merge_review_sources, previous_row_people, orphan_columns, orphan_regions,
-                               make_continuation, apply_continuations, recover_name_candidates)
+                               make_continuation, apply_continuations, recover_name_candidates,
+                               continuation_field_parts, append_continuation_text,
+                               append_continuation_spouses, continuation_suppressions_for_save,
+                               continuation_needs_review)
+from person_info_extractor import extract_continuation_info_draft
 
 
 def column(identifier, x, text="原文"):
@@ -76,6 +80,57 @@ class ContinuationTests(unittest.TestCase):
         self.assertEqual(self.page, source)
         with self.assertRaises(ValueError):
             make_continuation(self.page, self.row, [self.row["columns"][0]], self.people[0], self.state)
+
+    def test_linked_mixed_record_is_split_with_original_column_evidence(self):
+        texts = ["穆宗即拜為左司官", "又以宮池為公", "邑封某君", "某宗九年七月",
+                 "卒6禮葬于扶", "郡下西面石佛", "庚坐之原", "夫人李氏甲",
+                 "七月七日生庚", "七月十九日卒"]
+        columns = [column(f"c{i}", 600 - 25 * i, text) for i, text in enumerate(texts)]
+        draft = extract_continuation_info_draft(columns)
+        values = draft["draft_values"]
+        self.assertEqual(values["office_title"], " / ".join(texts[:3]))
+        self.assertEqual(values["death_text"], " / ".join([texts[3], "卒6"]))
+        self.assertEqual(values["burial_text"], " / ".join(["禮葬于扶", texts[5], texts[6]]))
+        self.assertEqual(values["spouse_text"], " / ".join(texts[7:]))
+        self.assertNotIn("birth_text", values)
+        self.assertEqual(draft["field_sources"]["burial_text"][1]["bbox"], columns[5]["bbox"])
+        self.assertEqual(draft["field_sources"]["spouse_text"][0]["token_boxes"], columns[7]["token_boxes"])
+        self.assertEqual(values["biography_text"].splitlines(), texts)
+
+    def test_continuation_fields_append_once_and_reviewer_removal_is_respected(self):
+        columns = [column("a", 600, "某年卒"), column("b", 575, "禮葬于某原")]
+        link = make_continuation(self.page, self.row, columns, self.people[1], self.state)
+        self.state["continuation_links"] = [link]
+        parts = continuation_field_parts(self.people[1], self.state)
+        self.assertTrue(continuation_needs_review(parts, {"information_review_status": "confirmed"}))
+        death = parts["death_text"]
+        shown = append_continuation_text("기존 판독", death)
+        self.assertEqual(append_continuation_text(shown, death), shown)
+        suppressed = continuation_suppressions_for_save({}, {"death_text": "기존 판독"}, [], parts)
+        self.assertEqual(suppressed["death_text"], [link["continuation_id"]])
+        self.assertEqual(append_continuation_text("기존 판독", death, suppressed["death_text"]), "기존 판독")
+        reviewed = {"death_text": death[0]["text"],
+                    "burial_text": parts["burial_text"][0]["text"],
+                    "biography_text": parts["biography_text"][0]["text"]}
+        self.assertFalse(continuation_needs_review(parts, reviewed))
+        self.assertEqual(append_continuation_spouses([], []), [])
+        link["review_status"] = "rejected"
+        self.assertEqual(continuation_field_parts(self.people[1], self.state), {})
+
+    def test_linked_burial_without_a_leading_keyword_keeps_previous_column(self):
+        columns = [column("a", 600, "基某山"), column("b", 575, "壬坐之原"),
+                   column("c", 550, "基失傳有設壇")]
+        draft = extract_continuation_info_draft(columns)
+        self.assertEqual(draft["draft_values"]["burial_text"], " / ".join(c["text"] for c in columns))
+
+    def test_unverified_linked_spouse_can_be_removed_without_reappearing(self):
+        part = {"continuation_id": "link1", "source_page": "002.jpg", "text": "夫人某氏"}
+        spouses = append_continuation_spouses([{"type": "wife", "name_and_record": "기존 배우자"}], [part])
+        self.assertEqual([item["type"] for item in spouses], ["wife", "other"])
+        suppressed = continuation_suppressions_for_save(
+            {}, {"spouse_text": ""}, spouses[:1], {"spouse_text": [part]})
+        self.assertEqual(suppressed["spouses"], ["link1"])
+        self.assertEqual(append_continuation_spouses(spouses[:1], [part], suppressed["spouses"]), spouses[:1])
 
     def test_detached_link_is_excluded_and_can_be_relinked(self):
         link = make_continuation(self.page, self.row, [self.row["columns"][0]], self.people[1], self.state)

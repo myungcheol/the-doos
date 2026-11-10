@@ -14,6 +14,7 @@ try:
     from PySide6.QtWidgets import QApplication, QMessageBox
     from desktop_review import (ReviewComboBox, ReviewWindow, RegionOcrWorker, configure_application,
                                 crop_selected_region, restore_qt_environment)
+    from review_extensions import make_continuation
 except ImportError:
     QApplication = None
 
@@ -86,6 +87,44 @@ class DesktopReviewTests(unittest.TestCase):
         update = state["people_updates"]["p2"]
         self.assertTrue(update["spouse_text"].startswith("夫人洪氏"))
         self.assertEqual(update["spouses"][0]["review_status"], "needs_review")
+
+    def test_linked_record_prefills_matching_fields_without_losing_reviewed_text(self):
+        row = {"row_id": "next_row", "row_number": 1, "columns": [
+            {"column_id": "death", "text": "某年卒", "bbox": {"x": 80, "y": 10, "width": 12, "height": 35}},
+            {"column_id": "burial", "text": "禮葬于某原", "bbox": {"x": 60, "y": 10, "width": 12, "height": 35}},
+            {"column_id": "spouse", "text": "夫人某氏", "bbox": {"x": 40, "y": 10, "width": 12, "height": 35}},
+        ]}
+        state = self.window.state
+        state.setdefault("people_updates", {}).setdefault("p2", {})["death_text"] = "검수한 사망"
+        state["people_updates"]["p2"]["information_review_status"] = "confirmed"
+        target = next(person for person in self.window.base_people if person["person_id"] == "p2")
+        link = make_continuation({"source_image": "next.png", "rows": [row]}, row,
+                                 row["columns"], target, state)
+        state.setdefault("continuation_links", []).append(link)
+        self.write("review_state.json", state)
+        self.window.close()
+        self.window = ReviewWindow(str(self.root))
+        self.window.select_person_id("p2")
+        self.assertEqual(self.window.inputs["death_text"].text(), "검수한 사망 / 某年卒")
+        self.assertEqual(self.window.inputs["burial_text"].text(), "禮葬于某原")
+        self.assertIn("夫人某氏", self.window.inputs["spouse_text"].toPlainText())
+        self.assertEqual(json.loads(self.window.partners.toPlainText())[0]["type"], "other")
+        self.assertIn("사망 정보 초안", self.window.attached_records.toPlainText())
+        self.assertFalse(self.window.info_confirmed.isChecked())
+        self.window.save_person()
+        self.window.select_person_id("p1")
+        self.window.select_person_id("p2")
+        self.assertEqual(self.window.inputs["death_text"].text().count("某年卒"), 1)
+        exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
+        person = next(p for p in exports if p["person_id"] == "p2")
+        evidence = person["raw_data"]["field_ocr"]["death_text"]["continuations"][0]
+        self.assertEqual(evidence["columns"][0]["bbox"], row["columns"][0]["bbox"])
+        self.assertEqual(person["reviewed_data"]["information_review_status"], "needs_review")
+        self.window.inputs["death_text"].setText("검수한 사망")
+        self.window.save_person()
+        self.window.select_person_id("p1")
+        self.window.select_person_id("p2")
+        self.assertEqual(self.window.inputs["death_text"].text(), "검수한 사망")
 
     def test_bundled_font_covers_korean_and_hanja(self):
         self.assertTrue(self.font_loaded)

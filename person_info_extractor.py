@@ -84,7 +84,7 @@ def get_person_section_columns(
     return columns
 
 
-def _field_indices(columns: list[dict[str, Any]]) -> dict[str, list[int]]:
+def _field_indices(columns: list[dict[str, Any]], continuation: bool = False) -> dict[str, list[int]]:
     """Keep spouse biographies separate from the subject's keyword matches."""
     spouse_pattern = FIELD_PATTERNS["spouse_text"]
     spouse_start = next((i for i, col in enumerate(columns)
@@ -95,17 +95,33 @@ def _field_indices(columns: list[dict[str, Any]]) -> dict[str, list[int]]:
         if field == "spouse_text":
             matches[field] = list(range(spouse_start, len(columns))) if spouse_start < len(columns) else []
             continue
+        if continuation and field == "office_title":
+            pattern += r"|拜為|拜爲|邑封|學士|学士"
         matches[field] = [i for i, col in enumerate(own_columns)
                           if re.search(pattern, col["text"], flags=re.IGNORECASE)
                           and not (field == "pen_name_hanja" and re.search(r"因[號号]", col["text"]))]
 
     claimed = {i for field, indices in matches.items()
                if field != "spouse_text" for i in indices}
+    if continuation:
+        # Consecutive OCR columns can carry one phrase whose keyword occurs
+        # again after a single unmarked column.
+        for field in ("office_title", "burial_text"):
+            anchors = matches[field]
+            matches[field] = sorted(set(anchors) | {
+                a + 1 for a, b in zip(anchors, anchors[1:])
+                if b == a + 2 and a + 1 not in claimed
+            })
     for field in ("birth_text", "death_text"):
         indices = matches[field]
         matches[field] = sorted(set(indices) | {
             i - 1 for i in indices if i > 0 and i - 1 not in claimed
         })
+    if continuation and matches["burial_text"]:
+        first = matches["burial_text"][0]
+        used = claimed | set(matches["birth_text"]) | set(matches["death_text"])
+        if first > 0 and first - 1 not in used and first - 1 not in matches["office_title"]:
+            matches["burial_text"] = [first - 1, *matches["burial_text"]]
     # A burial sentence often continues into the following vertical column.
     burial = matches["burial_text"]
     if burial:
@@ -116,6 +132,23 @@ def _field_indices(columns: list[dict[str, Any]]) -> dict[str, list[int]]:
             burial = [*burial, last + 1]
     matches["burial_text"] = burial
     return matches
+
+
+def extract_continuation_info_draft(columns: list[dict[str, Any]]) -> dict[str, Any]:
+    """Classify linked page columns while keeping every original evidence box."""
+    ordered = sorted((col for col in columns if str(col.get("text") or "").strip()),
+                     key=_box_center_x, reverse=True)
+    values: dict[str, str] = {}
+    sources: dict[str, list[dict[str, Any]]] = {}
+    if ordered:
+        values["biography_text"] = "\n".join(str(col["text"]) for col in ordered)
+    for field, indices in _field_indices(ordered, continuation=True).items():
+        selected = [(ordered[i], _field_column_text(field, str(ordered[i]["text"]))) for i in indices]
+        selected = [(col, text) for col, text in selected if text]
+        if selected:
+            values[field] = " / ".join(text for _, text in selected)
+            sources[field] = [col for col, _ in selected]
+    return {"draft_values": values, "field_sources": sources}
 
 
 def _field_column_text(field: str, text: str) -> str:
