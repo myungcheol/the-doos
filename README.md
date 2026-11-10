@@ -429,7 +429,7 @@ python desktop_review.py output/
 - `review_status`: 인명 검수 상태
 - `information_review_status`: 추가 정보 검수 상태
 
-날짜 변환은 `historical_dates.py`와 `sxtwl==2.0.7`을 사용합니다. 서기 날짜는 **역산 그레고리력**으로 표시하며, `sxtwl`의 중국 천문 역법 모델을 사용하므로 시대·지역에 따라 실제 고려/조선의 역일과 다를 가능성을 검수해야 합니다. 고려 왕 원년은 [국사편찬위원회 『고려사절요』 목차](https://db.history.go.kr/goryeo/compareViewer.do?levelId=kj_%24s04), 조선 왕대는 [국사편찬위원회 조선왕조실록](https://sillok.history.go.kr/main.do), 개보·순화 대응 연도는 [국사편찬위원회 사료](https://db.history.go.kr/id/sy_002r_0010_0190_0060)를 참고했습니다. `sxtwl` 날짜는 [『고려사』 975년 음력 10월 26일](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=&levelType=&parentId=kr_002r_0570_0010&types=r)과 [1048년 음력 정월 초하루](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=kr&parentId=kr_007r_0040_0010&types=r)의 양력 날짜와 대조했습니다. 왕/연호 목록은 검증된 항목만 제공하며 전체 연호 목록은 아닙니다.
+날짜 변환은 `review/historical_dates.py`와 `sxtwl==2.0.7`을 사용합니다. 서기 날짜는 **역산 그레고리력**으로 표시하며, `sxtwl`의 중국 천문 역법 모델을 사용하므로 시대·지역에 따라 실제 고려/조선의 역일과 다를 가능성을 검수해야 합니다. 고려 왕 원년은 [국사편찬위원회 『고려사절요』 목차](https://db.history.go.kr/goryeo/compareViewer.do?levelId=kj_%24s04), 조선 왕대는 [국사편찬위원회 조선왕조실록](https://sillok.history.go.kr/main.do), 개보·순화 대응 연도는 [국사편찬위원회 사료](https://db.history.go.kr/id/sy_002r_0010_0190_0060)를 참고했습니다. `sxtwl` 날짜는 [『고려사』 975년 음력 10월 26일](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=&levelType=&parentId=kr_002r_0570_0010&types=r)과 [1048년 음력 정월 초하루](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=kr&parentId=kr_007r_0040_0010&types=r)의 양력 날짜와 대조했습니다. 왕/연호 목록은 검증된 항목만 제공하며 전체 연호 목록은 아닙니다.
 
 원본 이미지 바이너리를 JSON 안에 넣지는 않습니다. 경로와 bbox로 참조합니다. 이미지 파일을 이동하거나 다른 컴퓨터에서 검수할 때는 `source_image`와 `image_file` 경로가 유효하도록 유지해야 합니다.
 
@@ -654,22 +654,25 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 ```text
 the-doos/
 ├── README.md
-├── jokbo_ocr.py                 # OCR, 레이아웃, 인명 및 관계 후보 처리
-├── desktop_review.py           # PySide6 데스크톱 검수 UI
-├── review_core.py              # 검수 상태 및 내보내기 공통 함수
-├── ocr_storage.py              # 페이지별 OCR 저장·구형 결과 호환 읽기
-├── person_info_extractor.py     # 기존 OCR 열 기반 인물 정보 초안 추출
-├── person_data_model.py         # Raw/Reviewed data, person_uid, source occurrence, registry
+├── jokbo_ocr.py                 # 기존 OCR 실행 명령을 유지하는 얇은 진입점
+├── desktop_review.py           # 기존 검수 UI 실행 명령을 유지하는 얇은 진입점
+├── ocr/
+│   ├── pipeline.py             # OCR, 레이아웃, 인명 및 관계 후보 처리
+│   └── storage.py              # 페이지별 OCR 저장·구형 결과 호환 읽기
+├── review/
+│   ├── desktop.py              # PySide6 데스크톱 검수 UI
+│   ├── core.py                 # 검수 상태 및 내보내기 공통 함수
+│   ├── extensions.py           # 이어진 기록 및 누락 인명 검수 확장
+│   ├── person_info.py          # 기존 OCR 열 기반 인물 정보 초안 추출
+│   ├── historical_dates.py     # 역사 날짜 해석 및 양력 변환 초안
+│   └── data_model.py           # Raw/Reviewed data, person_uid, source occurrence
 ├── requirements.txt             # 공통 의존성
 ├── requirements-paddle.txt      # PaddleOCR 의존성
 ├── requirements-desktop.txt     # PySide6 검수 UI 의존성
 ├── .gitignore
 └── tests/
-    ├── test_paddle_adapter.py
-    ├── test_paddle_optimization.py
-    ├── test_person_data_model.py
-    ├── test_person_info_extractor.py
-    └── test_relationship_layout.py
+    ├── ocr_tests/              # OCR 파이프라인·저장·관계 배치 테스트
+    └── review_tests/           # 데스크톱·검수 상태·인물 정보 테스트
 ```
 
 
@@ -705,7 +708,7 @@ python jokbo_ocr.py --help
 ### 17.3 실제 작업을 시작할 때
 
 1. `git status`와 `git log -5 --oneline`으로 현재 코드/미커밋 변경 사항을 확인합니다.
-2. 문제를 재현하고 **19절의 변경 절차**를 따릅니다. UI 문제라면 `desktop_review.py`를, 검수 저장·내보내기 문제라면 `review_core.py`를 확인합니다.
+2. 문제를 재현하고 **19절의 변경 절차**를 따릅니다. UI 문제라면 `review/desktop.py`를, 검수 저장·내보내기 문제라면 `review/core.py`를 확인합니다.
 3. 입력 스캔, OCR 원본과 `review_state.json`은 서로 다른 역할을 합니다. 실험 출력 디렉터리로 테스트하고 검수자의 기존 결과를 덮어쓰지 않습니다.
 4. 작업 결과에는 변경 파일, 재현/테스트 결과, 실제로 실행하지 못한 테스트, 커밋 SHA를 구분해서 기록합니다.
 
@@ -715,21 +718,21 @@ python jokbo_ocr.py --help
 
 | 찾고 싶은 것 / 하려는 일 | 우선 읽을 파일 |
 |---|---|
-| OCR 전체 처리 흐름, CLI 옵션, OpenCV 레이아웃·인명/관계 후보 생성 | `jokbo_ocr.py` |
-| PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `jokbo_ocr.py`, `tests/test_paddle_adapter.py`, `tests/test_paddle_optimization.py` |
-| 부자관계 추론의 판면/기하 규칙 | `jokbo_ocr.py`, `tests/test_relationship_layout.py` |
-| 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `desktop_review.py`, `tests/test_desktop_review.py` |
-| 검수 상태·내보내기·원본 이미지 로딩 | `review_core.py` |
-| 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr_storage.py`, `tests/test_ocr_storage.py` |
-| 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review_extensions.py`, `tests/test_review_extensions.py` |
-| 실제 줌/팬, 클릭, bbox·관계선의 화면 표시 | `desktop_review.py` |
-| 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `person_info_extractor.py`, `tests/test_person_info_extractor.py` |
-| 왕/연호 연수와 음력→양력 범위 계산 | `historical_dates.py`, `tests/test_historical_dates.py` |
-| `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `person_data_model.py`, `tests/test_person_data_model.py` |
-| 데스크톱 검수 UI 실행/의존성 | `desktop_review.py`, `requirements-desktop.txt` |
+| OCR 전체 처리 흐름, CLI 옵션, OpenCV 레이아웃·인명/관계 후보 생성 | `ocr/pipeline.py` |
+| PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `ocr/pipeline.py`, `tests/ocr_tests/test_paddle_adapter.py`, `tests/ocr_tests/test_paddle_optimization.py` |
+| 부자관계 추론의 판면/기하 규칙 | `ocr/pipeline.py`, `tests/ocr_tests/test_relationship_layout.py` |
+| 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr/storage.py`, `tests/ocr_tests/test_storage.py` |
+| 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `review/desktop.py`, `tests/review_tests/test_desktop.py` |
+| 검수 상태·내보내기·원본 이미지 로딩 | `review/core.py` |
+| 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review/extensions.py`, `tests/review_tests/test_extensions.py` |
+| 실제 줌/팬, 클릭, bbox·관계선의 화면 표시 | `review/desktop.py` |
+| 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `review/person_info.py`, `tests/review_tests/test_person_info.py` |
+| 왕/연호 연수와 음력→양력 범위 계산 | `review/historical_dates.py`, `tests/review_tests/test_historical_dates.py` |
+| `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `review/data_model.py`, `tests/review_tests/test_data_model.py` |
+| 데스크톱 검수 UI 실행/의존성 | `review/desktop.py`, `desktop_review.py`, `requirements-desktop.txt` |
 | OCR 의존성 | `requirements-paddle.txt` |
 
-`person_data_extractor.py`도 저장소에 남아 있습니다. **현재 검수 UI가 직접 import하는 모듈은 `person_info_extractor.py`**입니다. 유사한 파일명이 있다는 이유로 둘을 일괄 수정하거나 삭제하지 말고 실제 import와 사용 경로를 확인하세요.
+루트의 `jokbo_ocr.py`와 `desktop_review.py`는 기존 실행 명령을 보존하는 진입점입니다. 실제 기능 수정은 각각 `ocr/`와 `review/` 아래에서 수행합니다.
 
 ### 18.2 데이터별 위치와 구분
 

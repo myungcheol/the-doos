@@ -13,16 +13,17 @@ This file is the **canonical repository-level instruction file** for coding agen
 
 | Task | Entry point |
 |---|---|
-| OCR CLI, layout, name/relationship candidates, engine optimizations | `jokbo_ocr.py` |
-| Desktop review workflow and overlays | `desktop_review.py` |
-| Review state and JSON/CSV exports | `review_core.py` |
-| Page JSON persistence and legacy OCR loading | `ocr_storage.py` |
-| Person-record OCR draft and evidence bounding boxes | `person_info_extractor.py` |
-| Stable `person_uid`, source occurrences, raw/reviewed records | `person_data_model.py` |
+| OCR CLI, layout, name/relationship candidates, engine optimizations | `ocr/pipeline.py` (`jokbo_ocr.py` launcher) |
+| Page JSON persistence and legacy OCR loading | `ocr/storage.py` |
+| Desktop review workflow and overlays | `review/desktop.py` (`desktop_review.py` launcher) |
+| Review state and JSON/CSV exports | `review/core.py` |
+| Cross-page continuations and recovered candidates | `review/extensions.py` |
+| Person-record OCR draft and evidence bounding boxes | `review/person_info.py` |
+| Stable `person_uid`, source occurrences, raw/reviewed records | `review/data_model.py` |
 | Tests and regression examples | `tests/` |
 | Setup, CLI, data formats, review steps, user workflow | README §§3–12, 17–19 |
 
-**Important:** `person_data_extractor.py` also exists, but the active review UI imports **`person_info_extractor.py`**. Check call sites before modifying similarly named modules.
+The two root scripts are stable command-line launchers. Put OCR implementation in `ocr/` and review implementation in `review/`; do not grow the launchers into duplicate implementations.
 
 ## Non-negotiable domain and data invariants
 
@@ -53,7 +54,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 4. Run:
    ```bash
    python -m unittest discover -s tests -v
-   python -m compileall -q jokbo_ocr.py desktop_review.py review_core.py ocr_storage.py person_info_extractor.py person_data_model.py tests
+   python -m compileall -q jokbo_ocr.py desktop_review.py ocr review tests
    ```
    For UI edits, manually verify in the desktop app if a display environment is available. Never claim actual GUI interaction or PaddleOCR inference testing when it was not performed.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.

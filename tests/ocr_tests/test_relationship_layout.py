@@ -1,14 +1,7 @@
-import importlib.util
-import sys
+"""Relationship geometry tests."""
 import unittest
-from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "jokbo_ocr.py"
-spec = importlib.util.spec_from_file_location("jokbo_ocr", SCRIPT)
-module = importlib.util.module_from_spec(spec)
-assert spec and spec.loader
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
+import ocr.pipeline as module
 
 
 def person(pid, x, y, name):

@@ -1,3 +1,4 @@
+"""OCR inference and batching tests."""
 import unittest
 import json
 import sys
@@ -7,9 +8,10 @@ from unittest.mock import patch
 
 import cv2
 import numpy as np
-from ocr_storage import load_ocr_output
+import ocr.pipeline as pipeline
+from ocr.storage import load_ocr_output
 
-from jokbo_ocr import (
+from ocr.pipeline import (
     find_matching_ocr_column,
     run_name_ocr_variants,
 )
@@ -37,7 +39,7 @@ class CountingPaddle:
 
 class PaddleOptimizationTests(unittest.TestCase):
     def test_successive_ocr_batches_keep_unprocessed_pages_and_review_state(self):
-        module = sys.modules["jokbo_ocr"]
+        module = pipeline
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "ocr"
             output.mkdir()
@@ -58,9 +60,9 @@ class PaddleOptimizationTests(unittest.TestCase):
                     }
 
                 with patch.object(sys, "argv", ["jokbo_ocr.py", *names, "--output", str(output)]), \
-                     patch("jokbo_ocr.collect_images", return_value=[Path(name) for name in names]), \
-                     patch("jokbo_ocr.initialize_paddle_ocr", return_value=object()), \
-                     patch("jokbo_ocr.ocr_one_image", side_effect=page_result):
+                     patch("ocr.pipeline.collect_images", return_value=[Path(name) for name in names]), \
+                     patch("ocr.pipeline.initialize_paddle_ocr", return_value=object()), \
+                     patch("ocr.pipeline.ocr_one_image", side_effect=page_result):
                     return module.main()
 
             self.assertEqual(run_batch(["001.jpg", "002.jpg"]), 0)
@@ -97,7 +99,7 @@ class PaddleOptimizationTests(unittest.TestCase):
 
     def test_cli_defaults_to_paddle_and_writes_existing_output_schema(self):
         # Other tests reload this module; patch and call the same live module.
-        module = sys.modules["jokbo_ocr"]
+        module = pipeline
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "ocr"
             with patch.object(sys, "argv", ["jokbo_ocr.py", "sample.jpg", "--output", str(output)]):
@@ -109,9 +111,9 @@ class PaddleOptimizationTests(unittest.TestCase):
                     "relationship_candidates": [], "paddle_metrics": {}, "elapsed_seconds": 0.1,
                     "ocr_engine": "paddleocr", "ocr_language": args.paddle_lang,
                 }
-                with patch("jokbo_ocr.collect_images", return_value=[Path("sample.jpg")]), \
-                     patch("jokbo_ocr.initialize_paddle_ocr", return_value=object()), \
-                     patch("jokbo_ocr.ocr_one_image", return_value=result) as recognize:
+                with patch("ocr.pipeline.collect_images", return_value=[Path("sample.jpg")]), \
+                     patch("ocr.pipeline.initialize_paddle_ocr", return_value=object()), \
+                     patch("ocr.pipeline.ocr_one_image", return_value=result) as recognize:
                     self.assertEqual(module.main(), 0)
                 self.assertEqual(recognize.call_args.args[2], output)
                 self.assertEqual(json.loads((output / "sample/page.json").read_text())["ocr_engine"], "paddleocr")
@@ -134,7 +136,7 @@ class PaddleOptimizationTests(unittest.TestCase):
         image = np.full((300, 160, 3), 255, dtype=np.uint8)
         cv2.putText(image, "X", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
         backend = CountingPaddle()
-        with patch("jokbo_ocr.cv2.createCLAHE", wraps=cv2.createCLAHE):
+        with patch("ocr.pipeline.cv2.createCLAHE", wraps=cv2.createCLAHE):
             text, variants, crop = run_name_ocr_variants(
                 image, {"x": 30, "y": 30, "width": 40, "height": 80},
                 paddle_ocr=backend,

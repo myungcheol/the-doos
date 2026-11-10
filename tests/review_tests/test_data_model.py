@@ -1,7 +1,8 @@
+"""Reviewed person data model tests."""
 import copy
 import unittest
 
-from person_data_model import (
+from review.data_model import (
     build_person_registry,
     build_raw_data,
     build_reviewed_data,

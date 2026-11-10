@@ -8,15 +8,15 @@ from typing import Any
 
 import cv2
 import numpy as np
-from ocr_storage import has_ocr_output
+from ocr.storage import has_ocr_output
 
-from historical_dates import date_parts_with_solar
-from person_data_model import (
+from .historical_dates import date_parts_with_solar
+from .data_model import (
     build_raw_data, build_reviewed_data, ensure_person_uid,
     make_source_occurrence, person_local_key, strip_name_marker,
 )
-from person_info_extractor import extract_person_info_draft
-from review_extensions import (
+from .person_info import extract_person_info_draft
+from .extensions import (
     continuation_field_parts, continuation_needs_review,
 )
 
@@ -115,7 +115,7 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
 def build_review_data(root: Path, base_people: list[dict[str, Any]],
                       base_relationships: list[dict[str, Any]], state: dict[str, Any],
                       page_results: list[dict[str, Any]] | None = None):
-    from review_extensions import merge_review_sources, apply_continuations
+    from .extensions import merge_review_sources, apply_continuations
     base_people, base_relationships, page_results = merge_review_sources(
         base_people, base_relationships, page_results or [], state
     )

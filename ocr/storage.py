@@ -1,4 +1,5 @@
 """Page-based OCR persistence with read-only support for older output layouts."""
+
 from __future__ import annotations
 
 import json

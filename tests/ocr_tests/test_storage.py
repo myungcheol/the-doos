@@ -1,3 +1,4 @@
+"""Page-based OCR storage tests."""
 import json
 import importlib
 import sys
@@ -9,7 +10,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from ocr_storage import load_ocr_output, save_page_result
+from ocr.storage import load_ocr_output, save_page_result
 
 
 class OcrStorageTests(unittest.TestCase):
@@ -43,7 +44,7 @@ class OcrStorageTests(unittest.TestCase):
             root = Path(temporary)
             save_page_result(root, self.page())
             before = (root / "001/page.json").read_bytes()
-            with patch("ocr_storage.os.replace", side_effect=OSError("write failed")):
+            with patch("ocr.storage.os.replace", side_effect=OSError("write failed")):
                 with self.assertRaises(OSError):
                     save_page_result(root, self.page(text="新"))
             self.assertEqual((root / "001/page.json").read_bytes(), before)
@@ -79,7 +80,7 @@ class OcrStorageTests(unittest.TestCase):
             def predict(self, image):
                 return []
 
-        module = importlib.import_module("jokbo_ocr")
+        module = importlib.import_module("ocr.pipeline")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             scan = root / "001.png"
@@ -87,7 +88,7 @@ class OcrStorageTests(unittest.TestCase):
             output = root / "output"
             with patch.object(sys, "argv", ["jokbo_ocr.py", str(scan), "--output", str(output),
                                            "--rows", "1", "--no-auto-roi"]), \
-                 patch("jokbo_ocr.initialize_paddle_ocr", return_value=EmptyPaddle()):
+                 patch("ocr.pipeline.initialize_paddle_ocr", return_value=EmptyPaddle()):
                 self.assertEqual(module.main(), 0)
             self.assertEqual([path.relative_to(output).as_posix() for path in output.rglob("*.json")],
                              ["001/page.json"])

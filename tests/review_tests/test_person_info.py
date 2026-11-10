@@ -1,6 +1,7 @@
+"""Person record OCR draft tests."""
 import unittest
 
-from person_info_extractor import extract_person_info_draft, get_person_section_columns, get_field_source_columns
+from review.person_info import extract_person_info_draft, get_person_section_columns, get_field_source_columns
 
 
 class PersonInfoExtractorTests(unittest.TestCase):

@@ -1,6 +1,7 @@
+"""Historical date conversion draft tests."""
 import unittest
 
-from historical_dates import (REIGNS, date_draft, date_parts_draft,
+from review.historical_dates import (REIGNS, date_draft, date_parts_draft,
                               date_parts_with_solar, lunar_interval,
                               parse_date_text, resolve_regnal_year,
                               reviewed_date_parts, solar_draft_for_parts)

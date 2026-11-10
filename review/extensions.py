@@ -10,8 +10,8 @@ from pathlib import Path
 import re
 import uuid
 
-from person_data_model import ensure_person_uid, make_source_occurrence
-from person_info_extractor import extract_continuation_info_draft
+from .data_model import ensure_person_uid, make_source_occurrence
+from .person_info import extract_continuation_info_draft
 
 
 def page_name(page):
@@ -277,7 +277,7 @@ def apply_continuations(person, state):
 
 def recover_name_candidates(image, page, people, offset=(0, 0)):
     """Geometry-only rescan using existing OCR text; never invokes an OCR engine."""
-    from jokbo_ocr import detect_large_printed_name_regions, find_matching_ocr_column, clean_hanzi_text
+    from ocr.pipeline import detect_large_printed_name_regions, find_matching_ocr_column, clean_hanzi_text
 
     additions = []
     height, width = image.shape[:2]

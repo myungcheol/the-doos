@@ -1,3 +1,4 @@
+"""Cross-page review extension tests."""
 from copy import deepcopy
 from pathlib import Path
 import unittest
@@ -5,14 +6,14 @@ import unittest
 import cv2
 import numpy as np
 
-from jokbo_ocr import detect_large_printed_name_regions
-from person_data_model import ensure_person_uid
-from review_extensions import (merge_review_sources, previous_row_people, orphan_columns, orphan_regions,
+from ocr.pipeline import detect_large_printed_name_regions
+from review.data_model import ensure_person_uid
+from review.extensions import (merge_review_sources, previous_row_people, orphan_columns, orphan_regions,
                                make_continuation, apply_continuations, recover_name_candidates,
                                continuation_field_parts, append_continuation_text,
                                append_continuation_spouses, continuation_suppressions_for_save,
                                continuation_needs_review)
-from person_info_extractor import extract_continuation_info_draft
+from review.person_info import extract_continuation_info_draft
 
 
 def column(identifier, x, text="原文"):
@@ -202,7 +203,7 @@ class SplitGlyphTests(unittest.TestCase):
         self.assertEqual(result[0]["bbox"]["x"], 60)
 
     def test_sample_page_002_row_one_geometry(self):
-        path = Path(__file__).resolve().parents[1] / "scan/genealogy/002.jpg"
+        path = Path(__file__).resolve().parents[2] / "scan/genealogy/002.jpg"
         if not path.exists():
             self.skipTest("샘플 스캔 미포함")
         image = cv2.imread(str(path))
@@ -210,7 +211,7 @@ class SplitGlyphTests(unittest.TestCase):
         self.assertTrue(any(235 <= r["bbox"]["x"] <= 245 and 115 <= r["bbox"]["y"] <= 125 for r in results))
 
     def test_sample_page_001_does_not_add_prose_as_names(self):
-        path = Path(__file__).resolve().parents[1] / "scan/genealogy/001.jpg"
+        path = Path(__file__).resolve().parents[2] / "scan/genealogy/001.jpg"
         if not path.exists():
             self.skipTest("샘플 스캔 미포함")
         image = cv2.imread(str(path))

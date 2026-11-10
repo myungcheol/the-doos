@@ -1,5 +1,6 @@
 """The desktop entry point must load without the retired web UI dependency."""
 
+
 import os
 import subprocess
 import sys
@@ -17,12 +18,12 @@ def reject_streamlit(name, *args, **kwargs):
         raise AssertionError('desktop app imported Streamlit')
     return original_import(name, *args, **kwargs)
 builtins.__import__ = reject_streamlit
-import desktop_review
-import review_core
+import review.desktop
+import review.core
 """
         environment = dict(os.environ, QT_QPA_PLATFORM="offscreen")
         result = subprocess.run(
-            [sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1],
+            [sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[2],
             env=environment, capture_output=True, text=True, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

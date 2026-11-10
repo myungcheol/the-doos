@@ -3,6 +3,7 @@
 Person IDs are opaque UUID-based keys. Edition/page/column coordinates are stored
 as source occurrences, never used as a person's permanent identity.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

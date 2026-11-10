@@ -3,6 +3,7 @@
 The conversion uses sxtwl's Chinese astronomical calendar model.  The result
 is a review draft, not a claim that a local historical calendar was identical.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
