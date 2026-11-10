@@ -15,8 +15,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from historical_dates import (REIGNS, Reign, chinese_number, date_draft, format_interval,
-                              lunar_interval, resolve_regnal_year)
+from historical_dates import (REIGNS, Reign, chinese_number, date_draft,
+                              date_parts_draft, date_parts_with_solar,
+                              format_interval, lunar_interval,
+                              parse_date_parts, resolve_regnal_year,
+                              reviewed_date_parts, sexagenary_year,
+                              solar_draft_for_parts)
 
 from person_info_extractor import FIELD_LABELS, extract_person_info_draft, get_field_source_columns
 from person_data_model import (
@@ -163,7 +167,8 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
             "person_uid", "person_id", "source_page", "name_hanja_candidate", "raw_name_ocr",
             "transcribed_name_hanja", "sex_marker", "gender", "review_status",
             "generation_number", "courtesy_name_hanja", "pen_name_hanja",
-            "birth_text", "death_text", "birth_solar", "death_solar", "office_title", "spouse_text", "spouses",
+            "birth_text", "death_text", "birth_date", "death_date", "birth_solar", "death_solar",
+            "office_title", "spouse_text", "spouses",
             "burial_text", "biography_text", "notes", "information_review_status",
             "source_record_ocr_text", "raw_data", "reviewed_data", "source_occurrences",
             "bbox", "image_file", "ocr_confidence",
@@ -172,7 +177,8 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
         csv_people = []
         for person in people:
             row = dict(person)
-            for nested_key in ("spouses", "birth_solar", "death_solar", "raw_data", "reviewed_data", "source_occurrences", "bbox"):
+            for nested_key in ("spouses", "birth_date", "death_date", "birth_solar", "death_solar",
+                               "raw_data", "reviewed_data", "source_occurrences", "bbox"):
                 if nested_key in row:
                     row[nested_key] = json.dumps(row[nested_key], ensure_ascii=False)
             csv_people.append(row)
@@ -257,6 +263,13 @@ def build_review_data(root: Path, base_people: list[dict[str, Any]],
         person["source_occurrences"] = [occurrence]
         person["raw_data"] = build_raw_data(raw, page_result, draft, occurrence)
         apply_continuations(person, state)
+        for event in ("birth", "death"):
+            date_key = f"{event}_date"
+            if date_key not in update and not person.get(date_key):
+                source = person.get(f"{event}_text") or (draft.get("draft_values") or {}).get(f"{event}_text")
+                parts = date_parts_with_solar(source, event, solar=person.get(f"{event}_solar"))
+                if parts:
+                    person[date_key] = parts
         person["source_record_ocr_text"] = (
             update.get("source_record_ocr_text")
             or draft.get("source_record_ocr_text")
@@ -1099,6 +1112,36 @@ def main() -> None:
                             "사망 정보", value=person_value("death_text"),
                             placeholder="예: 庚寅年卒"
                         )
+                        date_components = {}
+                        for event, container, source, label in (
+                            ("birth", birth_col, birth_text, "출생"),
+                            ("death", death_col, death_text, "사망"),
+                        ):
+                            saved_solar = person_value(f"{event}_solar", None)
+                            parts = date_parts_with_solar(
+                                source, event, person_value(f"{event}_date", None), saved_solar) or {}
+                            date_widget_version = hashlib.sha1(
+                                json.dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                            ).hexdigest()[:10]
+                            container.caption(f"{label} 날짜 항목 · OCR 간지: {parts.get('sexagenary_ocr') or '없음'}"
+                                              + (" · 왕년으로 보완, 검토 필요"
+                                                 if parts.get("sexagenary_source") == "inferred_from_regnal_year" else ""))
+                            fields = {}
+                            for key, title in (("country", "나라"), ("ruler_or_era", "왕/연호"),
+                                               ("regnal_year", "재위 연수"),
+                                               ("sexagenary_year", "60갑자 연도"),
+                                               ("month", "음력 월"), ("day", "음력 일")):
+                                fields[key] = container.text_input(
+                                    f"{label} {title}", value=str(parts.get(key) or ""),
+                                    key=f"{event}_{key}_{selected_person_id}_{date_widget_version}")
+                            fields["leap_month"] = container.checkbox(
+                                f"{label} 윤달", value=bool(parts.get("leap_month")),
+                                key=f"{event}_leap_date_{selected_person_id}_{date_widget_version}")
+                            confirmed_date = container.checkbox(
+                                f"{label} 날짜 항목 확인", value=parts.get("review_status") == "confirmed",
+                                key=f"{event}_date_confirm_{selected_person_id}_{date_widget_version}")
+                            container.caption(f"대응 서기 초안: {parts.get('ce_year') or '미정'}년")
+                            date_components[event] = (parts, fields, confirmed_date)
                         st.caption("양력 출생: " + format_interval(date_draft(
                             birth_text, "birth", person_value("birth_solar", None))))
                         st.caption("양력 사망: " + format_interval(date_draft(
@@ -1164,6 +1207,8 @@ def main() -> None:
                         if st.form_submit_button("인명 및 인물 정보 저장", use_container_width=True):
                             try:
                                 generation_number = parse_optional_generation(generation_input)
+                                birth_parts = reviewed_date_parts(birth_text, "birth", *date_components["birth"])
+                                death_parts = reviewed_date_parts(death_text, "death", *date_components["death"])
                             except ValueError as exc:
                                 st.error(str(exc))
                             else:
@@ -1204,8 +1249,10 @@ def main() -> None:
                                     "pen_name_hanja": pen_name.strip() or None,
                                     "birth_text": birth_text.strip() or None,
                                     "death_text": death_text.strip() or None,
-                                    "birth_solar": date_draft(birth_text.strip(), "birth", update.get("birth_solar")),
-                                    "death_solar": date_draft(death_text.strip(), "death", update.get("death_solar")),
+                                    "birth_date": birth_parts,
+                                    "death_date": death_parts,
+                                    "birth_solar": solar_draft_for_parts(birth_parts),
+                                    "death_solar": solar_draft_for_parts(death_parts),
                                     "office_title": office_title.strip() or None,
                                     "spouses": reviewed_spouses,
                                     "spouse_text": legacy_spouse_text,
@@ -1287,7 +1334,24 @@ def main() -> None:
                                     if not source:
                                         raise ValueError("먼저 출생/사망 원문을 저장하세요.")
                                     value["source_text"] = source
-                                    state["people_updates"].setdefault(selected_person_id, {})[f"{event}_solar"] = value
+                                    parts = dict(date_parts_draft(source, event, update.get(f"{event}_date"))
+                                                 or parse_date_parts(source, event))
+                                    parts.update({"country": country, "ruler_or_era": reign.name,
+                                                  "regnal_year": regnal_number, "ce_year": year,
+                                                  "month": chinese_number(month) if month.strip() else None,
+                                                  "day": chinese_number(day) if day.strip() else None,
+                                                  "leap_month": leap,
+                                                  "sexagenary_year": sexagenary_year(year),
+                                                  "sexagenary_source": (parts.get("sexagenary_source")
+                                                                         or "inferred_from_regnal_year"),
+                                                  "mapping_source": value["reference"]["mapping_source"],
+                                                  "first_ce_year": reign.first_ce_year,
+                                                  "last_ce_year": reign.last_ce_year,
+                                                  "review_status": value["review_status"],
+                                                  "year_conflict": False, "ambiguous": False})
+                                    person_update = state["people_updates"].setdefault(selected_person_id, {})
+                                    person_update[f"{event}_date"] = parts
+                                    person_update[f"{event}_solar"] = value
                                     save_state(root, state, all_people, all_relationships, page_results)
                                     st.rerun()
                                 except (ValueError, RuntimeError) as exc:

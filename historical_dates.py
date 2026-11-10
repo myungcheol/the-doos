@@ -172,8 +172,8 @@ def sexagenary_year(year: int) -> str:
     return _GANJI[(year - 4) % 10] + _ZHI[(year - 4) % 12]
 
 
-def parse_date_text(text: str, event: str | None = None) -> dict:
-    """Extract one unambiguous dated phrase; never guess the ruler or year."""
+def parse_date_parts(text: str, event: str | None = None) -> dict:
+    """Preserve OCR date components, distinguishing observed and inferred ganji."""
     source = re.sub(r"\s+|/", "", text or "")
     if event == "birth":
         marker = re.search(r"生|誕", source)
@@ -183,37 +183,199 @@ def parse_date_text(text: str, event: str | None = None) -> dict:
         marker = None
     if marker:
         source = source[:marker.start()]
-    year_matches = list(re.finditer(rf"({_NUM})年", source))
-    if len(year_matches) != 1:
-        raise ValueError("연도를 하나로 식별할 수 없습니다.")
-    match = year_matches[0]
-    regnal_year = chinese_number(match.group(1))
-    if not regnal_year or regnal_year > 100:
-        raise ValueError("재위 연수를 읽을 수 없습니다.")
-    reigns = find_reigns(source[:match.start()])
-    if len(reigns) != 1:
-        raise ValueError("나라와 왕 또는 연호를 하나로 식별할 수 없습니다.")
-    reign = reigns[0]
-    ce_year = resolve_regnal_year(reign, regnal_year)
-    rest = source[match.end():]
-    ganji = re.search(rf"[{_GANJI}][{_ZHI}]", rest)
-    if ganji and ganji.group() != sexagenary_year(ce_year):
-        raise ValueError("간지와 서기 연도가 일치하지 않습니다.")
+    years = list(re.finditer(rf"({_NUM})年", source))
+    year = years[0] if len(years) == 1 else None
+    regnal_year = chinese_number(year.group(1)) if year else None
+    reigns = find_reigns(source[:year.start()] if year else source)
+    reign = reigns[0] if len(reigns) == 1 else None
+    ce_year = None
+    if reign and regnal_year:
+        try:
+            ce_year = resolve_regnal_year(reign, regnal_year)
+        except ValueError:
+            pass
+    country = ("고려" if "高麗" in source or "고려" in source else
+               "조선" if "朝鮮" in source or "조선" in source else
+               reign.country if reign else None)
+    rest = source[year.end():] if year else source
+    ganji = re.search(rf"[{_GANJI}][{_ZHI}]?", rest)
+    observed = ganji.group() if ganji else None
+    expected = sexagenary_year(ce_year) if ce_year else None
+    if observed and len(observed) == 2:
+        sexagenary = observed
+        origin = "ocr"
+    elif observed and expected and expected.startswith(observed):
+        sexagenary = expected
+        origin = "inferred_from_regnal_year"
+    else:
+        sexagenary = None
+        origin = "unresolved" if observed else None
     month_matches = list(re.finditer(rf"(閏|闰)?({_NUM})月", rest))
     day_matches = list(re.finditer(rf"({_NUM})日", rest))
-    if len(month_matches) > 1 or len(day_matches) > 1:
-        raise ValueError("월 또는 일을 하나로 식별할 수 없습니다.")
-    month_match = month_matches[0] if month_matches else None
-    day_match = day_matches[0] if day_matches else None
+    month_match = month_matches[0] if len(month_matches) == 1 else None
+    day_match = day_matches[0] if len(day_matches) == 1 else None
     month = chinese_number(month_match.group(2)) if month_match else None
     day = chinese_number(day_match.group(1)) if day_match else None
+    return {"country": country, "ruler_or_era": reign.name if reign else None,
+            "regnal_year": regnal_year, "ce_year": ce_year,
+            "sexagenary_year": sexagenary, "sexagenary_ocr": observed,
+            "sexagenary_source": origin, "month": month, "day": day,
+            "leap_month": bool(month_match and month_match.group(1)),
+            "source_text": text, "review_status": "needs_review",
+            "year_conflict": bool(observed and expected and not expected.startswith(observed)),
+            "ambiguous": len(years) > 1 or len(month_matches) > 1 or len(day_matches) > 1}
+
+
+def date_parts_draft(source_text: str | None, event: str, saved: dict | None = None) -> dict | None:
+    """Use a matching reviewed value, or populate an unverified OCR draft."""
+    source = source_text or ""
+    if not source:
+        return None
+    if isinstance(saved, dict) and saved.get("source_text") == source:
+        return saved
+    parts = parse_date_parts(source, event)
+    if not any(parts.get(key) for key in ("country", "ruler_or_era", "regnal_year",
+                                             "sexagenary_ocr", "month", "day")):
+        return None
+    return parts
+
+
+def date_parts_with_solar(source_text: str | None, event: str,
+                          saved: dict | None = None, solar: dict | None = None) -> dict | None:
+    """Read older solar-only review records without discarding their choices."""
+    parts = date_parts_draft(source_text, event, saved)
+    if not isinstance(solar, dict) or solar.get("source_text") != (source_text or ""):
+        return parts
+    result = dict(parts or parse_date_parts(source_text or "", event))
+    reference = solar.get("reference") or {}
+    lunar = solar.get("lunar") or {}
+    legacy_solar_only = not (isinstance(saved, dict) and saved.get("source_text") == source_text)
+    for key, value in (("country", reference.get("country")),
+                       ("ruler_or_era", reference.get("name")),
+                       ("regnal_year", reference.get("regnal_year")),
+                       ("ce_year", lunar.get("year")),
+                       ("month", lunar.get("month")), ("day", lunar.get("day"))):
+        if value is not None and (legacy_solar_only or result.get(key) is None):
+            result[key] = value
+    result["leap_month"] = bool(lunar.get("leap_month", result.get("leap_month")))
+    if legacy_solar_only:
+        result["year_conflict"] = False
+        result["ambiguous"] = False
+        if isinstance(result.get("ce_year"), int):
+            expected = sexagenary_year(result["ce_year"])
+            if result.get("sexagenary_year") and result["sexagenary_year"] != expected:
+                result["sexagenary_year"] = expected
+                result["sexagenary_source"] = "reviewer"
+    if not result.get("mapping_source"):
+        result["mapping_source"] = reference.get("mapping_source")
+    for key in ("first_ce_year", "last_ce_year"):
+        if key not in result and key in reference:
+            result[key] = reference[key]
+    if legacy_solar_only:
+        result["review_status"] = solar.get("review_status", result.get("review_status"))
+    return result
+
+
+def reviewed_date_parts(source_text: str, event: str, previous: dict | None,
+                        fields: dict, confirmed: bool = False) -> dict | None:
+    """Apply reviewer component edits and recompute the CE/ganji consistency."""
+    source = source_text.strip()
+    source_changed = bool(previous and previous.get("source_text") != source)
+    base = date_parts_draft(source, event, previous) or parse_date_parts(source, event)
+    editable = ("country", "ruler_or_era", "regnal_year", "sexagenary_year",
+                "month", "day", "leap_month")
+    if source_changed:
+        unchanged_old_fields = all(
+            (bool(fields.get(key)) == bool(previous.get(key)) if key == "leap_month" else
+             str(fields.get(key) or "").strip() == str(previous.get(key) or ""))
+            for key in editable
+        )
+        if unchanged_old_fields:
+            fields = {key: base.get(key) for key in editable}
+    result = dict(base)
+    for key in ("country", "ruler_or_era", "sexagenary_year"):
+        result[key] = str(fields.get(key) or "").strip() or None
+    for key in ("regnal_year", "month", "day"):
+        raw = str(fields.get(key) or "").strip()
+        number = chinese_number(raw) if raw else None
+        if raw and number is None:
+            raise ValueError(f"{key}: 숫자를 읽을 수 없습니다.")
+        result[key] = number
+    result["leap_month"] = bool(fields.get("leap_month"))
+    result["source_text"] = source
+    if not any(result.get(key) for key in ("country", "ruler_or_era", "regnal_year",
+                                           "sexagenary_year", "month", "day")):
+        return None
+    if not source:
+        raise ValueError("먼저 출생 또는 사망 원문을 입력하세요.")
+    matching = [r for r in REIGNS if r.country == result["country"]
+                and (r.name == result["ruler_or_era"]
+                     or result["ruler_or_era"] in r.aliases)]
+    if len(matching) == 1 and result["regnal_year"]:
+        result["ce_year"] = resolve_regnal_year(matching[0], result["regnal_year"])
+        result["mapping_source"] = "catalog"
+        result["first_ce_year"] = matching[0].first_ce_year
+        result["last_ce_year"] = matching[0].last_ce_year
+    elif (previous and previous.get("source_text") == source
+          and previous.get("country") == result["country"]
+          and previous.get("ruler_or_era") == result["ruler_or_era"]
+          and previous.get("regnal_year") == result["regnal_year"]):
+        result["ce_year"] = previous.get("ce_year")
+        result["mapping_source"] = previous.get("mapping_source")
+    else:
+        result["ce_year"] = None
+        result["mapping_source"] = None
+        result.pop("first_ce_year", None)
+        result.pop("last_ce_year", None)
+    expected = sexagenary_year(result["ce_year"]) if result.get("ce_year") else None
+    result["year_conflict"] = bool(
+        (base.get("year_conflict") and result["sexagenary_year"] == base.get("sexagenary_year"))
+        or (expected and result["sexagenary_year"] and expected != result["sexagenary_year"])
+    )
+    if result["sexagenary_year"] != base.get("sexagenary_year"):
+        result["sexagenary_source"] = "reviewer"
+    edited = any(result.get(key) != base.get(key) for key in editable)
+    result["ambiguous"] = bool(base.get("ambiguous") and not edited)
+    result["review_status"] = "confirmed" if confirmed and not source_changed else "needs_review"
+    return result
+
+
+def solar_from_parts(parts: dict) -> dict:
+    """Convert reviewed components only when the CE year is resolved and consistent."""
+    year = parts.get("ce_year")
+    if not isinstance(year, int) or parts.get("ambiguous") or parts.get("year_conflict"):
+        raise ValueError("서기 연도나 OCR 날짜 표기를 확인하세요.")
+    ganji = parts.get("sexagenary_year")
+    if ganji and ganji != sexagenary_year(year):
+        raise ValueError("간지와 서기 연도가 일치하지 않습니다.")
+    month, day = parts.get("month"), parts.get("day")
     if day is not None and month is None:
         raise ValueError("월 없이 일만 읽혔습니다.")
-    result = lunar_interval(ce_year, month, day, bool(month_match and month_match.group(1)))
-    result["reference"] = {"country": reign.country, "name": reign.name,
-                           "regnal_year": regnal_year, "sexagenary": ganji.group() if ganji else None}
-    result["source_text"] = text
+    result = lunar_interval(year, month, day, bool(parts.get("leap_month")))
+    result["reference"] = {"country": parts.get("country"),
+                           "name": parts.get("ruler_or_era"),
+                           "regnal_year": parts.get("regnal_year"),
+                           "sexagenary": parts.get("sexagenary_ocr"),
+                           "mapping_source": parts.get("mapping_source"),
+                           "first_ce_year": parts.get("first_ce_year"),
+                           "last_ce_year": parts.get("last_ce_year")}
+    result["review_status"] = parts.get("review_status", "needs_review")
+    result["source_text"] = parts.get("source_text")
     return result
+
+
+def solar_draft_for_parts(parts: dict | None) -> dict | None:
+    if not parts:
+        return None
+    try:
+        return solar_from_parts(parts)
+    except (ValueError, RuntimeError):
+        return None
+
+
+def parse_date_text(text: str, event: str | None = None) -> dict:
+    """Extract an unambiguous historical date and convert its lunar interval."""
+    return solar_from_parts(parse_date_parts(text, event))
 
 
 def format_interval(value: dict | None) -> str:

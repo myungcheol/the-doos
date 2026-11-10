@@ -76,6 +76,7 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(update["birth_text"], source)
         self.assertEqual(update["birth_solar"]["start"], "0975-11-20")
         self.assertEqual(update["birth_solar"]["source_text"], source)
+        self.assertEqual(update["birth_date"]["sexagenary_year"], "乙亥")
         exported = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))[0]
         self.assertEqual(exported["reviewed_data"]["birth_solar"], update["birth_solar"])
         with (self.root / "reviewed_people.csv").open(encoding="utf-8-sig", newline="") as handle:
@@ -85,6 +86,45 @@ class DesktopReviewTests(unittest.TestCase):
         self.window.save_person()
         state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
         self.assertIsNone(state["people_updates"]["p1"]["birth_solar"])
+
+    def test_split_ocr_date_components_are_visible_and_saved_independently(self):
+        self.window.select_person_id("p1")
+        self.window.inputs["birth_text"].setText("高麗穆宗八年乙 / 生")
+        self.window.inputs["death_text"].setText("軍壬寅九月二十 / 一日卒")
+        self.window.refresh_date_parts("birth")
+        self.window.refresh_date_parts("death")
+        self.assertEqual(self.window.date_part_widgets["birth"]["sexagenary_year"].text(), "乙巳")
+        self.assertIn("OCR 원문 乙", self.window.date_part_notes["birth"].text())
+        self.assertEqual(self.window.date_part_widgets["death"]["day"].text(), "21")
+        self.window.save_person()
+        update = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))["people_updates"]["p1"]
+        self.assertEqual(update["birth_date"]["sexagenary_ocr"], "乙")
+        self.assertEqual(update["birth_date"]["ce_year"], 1005)
+        self.assertEqual(update["birth_solar"]["precision"], "year")
+        self.assertEqual((update["death_date"]["sexagenary_year"], update["death_date"]["month"],
+                          update["death_date"]["day"]), ("壬寅", 9, 21))
+        self.assertIsNone(update["death_solar"])
+
+    def test_ocr_date_draft_reaches_export_without_changing_review_state_text(self):
+        image_path = str(self.root / "sample.png")
+        self.write("ocr_results.json", [{"source_page": "sample.png", "source_image": image_path,
+                                         "rows": [{"row_id": "r", "columns": [
+                                             {"column_id": "c1", "text": "高麗穆宗八年乙",
+                                              "bbox": {"x": 3, "y": 10, "width": 3, "height": 40}},
+                                             {"column_id": "c2", "text": "生",
+                                              "bbox": {"x": 1, "y": 10, "width": 1, "height": 40}},
+                                         ]}]}])
+        people = json.loads((self.root / "people_candidates.json").read_text(encoding="utf-8"))
+        people[0]["source_row_id"] = "r"
+        self.write("people_candidates.json", people)
+        self.window.close()
+        self.window = ReviewWindow(str(self.root))
+        self.assertTrue(self.window.persist())
+        exported = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(exported["reviewed_data"]["birth_date"]["sexagenary_year"], "乙巳")
+        self.assertEqual(exported["reviewed_data"]["birth_date"]["review_status"], "needs_review")
+        state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        self.assertNotIn("birth_text", state["people_updates"]["p1"])
 
     def test_date_dialog_looks_up_king_year_and_partial_lunar_month(self):
         dialog = HistoricalDateDialog("문종 이년 이월", "birth")

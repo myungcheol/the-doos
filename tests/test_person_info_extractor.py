@@ -4,6 +4,26 @@ from person_info_extractor import extract_person_info_draft, get_person_section_
 
 
 class PersonInfoExtractorTests(unittest.TestCase):
+    def test_split_birth_ganji_and_death_components_are_ocr_drafts(self):
+        person = {"person_id": "P", "source_row_id": "r", "bbox": {"x": 530, "y": 0, "width": 20, "height": 90}}
+        texts = ["高麗穆宗八年乙", "生", "軍壬寅九月二十", "一日卒0基于老"]
+        row = {"row_id": "r", "columns": [
+            {"column_id": f"c{i}", "text": text,
+             "bbox": {"x": 500 - i * 25, "y": 0, "width": 20, "height": 90}}
+            for i, text in enumerate(texts)
+        ]}
+        draft = extract_person_info_draft(person, {"rows": [row]}, [person])
+        birth = draft["draft_values"]["birth_date"]
+        death = draft["draft_values"]["death_date"]
+        self.assertEqual(draft["draft_values"]["birth_text"], "高麗穆宗八年乙 / 生")
+        self.assertEqual((birth["country"], birth["ruler_or_era"], birth["regnal_year"]),
+                         ("고려", "목종 穆宗", 8))
+        self.assertEqual((birth["sexagenary_ocr"], birth["sexagenary_year"]), ("乙", "乙巳"))
+        self.assertEqual((death["sexagenary_year"], death["month"], death["day"]),
+                         ("壬寅", 9, 21))
+        self.assertIsNone(death["ce_year"])
+        self.assertEqual(draft["field_sources"]["birth_text"][0]["bbox"], row["columns"][0]["bbox"])
+
     def setUp(self):
         self.people = [
             {"person_id": "P1", "source_row_id": "row1", "bbox": {"x": 510, "y": 100, "width": 28, "height": 90}},

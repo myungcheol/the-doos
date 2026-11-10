@@ -23,8 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 from person_data_model import ensure_person_uid, strip_name_marker
-from historical_dates import (REIGNS, Reign, chinese_number, format_interval,
-                              lunar_interval, parse_date_text, resolve_regnal_year)
+from historical_dates import (REIGNS, Reign, chinese_number, date_parts_draft,
+                              date_parts_with_solar,
+                              format_interval, lunar_interval, parse_date_parts,
+                              parse_date_text, resolve_regnal_year,
+                              reviewed_date_parts, sexagenary_year, solar_from_parts)
 from person_info_extractor import (FIELD_LABELS, extract_continuation_info_draft,
                                    extract_person_info_draft, get_field_source_columns)
 from review_extensions import (merge_review_sources, page_name, page_sort_key, orphan_regions,
@@ -734,6 +737,10 @@ class ReviewWindow(QMainWindow):
         self.inputs = {}
         self.date_values = {}
         self.date_results = {}
+        self.date_part_widgets = {}
+        self.date_part_values = {}
+        self.date_part_confirm = {}
+        self.date_part_notes = {}
         for key, title in self.fields.items():
             widget = QTextEdit() if key in ("spouse_text", "biography_text", "notes") else QLineEdit()
             if isinstance(widget, QTextEdit):
@@ -756,6 +763,33 @@ class ReviewWindow(QMainWindow):
                 button.clicked.connect(lambda _, field=key: self.open_date_dialog(field))
                 row_layout.addWidget(button)
                 form.addRow("양력 출생" if key == "birth_text" else "양력 사망", row)
+                event = "birth" if key == "birth_text" else "death"
+                fields = QWidget()
+                grid = QGridLayout(fields)
+                grid.setContentsMargins(0, 0, 0, 0)
+                labels = (("country", "나라"), ("ruler_or_era", "왕/연호"),
+                          ("regnal_year", "재위 연수"), ("sexagenary_year", "60갑자"),
+                          ("month", "음력 월"), ("day", "음력 일"),
+                          ("ce_year", "대응 서기"))
+                self.date_part_widgets[event] = {}
+                for index, (part_key, title) in enumerate(labels):
+                    part_widget = QLineEdit()
+                    part_widget.setReadOnly(part_key == "ce_year")
+                    if part_key != "ce_year":
+                        part_widget.textEdited.connect(self.mark_dirty)
+                    self.date_part_widgets[event][part_key] = part_widget
+                    grid.addWidget(QLabel(title), index // 2, (index % 2) * 2)
+                    grid.addWidget(part_widget, index // 2, (index % 2) * 2 + 1)
+                form.addRow("출생 날짜 항목" if event == "birth" else "사망 날짜 항목", fields)
+                note = QLabel("")
+                note.setWordWrap(True)
+                self.date_part_notes[event] = note
+                form.addRow("OCR 간지 근거", note)
+                confirmed = QCheckBox("이 날짜 항목을 원문과 대조해 확인함")
+                confirmed.toggled.connect(self.mark_dirty)
+                self.date_part_confirm[event] = confirmed
+                form.addRow(confirmed)
+                widget.textEdited.connect(lambda _, name=event: self.refresh_date_parts(name))
         self.marker = ReviewComboBox()
         for title, marker in [("없음", None), ("子 (아들)", "子"), ("女 (딸)", "女")]:
             self.marker.addItem(title, marker)
@@ -1340,6 +1374,36 @@ class ReviewWindow(QMainWindow):
                 self.person_results.setCurrentItem(previous)
                 self.person_results.blockSignals(False)
 
+    def show_date_parts(self, event, parts):
+        self.date_part_values[event] = parts
+        for key, widget in self.date_part_widgets[event].items():
+            value = (parts or {}).get(key)
+            widget.setText(str(value) if value is not None else "")
+            widget.setEnabled(bool(self.selected_id))
+        observed = (parts or {}).get("sexagenary_ocr")
+        source = (parts or {}).get("sexagenary_source")
+        if source == "inferred_from_regnal_year":
+            note = f"OCR 원문 {observed} → 왕년으로 {(parts or {}).get('sexagenary_year')} 보완 · 검토 필요"
+        else:
+            note = f"OCR 원문 {observed}" if observed else "간지 OCR 근거 없음"
+        if (parts or {}).get("year_conflict"):
+            note += " · 왕년과 간지 불일치"
+        self.date_part_notes[event].setText(note)
+        self.date_part_confirm[event].setChecked((parts or {}).get("review_status") == "confirmed")
+
+    def refresh_date_parts(self, event):
+        source = self.inputs[f"{event}_text"].text().strip()
+        parts = date_parts_draft(source, event)
+        self.show_date_parts(event, parts)
+        solar = None
+        if parts:
+            try:
+                solar = solar_from_parts(parts)
+            except (ValueError, RuntimeError):
+                pass
+        self.date_values[f"{event}_solar"] = solar
+        self.date_results[f"{event}_solar"].setText(format_interval(solar))
+
     def person_changed(self, *_):
         if self.dirty and not self.can_discard():
             self.people_list.blockSignals(True)
@@ -1371,8 +1435,12 @@ class ReviewWindow(QMainWindow):
             widget.setEnabled(bool(person))
         for event in ("birth", "death"):
             key = f"{event}_solar"
+            part_key = f"{event}_date"
             text_value = self.inputs[f"{event}_text"].text()
+            saved_parts = update.get(part_key, (person or {}).get(part_key))
             saved = update.get(key, (person or {}).get(key))
+            parts = date_parts_with_solar(text_value, event, saved_parts, saved)
+            self.show_date_parts(event, parts)
             if isinstance(saved, dict) and saved.get("source_text") == text_value:
                 value = saved
             else:
@@ -1500,8 +1568,30 @@ class ReviewWindow(QMainWindow):
         dialog = HistoricalDateDialog(source, "birth" if field == "birth_text" else "death",
                                       current, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.date_values[solar_key] = dialog.result_value
-            self.date_results[solar_key].setText(format_interval(dialog.result_value))
+            value = dialog.result_value
+            reference = value.get("reference") or {}
+            lunar = value.get("lunar") or {}
+            parts = dict(self.date_part_values.get("birth" if field == "birth_text" else "death")
+                         or parse_date_parts(source, "birth" if field == "birth_text" else "death"))
+            parts.update({"country": reference.get("country"),
+                          "ruler_or_era": reference.get("name"),
+                          "regnal_year": reference.get("regnal_year"),
+                          "ce_year": lunar.get("year"),
+                          "month": lunar.get("month"), "day": lunar.get("day"),
+                          "leap_month": lunar.get("leap_month", False),
+                          "mapping_source": reference.get("mapping_source"),
+                          "first_ce_year": reference.get("first_ce_year"),
+                          "last_ce_year": reference.get("last_ce_year"),
+                          "review_status": value.get("review_status", "needs_review"),
+                          "source_text": source, "year_conflict": False,
+                          "ambiguous": False})
+            if not parts.get("sexagenary_year") and isinstance(parts.get("ce_year"), int):
+                parts["sexagenary_year"] = sexagenary_year(parts["ce_year"])
+                parts["sexagenary_source"] = "inferred_from_regnal_year"
+            event = "birth" if field == "birth_text" else "death"
+            self.show_date_parts(event, parts)
+            self.date_values[solar_key] = value
+            self.date_results[solar_key].setText(format_interval(value))
             self.mark_dirty()
 
     def save_person(self):
@@ -1524,15 +1614,32 @@ class ReviewWindow(QMainWindow):
                        "information_review_status": "confirmed" if self.info_confirmed.isChecked() else "needs_review",
                        "transcription_status": "manually_verified" if self.name_status.currentData() == "confirmed" else "pending_manual_verification"})
         for field in ("birth", "death"):
-            key = f"{field}_solar"
             source = values[f"{field}_text"] or ""
-            saved = self.date_values.get(key)
-            if not isinstance(saved, dict) or saved.get("source_text") != source:
-                try:
-                    saved = parse_date_text(source, field) if source else None
-                except (ValueError, RuntimeError):
-                    saved = None
-            values[key] = saved
+            previous = self.date_part_values.get(field)
+            source_changed = bool(previous and previous.get("source_text") != source)
+            if not previous or previous.get("source_text") != source:
+                previous = date_parts_draft(source, field)
+                fields = {key: (previous or {}).get(key) for key in self.date_part_widgets[field]
+                          if key != "ce_year"}
+            else:
+                fields = {key: widget.text() for key, widget in self.date_part_widgets[field].items()
+                          if key != "ce_year"}
+            fields["leap_month"] = bool((previous or {}).get("leap_month"))
+            try:
+                parts = reviewed_date_parts(source, field, previous,
+                                            fields, self.date_part_confirm[field].isChecked()
+                                            and not source_changed)
+            except ValueError as exc:
+                QMessageBox.warning(self, "날짜 입력 오류", str(exc))
+                return
+            values[f"{field}_date"] = parts
+            try:
+                saved = solar_from_parts(parts) if parts else None
+            except (ValueError, RuntimeError):
+                saved = None
+            values[f"{field}_solar"] = saved
+            if parts:
+                self.date_part_values[field] = parts
         old = self.state["people_updates"].get(self.selected_id)
         person = next(p for p in self.page_people if p.get("person_id") == self.selected_id)
         previous_spouses = (old or {}).get("spouses", person.get("spouses") or [])

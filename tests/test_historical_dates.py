@@ -1,10 +1,42 @@
 import unittest
 
-from historical_dates import (REIGNS, date_draft, lunar_interval, parse_date_text,
-                              resolve_regnal_year)
+from historical_dates import (REIGNS, date_draft, date_parts_draft,
+                              date_parts_with_solar, lunar_interval,
+                              parse_date_text, resolve_regnal_year,
+                              reviewed_date_parts, solar_draft_for_parts)
 
 
 class HistoricalDateTests(unittest.TestCase):
+    def test_partial_ganji_is_inferred_without_replacing_ocr_evidence(self):
+        source = "高麗穆宗八年乙 / 生"
+        parts = date_parts_draft(source, "birth")
+        self.assertEqual((parts["country"], parts["ruler_or_era"], parts["regnal_year"]),
+                         ("고려", "목종 穆宗", 8))
+        self.assertEqual((parts["ce_year"], parts["sexagenary_year"]), (1005, "乙巳"))
+        self.assertEqual(parts["sexagenary_ocr"], "乙")
+        self.assertEqual(parts["sexagenary_source"], "inferred_from_regnal_year")
+        self.assertIsNone(parts["month"])
+        self.assertIsNone(parts["day"])
+        self.assertEqual(solar_draft_for_parts(parts)["precision"], "year")
+        changed = reviewed_date_parts(source, "birth", parts,
+                                      {"country": "고려", "ruler_or_era": "목종 穆宗",
+                                       "regnal_year": "8", "sexagenary_year": "甲子",
+                                       "month": "", "day": "", "leap_month": False})
+        self.assertTrue(changed["year_conflict"])
+        self.assertIsNone(solar_draft_for_parts(changed))
+        stale_fields = {key: parts.get(key) for key in (
+            "country", "ruler_or_era", "regnal_year", "sexagenary_year",
+            "month", "day", "leap_month")}
+        corrected_source = reviewed_date_parts("高麗穆宗八年甲 / 生", "birth",
+                                               parts, stale_fields)
+        self.assertEqual(corrected_source["sexagenary_ocr"], "甲")
+        self.assertTrue(corrected_source["year_conflict"])
+        self.assertIsNone(solar_draft_for_parts(corrected_source))
+        self.assertEqual(reviewed_date_parts("高麗穆宗八年乙 / 生", "birth", parts,
+                                             stale_fields, confirmed=True)["review_status"], "confirmed")
+        self.assertEqual(reviewed_date_parts("高麗穆宗八年甲 / 生", "birth", parts,
+                                             stale_fields, confirmed=True)["review_status"], "needs_review")
+
     def test_korean_source_date_before_year_1000(self):
         value = parse_date_text("開寶八年乙亥十月 / 十五日生 / 淳化五年官至", "birth")
         self.assertEqual((value["start"], value["end"]), ("0975-11-20", "0975-11-20"))
@@ -46,6 +78,22 @@ class HistoricalDateTests(unittest.TestCase):
         self.assertIs(date_draft(source, "birth", saved), saved)
         self.assertIsNone(date_draft("수정된 날짜", "birth", saved))
         self.assertEqual(resolve_regnal_year(next(r for r in REIGNS if r.name == "문종 文宗"), 2), 1048)
+
+    def test_existing_solar_only_review_populates_new_components(self):
+        source = "미등록 왕년 이년 생"
+        solar = {"source_text": source, "review_status": "confirmed",
+                 "reference": {"country": "고려", "name": "미등록 왕", "regnal_year": 2,
+                               "mapping_source": "reviewer"},
+                 "lunar": {"year": 1049, "month": None, "day": None, "leap_month": False}}
+        parts = date_parts_with_solar(source, "birth", solar=solar)
+        self.assertEqual((parts["country"], parts["ruler_or_era"], parts["ce_year"]),
+                         ("고려", "미등록 왕", 1049))
+        self.assertEqual(parts["review_status"], "confirmed")
+        old_choice = dict(solar, source_text="高麗穆宗八年乙 / 生",
+                          lunar={"year": 1006, "month": None, "day": None, "leap_month": False})
+        migrated = date_parts_with_solar(old_choice["source_text"], "birth", solar=old_choice)
+        self.assertEqual(migrated["ce_year"], 1006)
+        self.assertEqual(migrated["sexagenary_source"], "reviewer")
 
     def test_identical_king_names_require_a_country_in_automatic_parse(self):
         self.assertEqual(parse_date_text("高麗太祖元年生", "birth")["lunar"]["year"], 918)

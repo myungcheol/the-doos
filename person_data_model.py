@@ -13,7 +13,7 @@ from typing import Any
 PERSON_FIELDS = (
     "transcribed_name_hanja", "sex_marker", "gender", "generation_number",
     "courtesy_name_hanja", "pen_name_hanja", "birth_text", "death_text",
-    "birth_solar", "death_solar",
+    "birth_date", "death_date", "birth_solar", "death_solar",
     "office_title", "spouses", "spouse_text", "burial_text", "biography_text",
     "notes", "review_status", "information_review_status",
 )
@@ -185,6 +185,8 @@ def build_reviewed_data(person: dict[str, Any]) -> dict[str, Any]:
         "pen_name_hanja": person.get("pen_name_hanja"),
         "birth_text": person.get("birth_text"),
         "death_text": person.get("death_text"),
+        "birth_date": person.get("birth_date"),
+        "death_date": person.get("death_date"),
         "birth_solar": person.get("birth_solar"),
         "death_solar": person.get("death_solar"),
         "office_title": person.get("office_title"),
@@ -241,11 +243,12 @@ def build_person_registry(people: list[dict[str, Any]], existing: dict[str, Any]
         # occurrence has no usable date of its own.
         if same_occurrence:
             for event in ("birth", "death"):
-                solar_field = f"{event}_solar"
-                old_solar = previous_reviewed.get(solar_field)
-                if (isinstance(old_solar, dict) and reviewed.get(solar_field) is None
-                        and old_solar.get("source_text") != reviewed.get(f"{event}_text")):
-                    merged_reviewed[solar_field] = None
+                for suffix in ("date", "solar"):
+                    field = f"{event}_{suffix}"
+                    old_value = previous_reviewed.get(field)
+                    if (isinstance(old_value, dict) and reviewed.get(field) is None
+                            and old_value.get("source_text") != reviewed.get(f"{event}_text")):
+                        merged_reviewed[field] = None
         # Do not downgrade an already confirmed identity record just because a
         # new edition occurrence has not yet been reviewed.
         if previous_reviewed.get("review_status") == "confirmed" and reviewed.get("review_status") != "confirmed":

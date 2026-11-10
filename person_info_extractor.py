@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from historical_dates import date_parts_draft
+
 
 FIELD_PATTERNS: dict[str, str] = {
     "birth_text": r"生|誕生|降生",
@@ -196,7 +198,7 @@ def extract_person_info_draft(
             "source_row_id": row_id,
         }
 
-    draft_values: dict[str, str] = {"biography_text": section_text}
+    draft_values: dict[str, Any] = {"biography_text": section_text}
     evidence: dict[str, list[str]] = {"biography_text": [section_text]}
     field_sources: dict[str, list[dict[str, Any]]] = {}
     for field, indices in _field_indices(columns).items():
@@ -215,6 +217,12 @@ def extract_person_info_draft(
             }
             for col, _ in selected
         ]
+
+    for event in ("birth", "death"):
+        value = draft_values.get(f"{event}_text")
+        parts = date_parts_draft(value, event)
+        if parts:
+            draft_values[f"{event}_date"] = parts
 
     return {
         "draft_values": draft_values,
