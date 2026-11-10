@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import cv2
 import numpy as np
+from ocr_storage import load_ocr_output
 
 from jokbo_ocr import (
     find_matching_ocr_column,
@@ -66,24 +67,28 @@ class PaddleOptimizationTests(unittest.TestCase):
             review_state = b'{"people_updates":{"001_P0001":{"notes":"reviewed"}}}'
             (output / "review_state.json").write_bytes(review_state)
             self.assertEqual(run_batch(["003.jpg", "004.jpg"]), 0)
-            pages = json.loads((output / "ocr_results.json").read_text())
+            pages, people, relationships, _ = load_ocr_output(output)
             self.assertEqual([Path(page["source_image"]).name for page in pages],
                              ["001.jpg", "002.jpg", "003.jpg", "004.jpg"])
-            self.assertEqual(len(json.loads((output / "people_candidates.json").read_text())), 4)
-            self.assertEqual(len(json.loads((output / "relationship_candidates.json").read_text())), 4)
-            self.assertEqual(len(json.loads((output / "rule_mentions.json").read_text())), 4)
+            self.assertEqual(len(people), 4)
+            self.assertEqual(len(relationships), 4)
+            self.assertEqual(sum(len(row["rule_mentions"]) for page in pages for row in page["rows"]), 4)
+            for name in ("ocr_results.json", "people_candidates.json", "relationship_candidates.json", "rule_mentions.json"):
+                self.assertFalse((output / name).exists())
+            self.assertEqual(sorted(path.name for path in (output / "001").glob("*.json")), ["page.json"])
             self.assertEqual((output / "review_state.json").read_bytes(), review_state)
 
             self.assertEqual(run_batch(["002.jpg"], revision="updated"), 0)
-            people = json.loads((output / "people_candidates.json").read_text())
+            _, people, _, _ = load_ocr_output(output)
             self.assertEqual(len(people), 4)
             self.assertEqual(next(item for item in people if item["source_page"] == "002.jpg")
                              ["name_hanja_candidate"], "updated")
             self.assertEqual((output / "review_state.json").read_bytes(), review_state)
 
-            aggregate_before_failure = (output / "ocr_results.json").read_bytes()
+            page_before_failure = (output / "002/page.json").read_bytes()
             self.assertEqual(run_batch(["005.jpg"], failure=True), 1)
-            self.assertEqual((output / "ocr_results.json").read_bytes(), aggregate_before_failure)
+            self.assertEqual((output / "002/page.json").read_bytes(), page_before_failure)
+            self.assertFalse((output / "005/page.json").exists())
 
             (output / "ocr_results.json").write_text("{invalid json", encoding="utf-8")
             self.assertEqual(run_batch(["006.jpg"]), 2)
@@ -109,7 +114,7 @@ class PaddleOptimizationTests(unittest.TestCase):
                      patch("jokbo_ocr.ocr_one_image", return_value=result) as recognize:
                     self.assertEqual(module.main(), 0)
                 self.assertEqual(recognize.call_args.args[2], output)
-                self.assertEqual(json.loads((output / "ocr_results.json").read_text())[0]["ocr_engine"], "paddleocr")
+                self.assertEqual(json.loads((output / "sample/page.json").read_text())["ocr_engine"], "paddleocr")
                 self.assertTrue((output / "paddleocr_metrics_pages.csv").exists())
 
     def test_column_match_requires_vertical_overlap(self):

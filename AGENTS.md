@@ -16,6 +16,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 | OCR CLI, layout, name/relationship candidates, engine optimizations | `jokbo_ocr.py` |
 | Desktop review workflow and overlays | `desktop_review.py` |
 | Review state and JSON/CSV exports | `review_core.py` |
+| Page JSON persistence and legacy OCR loading | `ocr_storage.py` |
 | Review list filters, matching scan number labels, relationship anchors, OCR focus | `review_helpers.py` |
 | Person-record OCR draft and evidence bounding boxes | `person_info_extractor.py` |
 | Stable `person_uid`, source occurrences, raw/reviewed records | `person_data_model.py` |
@@ -53,7 +54,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 4. Run:
    ```bash
    python -m unittest discover -s tests -v
-   python -m compileall -q jokbo_ocr.py desktop_review.py review_core.py review_helpers.py person_info_extractor.py person_data_model.py tests
+   python -m compileall -q jokbo_ocr.py desktop_review.py review_core.py ocr_storage.py review_helpers.py person_info_extractor.py person_data_model.py tests
    ```
    For UI edits, manually verify in the desktop app if a display environment is available. Never claim actual GUI interaction or PaddleOCR inference testing when it was not performed.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.
@@ -83,7 +84,7 @@ python jokbo_ocr.py --help
 # OCR only after installing PaddleOCR; inspect a single sample
 python jokbo_ocr.py ./scan/001.jpg --rows 6 --output output/
 
-# Review existing OCR output (the folder must have ocr_results.json)
+# Review OCR output containing */page.json (legacy ocr_results.json also supported)
 python desktop_review.py output/
 ```
 
@@ -92,3 +93,4 @@ python desktop_review.py output/
 - Text, character, and column OCR segmentation can miss characters and mix adjacent people's biographies. Do not silently treat keywords or name strings as verified; surface evidence and review status.
 - User preferences: avoid LLM dependency, favor efficient OCR inference and responsive local UI, retain review history and provenance, use the existing **main** branch workflow, and communicate technical changes in Korean.
 - See README §13 for oneDNN/PIR compatibility; keep a desktop first-load test.
+- New OCR evidence is stored once per page in `<stem>/page.json` (`schema_version: 1`). Root aggregate OCR JSON and old per-page JSON are read-only compatibility inputs; prefer new page files when both exist. Do not delete or auto-migrate reviewer state or legacy evidence.

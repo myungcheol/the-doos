@@ -51,6 +51,27 @@ class DesktopReviewTests(unittest.TestCase):
     def write(self, name, value):
         (self.root / name).write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
 
+    def test_page_only_output_opens_saves_and_reloads_existing_review_state(self):
+        from ocr_storage import save_page_result
+        page = json.loads((self.root / "ocr_results.json").read_text())[0]
+        page["people_candidates"] = json.loads((self.root / "people_candidates.json").read_text())
+        page["relationship_candidates"] = []
+        save_page_result(self.root, page)
+        for name in ("ocr_results.json", "people_candidates.json", "relationship_candidates.json"):
+            (self.root / name).unlink()
+        original_state = (self.root / "review_state.json").read_bytes()
+        self.window.open_folder(self.root)
+        self.assertEqual((self.root / "review_state.json").read_bytes(), original_state)
+        self.window.select_person_id("p1")
+        self.window.save_person()
+        saved = json.loads((self.root / "review_state.json").read_text())
+        self.assertEqual(saved["custom"], "보존")
+        self.assertEqual(saved["people_updates"]["p1"]["notes"], "기존 메모")
+        self.window.open_folder(self.root)
+        self.assertEqual(self.window.state["person_uid_map"], saved["person_uid_map"])
+        self.assertEqual(len(self.window.base_people), 2)
+        self.assertFalse((self.root / "ocr_results.json").exists())
+
     def test_first_render_and_save_preserve_state(self):
         self.assertIsNone(self.window.selected_id)
         self.window.select_person_id("p1")

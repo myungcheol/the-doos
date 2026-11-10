@@ -232,10 +232,9 @@ python jokbo_ocr.py ./scan/genealogy/{003..010}.jpg \
   --output output/
 ```
 
-`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `jokbo_ocr.py`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 같은 출력 폴더에 001~002 결과가 이미 있으면 루트 통합 JSON에 기존 페이지를 남기고 003~010 결과를 추가합니다. 같은 페이지를 다시 처리하면 그 페이지의 OCR 후보만 새 결과로 교체하며, `review_state.json`의 검수 내용은 변경하지 않습니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
+`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `jokbo_ocr.py`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 같은 출력 폴더에 001~002 결과가 있으면 해당 페이지 파일을 유지하고 `003/page.json`부터 `010/page.json`까지 추가합니다. 같은 페이지를 다시 처리하면 그 페이지의 `page.json`만 교체하며, `review_state.json`의 검수 내용은 변경하지 않습니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
 
-PaddleOCR 결과는 지정한 출력 디렉터리에 바로 저장됩니다. 기존 `ocr_results.json` 형식과 `ocr_engine: "paddleocr"` 값은 유지합니다.
-이전 버전에서 일부 페이지만 재실행해 루트 통합 JSON에서 빠진 페이지가 있더라도 페이지별 `rows.json`과 후보 JSON이 남아 있으면 데스크톱 검수 앱의 페이지 자동 검색으로 열 수 있습니다. 이번 변경은 이미 빠진 페이지를 루트에 자동 복원하지 않습니다. 기존 검수 상태가 있다면 해당 페이지를 다시 OCR하기 전에 인물 ID와 검수 상태의 대응을 확인하세요.
+페이지별 `page.json`이 OCR 원본 저장소입니다. 루트의 통합 OCR JSON은 새로 만들거나 갱신하지 않습니다. 기존 `ocr_results.json`과 후보 JSON, 페이지별 `rows.json`을 가진 폴더도 계속 읽을 수 있으며, 같은 페이지의 새 `page.json`이 있으면 새 파일을 우선합니다. 기존 파일을 자동 삭제하거나 검수 데이터를 변환하지 않습니다. 이전 버전에서 루트 목록에 빠진 페이지도 페이지 폴더와 원본 스캔을 찾을 수 있으면 검수 앱에서 열 수 있습니다.
 
 ### 4.2 주요 명령줄 옵션
 
@@ -280,20 +279,14 @@ OCR 실행 결과의 기본 구조:
 
 ```text
 output/
-├── ocr_results.json
-├── people_candidates.json
 ├── people_candidates.csv
-├── relationship_candidates.json
 ├── relationship_candidates.csv
-├── rule_mentions.json
 ├── paddleocr_metrics_pages.csv       # PaddleOCR 실행 시
 └── 001/                              # 원본 파일 stem별 페이지 폴더
     ├── table_roi.jpg
     ├── layout_debug.jpg
     ├── ocr.txt
-    ├── rows.json
-    ├── people_candidates.json
-    ├── relationship_candidates.json
+    ├── page.json                    # 이 페이지의 OCR 원본·행·열·인물·관계 후보
     ├── rows/
     └── columns/
 ```
@@ -302,18 +295,16 @@ output/
 
 | 파일 | 설명 |
 |---|---|
-| `ocr_results.json` | 페이지별 행, 열, OCR 결과, 원본 이미지/페이지 처리 정보 |
-| `people_candidates.json` | 페이지에서 검출한 인물 후보와 OCR 이름 후보, bbox, confidence, crop 경로 |
+| `001/page.json` | 원본 이미지 경로·크기, 표 ROI, OCR 엔진·모델·성능, 행·열·토큰 bbox, 인물·관계 후보를 저장하는 페이지별 단일 JSON |
 | `people_candidates.csv` | 인물 후보의 주요 필드를 표 형식으로 저장 |
-| `relationship_candidates.json` | 기하 규칙으로 생성한 부모·자녀 관계 후보 |
 | `relationship_candidates.csv` | 관계 후보를 표 형식으로 저장 |
-| `rule_mentions.json` | 행 OCR에서 추출한 족보 관련 표식 및 규칙 언급 |
 | `paddleocr_metrics_pages.csv` | PaddleOCR 페이지별 추론 횟수와 처리 시간 |
 | `table_roi.jpg` | 검출된 족보 표 영역 이미지 |
 | `layout_debug.jpg` | 행/레이아웃/인명 후보 검출 결과를 확인하기 위한 디버그 이미지 |
 | `ocr.txt` | 페이지의 OCR 텍스트를 읽기 쉬운 형태로 모은 파일 |
-| `rows.json` | 행별 텍스트와 세로 열 OCR 결과, 좌표 등 |
 | `rows/`, `columns/` | 분할된 행 및 세로 열 이미지 |
+
+`page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR과 `rule_mentions` 표식, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. 루트 CSV는 전체 페이지에서 읽어 만든 표 형식 내보내기이며 검수 앱의 원본 저장소로 사용하지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
 
 인물 후보에는 보통 다음 정보가 포함됩니다.
 
@@ -358,7 +349,7 @@ python desktop_review.py output/
 페이지를 넘어 이어지는 기록은 다음 순서로 연결합니다.
 
 1. 현재 페이지에 빠진 이름이 없는지 먼저 확인합니다. 같은 행에 새 인물이 있으면 이름 오른쪽의 이전 인물 계속 기록만 연결해야 합니다.
-2. OCR 결과 폴더를 열면 통합 결과와 같은 폴더의 `001/rows.json` 같은 개별 페이지 결과를 자동으로 검색해 페이지 순서대로 목록에 넣습니다. 원본 스캔은 통합 결과에 기록된 스캔 폴더에서 같은 이름으로 찾습니다. 새 결과를 생성했다면 `페이지 다시 검색`을 누릅니다. 찾지 못한 페이지의 이유는 상태 표시줄에 나타나며 기존 OCR·검수 파일은 검색 중 변경하지 않습니다.
+2. OCR 결과 폴더를 열면 `001/page.json` 같은 페이지 파일들을 자동으로 읽어 순서대로 목록에 넣습니다. 기존 통합 결과와 `rows.json` 형식도 함께 지원합니다. 새 결과를 생성했다면 `페이지 다시 검색`을 누릅니다. 찾지 못한 구형 페이지의 이유는 상태 표시줄에 나타나며 기존 OCR·검수 파일은 검색 중 변경하지 않습니다.
 3. `이어진 기록` 탭에서 행을 고릅니다. 같은 위치에 연달아 있는 미배정 OCR 열은 한 영역으로 묶여 위치 좌표와 원문 앞부분이 목록에 표시됩니다. 영역을 선택하면 오른쪽에 전체 OCR이 나오고 왼쪽 이미지에 그 영역의 박스가 표시됩니다. 연결할 영역을 체크하세요.
 4. 같은 행의 이전 페이지 인물을 선택하고 `선택한 OCR 영역을 인물에 연결`을 누릅니다. 오른쪽에서 왼쪽으로 읽는 순서의 마지막 인물을 먼저 제안하지만, 최종 연결은 검수자가 판단합니다. 숫자 페이지가 건너뛰어 있으면 이전 페이지 결과가 있어야 합니다.
 5. 원래 인물 페이지에서 연결 기록의 관직·생몰·묘소·배우자 등 분류 초안을 확인합니다. 해당 입력란에는 연결된 문구가 이어 붙은 상태로 나타나며, 표식이 없는 문장은 `인물 기록`에 나타납니다. 원본 이미지와 대조해 수정한 뒤 인물 정보를 저장하세요. 잘못 연결했다면 원문 페이지의 `이어진 기록`에서 저장된 연결을 선택해 해제할 수 있습니다.
@@ -610,7 +601,7 @@ PY
 
 ### 13.2 검수 UI에서 OCR 결과를 찾지 못함
 
-사이드바의 `OCR 결과 디렉터리`가 `ocr_results.json`이 있는 위치인지 확인합니다.
+`OCR 결과 폴더 열기`에서 `001/page.json` 같은 페이지 폴더들을 포함한 상위 폴더를 선택하세요. 구형 출력에서는 `ocr_results.json`이 있는 폴더를 선택합니다.
 
 - 현재 실행: 보통 `output`
 - 과거 비교 실행에서 저장된 PaddleOCR 결과: `output/paddleocr`
@@ -666,6 +657,7 @@ the-doos/
 ├── jokbo_ocr.py                 # OCR, 레이아웃, 인명 및 관계 후보 처리
 ├── desktop_review.py           # PySide6 데스크톱 검수 UI
 ├── review_core.py              # 검수 상태 및 내보내기 공통 함수
+├── ocr_storage.py              # 페이지별 OCR 저장·구형 결과 호환 읽기
 ├── review_helpers.py            # 관계 표시/필터 및 인물 번호 헬퍼
 ├── person_info_extractor.py     # 기존 OCR 열 기반 인물 정보 초안 추출
 ├── person_data_model.py         # Raw/Reviewed data, person_uid, source occurrence, registry
@@ -709,7 +701,7 @@ python jokbo_ocr.py --help
 
 - **OCR을 실제로 돌릴 때**만 3.3절의 PaddlePaddle/PaddleOCR 설치가 추가로 필요합니다. 모델 없이도 실행 가능한 단위 테스트와 OCR 추론 테스트를 혼동하지 마세요.
 - OCR 실행 예시는 4절, 검수 UI는 6절을 따릅니다. 처음에는 `scan/001.jpg` **한 페이지만 별도 출력 폴더에** 실행해 보세요.
-- 검수 UI에는 기존 OCR 결과 폴더(`ocr_results.json`이 있는 곳)를 지정합니다. **OCR 결과가 없는 새 clone 상태에서 UI만 실행해도 검수할 페이지는 없습니다.**
+- 검수 UI에는 페이지별 `page.json` 폴더들을 포함한 OCR 출력 폴더를 지정합니다. 구형 `ocr_results.json` 폴더도 지원합니다. **OCR 결과가 없는 새 clone 상태에서 UI만 실행해도 검수할 페이지는 없습니다.**
 - 사용자 작업 디렉터리가 꼭 `~/workspaces/jokbo_ocr_project`일 필요는 없습니다. clone한 저장소 루트에서 명령을 실행합니다.
 
 ### 17.3 실제 작업을 시작할 때
@@ -730,6 +722,7 @@ python jokbo_ocr.py --help
 | 부자관계 추론의 판면/기하 규칙 | `jokbo_ocr.py`, `tests/test_relationship_layout.py` |
 | 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `desktop_review.py`, `tests/test_desktop_review.py` |
 | 검수 상태·내보내기·원본 이미지 로딩 | `review_core.py` |
+| 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr_storage.py`, `tests/test_ocr_storage.py` |
 | 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review_extensions.py`, `tests/test_review_extensions.py` |
 | 실제 줌/팬, 클릭, bbox·관계선의 화면 표시 | `desktop_review.py` |
 | 관계 목록 번호/필터, 관계선 끝점, OCR focus 안전 처리 | `review_helpers.py`, `tests/test_review_helpers.py` |
@@ -746,8 +739,8 @@ python jokbo_ocr.py --help
 | 구분 | 위치/예시 | 의미와 주의 |
 |---|---|---|
 | 원본 스캔 | `scan/001.jpg`, `scan/frontmatter/...` 등 | 손실 없는 입력 원본. 임의로 덮어쓰지 않음 |
-| OCR/추론 원본 | `output/ocr_results.json`, `people_candidates.json`, `relationship_candidates.json` | 재생성 가능한 후보 데이터. 검수자가 직접 수정하는 저장소가 아님 |
-| OCR 좌표/이미지 | `output/001/rows.json`, `table_roi.jpg`, `layout_debug.jpg` | 행·열·인물 bbox 및 디버깅 근거 |
+| OCR/추론 원본 | `output/001/page.json` | 페이지별 OCR 원본·메타데이터·후보. 수작업 검수 값은 별도로 보관 |
+| OCR 좌표/이미지 | `output/001/page.json`, `table_roi.jpg`, `layout_debug.jpg` | 행·열·인물 bbox 및 디버깅 근거 |
 | 검수 작업 상태 | OCR 결과 폴더의 `review_state.json` | 수작업 정정, 확인/거절, 수동 관계 등. 백업 후 변경 |
 | 검수된 내보내기 | `reviewed_people.json/csv`, `reviewed_relationships.json/csv` | 사람이 확정/검토 중인 상태를 함께 보관 |
 | 공용 인물 레지스트리 | `person_registry.json` | 영구 인물 ID/출처. **저장소 루트에도 파일이 추적되고 있으므로 실험·실행만으로 변경된 내용을 무심코 커밋하지 말 것** |

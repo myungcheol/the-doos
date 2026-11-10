@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from person_data_model import ensure_person_uid, strip_name_marker
+from ocr_storage import load_ocr_output
 from historical_dates import (REIGNS, Reign, chinese_number, date_parts_draft,
                               date_parts_with_solar,
                               format_interval, lunar_interval, parse_date_parts,
@@ -162,50 +163,6 @@ class ReviewComboBox(QComboBox):
 
     def close_after_selection(self, _index):
         QTimer.singleShot(0, self.hidePopup)
-
-
-def discover_page_outputs(root, pages, people):
-    """Find sibling per-page OCR results and their scans without changing review state."""
-    known_pages = {page_name(page) for page in pages}
-    known_ids = {person.get("person_id") for person in people}
-    templates = [Path(page["source_image"]) for page in pages if page.get("source_image")]
-    suffixes = list(dict.fromkeys(template.suffix for template in templates if template.suffix))
-    entries, warnings = [], []
-    for folder in sorted(root.iterdir()):
-        if not folder.is_dir() or not (folder / "rows.json").is_file():
-            continue
-        try:
-            rows = read_json(folder / "rows.json", None)
-            candidates = read_json(folder / "people_candidates.json", [])
-            relations = read_json(folder / "relationship_candidates.json", [])
-            if not isinstance(rows, list) or not rows or not isinstance(candidates, list) or not isinstance(relations, list):
-                raise ValueError("OCR JSON 배열 형식 오류")
-            names = {person.get("source_page") for person in candidates}
-            if len(names) > 1:
-                raise ValueError("한 폴더에 여러 원본 페이지가 섞여 있습니다")
-            name = next(iter(names), None) or next((folder.name + suffix for suffix in suffixes), None)
-            if not name:
-                raise ValueError("원본 스캔의 파일 형식을 확인할 수 없습니다")
-            if name in known_pages:
-                continue
-            if any(person.get("person_id") in known_ids for person in candidates):
-                raise ValueError("기존 인물 ID와 충돌합니다")
-            source = next((candidate for template in templates
-                           for candidate in (template.parent / name, root.parent / template.parent / name, root / name)
-                           if candidate.is_file()), None)
-            if source is None:
-                raise ValueError(f"원본 스캔 {name}을 찾을 수 없습니다")
-            relations = [{**rel, "source_page": rel.get("source_page") or name} for rel in relations]
-            if any(rel.get("source_page") != name for rel in relations):
-                raise ValueError("관계 후보의 원본 페이지가 다릅니다")
-            page = {"source_page": name, "source_image": str(source.resolve()),
-                    "page_output_dir": str(folder.resolve()), "rows": rows}
-            entries.append({"page_result": page, "people": candidates, "relationships": relations})
-            known_pages.add(name)
-            known_ids.update(person.get("person_id") for person in candidates)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            warnings.append(f"{folder.name}: {exc}")
-    return entries, warnings
 
 
 class OcrFocusSelector(QWidget):
@@ -1090,12 +1047,10 @@ class ReviewWindow(QMainWindow):
     def open_folder(self, path, selected_page=None):
         root = find_output_root(str(path))
         if root is None:
-            QMessageBox.warning(self, "폴더 오류", "ocr_results.json을 찾을 수 없습니다.")
+            QMessageBox.warning(self, "폴더 오류", "페이지별 page.json 또는 기존 OCR 결과를 찾을 수 없습니다.")
             return
         try:
-            pages = read_json(root / "ocr_results.json", [])
-            people = read_json(root / "people_candidates.json", [])
-            rels = read_json(root / "relationship_candidates.json", [])
+            pages, people, rels, warnings = load_ocr_output(root)
             state = read_json(root / "review_state.json", {})
             if not isinstance(pages, list) or not pages or not isinstance(state, dict) or not isinstance(people, list) or not isinstance(rels, list):
                 raise ValueError("OCR 결과 또는 검수 상태 형식이 올바르지 않습니다.")
@@ -1107,10 +1062,6 @@ class ReviewWindow(QMainWindow):
             self.state.setdefault(key, default)
         self.base_people, self.base_rels, self.page_results = merge_review_sources(
             self.base_people, self.base_rels, self.page_results, self.state
-        )
-        discovered, warnings = discover_page_outputs(root, self.page_results, self.base_people)
-        self.base_people, self.base_rels, self.page_results = merge_review_sources(
-            self.base_people, self.base_rels, self.page_results, {"supplemental_pages": discovered}
         )
         self.page_results.sort(key=page_sort_key)
         self.state_digest = file_digest(root / "review_state.json")

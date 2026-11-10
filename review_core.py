@@ -8,6 +8,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+from ocr_storage import has_ocr_output
 
 from historical_dates import date_parts_with_solar
 from person_data_model import (
@@ -24,7 +25,7 @@ def find_output_root(raw_path: str) -> Path | None:
     path = Path(raw_path).expanduser().resolve()
     candidates = [path, path / "paddleocr"]
     for candidate in candidates:
-        if (candidate / "ocr_results.json").exists():
+        if has_ocr_output(candidate):
             return candidate
     return None
 
