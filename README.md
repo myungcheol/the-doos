@@ -221,6 +221,19 @@ python jokbo_ocr.py ./scan/ \
   --output output/
 ```
 
+연속된 일부 페이지만 실행하려면 Bash/WSL의 중괄호 범위 확장을 사용할 수 있습니다. 다음 명령은 `scan/genealogy/003.jpg`부터 `010.jpg`까지 8장을 처리합니다.
+
+```bash
+python jokbo_ocr.py ./scan/genealogy/{003..010}.jpg \
+  --paddle-version PP-OCRv5 \
+  --paddle-lang chinese_cht \
+  --paddle-device cpu \
+  --rows 6 \
+  --output output/genealogy-003-010/
+```
+
+`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `jokbo_ocr.py`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 기존 OCR 결과의 통합 JSON을 덮어쓰지 않도록 작업 범위마다 별도 출력 폴더를 사용하는 편이 안전합니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
+
 PaddleOCR 결과는 지정한 출력 디렉터리에 바로 저장됩니다. 기존 `ocr_results.json` 형식과 `ocr_engine: "paddleocr"` 값은 유지합니다.
 
 ### 4.2 주요 명령줄 옵션
