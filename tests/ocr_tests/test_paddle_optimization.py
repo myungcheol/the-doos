@@ -50,9 +50,7 @@ class PaddleOptimizationTests(unittest.TestCase):
                         raise RuntimeError("OCR failed")
                     name = path.name
                     return {
-                        "source_image": str(path), "rows": [{"columns": [], "rule_mentions": [
-                            {"marker": "子", "source_row_id": f"{path.stem}_row_01"}
-                        ]}],
+                        "source_image": str(path), "rows": [{"columns": []}],
                         "people_candidates": [{"person_id": f"{path.stem}_P0001", "source_page": name,
                                                "name_hanja_candidate": revision}],
                         "relationship_candidates": [{"relationship_id": "R0001"}],
@@ -74,8 +72,7 @@ class PaddleOptimizationTests(unittest.TestCase):
                              ["001.jpg", "002.jpg", "003.jpg", "004.jpg"])
             self.assertEqual(len(people), 4)
             self.assertEqual(len(relationships), 4)
-            self.assertEqual(sum(len(row["rule_mentions"]) for page in pages for row in page["rows"]), 4)
-            for name in ("ocr_results.json", "people_candidates.json", "relationship_candidates.json", "rule_mentions.json"):
+            for name in ("ocr_results.json", "people_candidates.json", "relationship_candidates.json"):
                 self.assertFalse((output / name).exists())
             self.assertEqual(sorted(path.name for path in (output / "001").glob("*.json")), ["page.json"])
             self.assertEqual((output / "review_state.json").read_bytes(), review_state)

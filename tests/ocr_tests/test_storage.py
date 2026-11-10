@@ -94,7 +94,9 @@ class OcrStorageTests(unittest.TestCase):
                              ["001/page.json"])
             self.assertFalse((output / "001/ocr.txt").exists())
             self.assertFalse(list(output.glob("*.csv")))
-            self.assertEqual(load_ocr_output(output)[0][0]["image_size"], {"width": 100, "height": 120})
+            page = load_ocr_output(output)[0][0]
+            self.assertEqual(page["image_size"], {"width": 100, "height": 120})
+            self.assertNotIn("rule_mentions", page["rows"][0])
 
 
 if __name__ == "__main__":

@@ -28,16 +28,6 @@ CHINESE_DIGITS = {
 }
 CHINESE_UNITS = {"十": 10, "百": 100, "千": 1000}
 GENERATION_RE = re.compile(r"([一二三四五六七八九十百千零〇○兩两]+)世")
-MARKERS = {
-    "繼配": "secondary_spouse_marker", "嗣子": "adopted_heir_marker",
-    "出繼": "adoption_out_marker", "入繼": "adoption_in_marker",
-    "諱": "personal_name_marker", "字": "courtesy_name_marker",
-    "號": "pen_name_marker", "配": "spouse_marker", "子": "child_marker",
-    "父": "father_marker", "母": "mother_marker", "生": "birth_marker",
-    "卒": "death_marker", "墓": "tomb_marker",
-}
-
-
 @dataclass
 class LineBoundary:
     y: int
@@ -94,26 +84,6 @@ def parse_generation(text: str) -> dict[str, Any] | None:
             "all_matches": matches,
         }
     return {"generation_text": None, "generation_number": None, "all_matches": matches, "ambiguous": True}
-
-
-def extract_rule_markers(text: str) -> list[dict[str, str]]:
-    compact = re.sub(r"\s+", "", text)
-    found: list[dict[str, str]] = []
-    occupied: set[int] = set()
-    # Match longer terms first so 嗣子 is not double-counted as 子.
-    for marker in sorted(MARKERS, key=len, reverse=True):
-        start = 0
-        while True:
-            index = compact.find(marker, start)
-            if index < 0:
-                break
-            positions = set(range(index, index + len(marker)))
-            if not positions.intersection(occupied):
-                found.append({"marker": marker, "type": MARKERS[marker], "index": str(index)})
-                occupied.update(positions)
-            start = index + len(marker)
-    found.sort(key=lambda item: int(item["index"]))
-    return found
 
 
 def parse_person_name(column: dict[str, Any], min_font_size_ratio: float = 1.22) -> dict[str, Any] | None:
@@ -838,24 +808,6 @@ def build_column_records(
     return records
 
 
-def parse_rule_mentions(row: dict[str, Any]) -> list[dict[str, Any]]:
-    mentions = []
-    for marker in extract_rule_markers(row.get("band_text", "")):
-        mentions.append({
-            **marker, "source_column_id": None, "source_row_id": row["row_id"],
-            "evidence_text": row.get("band_text", ""), "bbox": row.get("bbox"),
-            "review_status": "needs_review",
-        })
-    for column in row.get("columns", []):
-        for marker in extract_rule_markers(column.get("text", "")):
-            mentions.append({
-                **marker, "source_column_id": column["column_id"], "source_row_id": row["row_id"],
-                "evidence_text": column.get("text", ""), "bbox": column.get("bbox"),
-                "review_status": "needs_review",
-            })
-    return mentions
-
-
 def _person_center_x(person: dict[str, Any], table_x: int) -> float:
     box = person.get("bbox") or {}
     return float(box.get("x", table_x)) + float(box.get("width", 0)) / 2.0 - table_x
@@ -1061,7 +1013,7 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
             "generation_text": generation.get("generation_text") if generation else None,
             "generation_number": generation.get("generation_number") if generation else None,
             "generation_matches": generation.get("all_matches", []) if generation else [],
-            "columns": columns, "person_candidates": [], "rule_mentions": [],
+            "columns": columns, "person_candidates": [],
         }
         # Detect prominent name columns from the printed glyph geometry. This
         # catches large names even when row OCR misses them.
@@ -1188,7 +1140,6 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
             )
             row["person_candidates"].append(candidate)
             all_people.append(candidate)
-        row["rule_mentions"] = parse_rule_mentions(row)
         all_rows.append(row)
         legacy_blocks.append({
             "block_id": row_id, "page": path.name, "band": row_index,

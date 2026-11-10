@@ -296,7 +296,7 @@ output/
 | `layout_debug.jpg` | 행/레이아웃/인명 후보 검출 결과를 확인하기 위한 디버그 이미지 |
 | `rows/`, `columns/` | 분할된 행 및 세로 열 이미지 |
 
-`page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR과 `rule_mentions` 표식, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. OCR 원문과 성능 정보도 이 파일에 있으므로 별도 CSV나 `ocr.txt`를 만들지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
+`page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. OCR 원문과 성능 정보도 이 파일에 있으므로 별도 CSV나 `ocr.txt`를 만들지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
 
 인물 후보에는 보통 다음 정보가 포함됩니다.
 
