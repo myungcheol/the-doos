@@ -413,6 +413,8 @@ python desktop_review.py output/
 
 페이지·인물·성별·검수 상태·기록 행·연결 대상의 목록은 항목을 선택하면 바로 닫힙니다.
 
+출생·사망 원문에 왕/연호와 음력 연·월·일이 명확하면 `양력 출생`·`양력 사망`에 미검수 양력 초안이 표시됩니다. `연호·음력 변환…`을 누르면 나라(고려·조선·송), 왕/연호, 재위 연수, 음력 월·일과 윤달을 확인하는 창이 열립니다. 선택한 왕/연호의 서기 대응 연도가 즉시 표시됩니다. 목록에 보이는 `원년`은 그 왕의 **즉위 연도와 다를 수 있습니다**. 목록에 없는 왕/연호는 이름과 **원년의 서기 연도 및 마지막 서기 연도**를 직접 입력할 수 있습니다. 원문과 계산 결과를 대조했다면 창에서 확인 상태를 표시한 뒤 인물 저장을 누르세요. 원문을 바꾸면 이전 변환값은 다시 계산하거나 해제합니다.
+
 인명 누락이 보이면 `누락 인명 후보 찾기`를 누릅니다. 현재 페이지의 큰 글자 영역을 재검출하고 기존 OCR 열 텍스트를 참고해 **검토 대기** 후보를 추가합니다. 새 OCR 모델 추론은 실행하지 않습니다. 기존 후보 번호와 UUID는 유지하고, 추가 후보는 뒤에 붙입니다. 후보의 이름이 비어 있거나 잘못 읽혔다면 원본과 대조해 정정하세요. 이 기능은 기존 OCR 후보 파일을 다시 쓰지 않으며 새 후보는 검수 상태에 저장합니다.
 
 페이지를 넘어 이어지는 기록은 다음 순서로 연결합니다.
@@ -492,6 +494,10 @@ needs_review · 1. 杜慶寧 → 3. 之逢
 7. 추가 인물 정보도 원본과 대조했으면 별도의 정보 검수 완료를 표시합니다.
 
 인명 검수와 추가 정보 검수 상태는 따로 관리합니다.
+
+Streamlit 화면도 출생·사망 원문을 저장할 때 식별 가능한 양력 초안을 함께 저장합니다. 인물 검수 화면의 `출생·사망 연호/왕 찾아 양력 변환`에서 왕/연호를 조회하거나 직접 원년·마지막 해를 입력해 날짜를 다시 계산할 수 있습니다. 수동 변환은 원문을 먼저 저장해야 하며, 날짜의 확인 상태는 인물 정보 확인 상태와 별도로 선택합니다.
+
+음력 연·월·일이 모두 있으면 양력 하루, 일이 없으면 그 음력 월의 양력 시작일~종료일, 월·일이 없으면 그 음력 해의 양력 시작일~종료일을 저장합니다. 없는 월·일을 1일로 채우지 않습니다. 간지가 서기와 충돌하거나 왕/연호가 둘 이상으로 해석되면 자동 변환하지 않습니다. 변환값은 역사적 달력 차이와 OCR 오인식 가능성이 있으므로 원문과 대조하세요.
 
 `메모`는 검수자가 판독 근거, 불확실한 글자, 추후 확인할 사항을 적는 자유 입력란입니다. 원문 OCR 전체는 `인물 기록`과 원본 근거에 따로 보관합니다.
 
@@ -585,7 +591,7 @@ OCR 결과에 문자 단위 `token_boxes`가 있으면 글자 박스를 표시�
 
 ### 7.3 자동 추출의 한계
 
-이 기능은 **레이아웃과 키워드에 근거한 초안 생성**입니다. 날짜를 완전히 파싱하거나 문장 의미를 이해하는 작업은 아니며, 주변 텍스트가 인접한 다른 인물 또는 배우자 기록일 수도 있습니다. 따라서 자동 입력한 모든 값은 원본 이미지와 대조해야 합니다. 비어 있는 값을 임의로 추측해 채우지 않습니다.
+이 필드 추출은 **레이아웃과 키워드에 근거한 초안 생성**입니다. 문장 의미를 완전히 이해하지 못하고 주변 텍스트가 인접한 다른 인물 또는 배우자 기록일 수도 있습니다. 별도 양력 변환은 식별 가능한 날짜 표기만 처리하며 인물 소유를 판단하지 않습니다. 따라서 자동 입력한 모든 값은 원본 이미지와 대조해야 합니다. 비어 있는 값을 임의로 추측해 채우지 않습니다.
 
 ## 8. 데이터 모델: 원본·검수·고유 ID
 
@@ -608,6 +614,7 @@ OCR 결과에 문자 단위 `token_boxes`가 있으면 글자 박스를 표시�
 - `generation_number`: 세대
 - `courtesy_name_hanja`, `pen_name_hanja`: 자와 호
 - `birth_text`, `death_text`: 출생 및 사망 원문/정리 내용
+- `birth_solar`, `death_solar`: 양력 변환 결과(없으면 `null`). `start`/`end`는 **양끝 포함** ISO 날짜, `precision`은 `day`/`month`/`year`, `lunar`는 원래 음력 연·월·일·윤달, `reference`는 나라·왕/연호·재위 연수와 대응 연도 근거, `source_text`는 변환 당시 원문, `calendar_model`은 계산 모델, `review_status`는 날짜 자체의 검토 상태입니다. OCR 원문은 이 객체로 대체하지 않습니다.
 - `office_title`: 관직·품계·봉호
 - `spouses`: 여러 부인/첩/기타 배우자 배열
 - `burial_text`: 묘소·장지
@@ -615,6 +622,8 @@ OCR 결과에 문자 단위 `token_boxes`가 있으면 글자 박스를 표시�
 - `notes`: 검수 메모
 - `review_status`: 인명 검수 상태
 - `information_review_status`: 추가 정보 검수 상태
+
+날짜 변환은 `historical_dates.py`와 `sxtwl==2.0.7`을 사용합니다. 서기 날짜는 **역산 그레고리력**으로 표시하며, `sxtwl`의 중국 천문 역법 모델을 사용하므로 시대·지역에 따라 실제 고려/조선의 역일과 다를 가능성을 검수해야 합니다. 고려 왕 원년은 [국사편찬위원회 『고려사절요』 목차](https://db.history.go.kr/goryeo/compareViewer.do?levelId=kj_%24s04), 조선 왕대는 [국사편찬위원회 조선왕조실록](https://sillok.history.go.kr/main.do), 개보·순화 대응 연도는 [국사편찬위원회 사료](https://db.history.go.kr/id/sy_002r_0010_0190_0060)를 참고했습니다. `sxtwl` 날짜는 [『고려사』 975년 음력 10월 26일](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=&levelType=&parentId=kr_002r_0570_0010&types=r)과 [1048년 음력 정월 초하루](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=kr&parentId=kr_007r_0040_0010&types=r)의 양력 날짜와 대조했습니다. 왕/연호 목록은 검증된 항목만 제공하며 전체 연호 목록은 아닙니다.
 
 원본 이미지 바이너리를 JSON 안에 넣지는 않습니다. 경로와 bbox로 참조합니다. 이미지 파일을 이동하거나 다른 컴퓨터에서 검수할 때는 `source_image`와 `image_file` 경로가 유효하도록 유지해야 합니다.
 
@@ -942,6 +951,7 @@ python jokbo_ocr.py --help
 | 실제 줌/팬, 클릭, bbox·관계선의 브라우저 렌더링 | `components/jokbo_image_viewer/index.html` |
 | 관계 목록 번호/필터, 관계선 끝점, OCR focus 안전 처리 | `review_helpers.py`, `tests/test_review_helpers.py` |
 | 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `person_info_extractor.py`, `tests/test_person_info_extractor.py` |
+| 왕/연호 연수와 음력→양력 범위 계산 | `historical_dates.py`, `tests/test_historical_dates.py` |
 | `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `person_data_model.py`, `tests/test_person_data_model.py` |
 | 로컬 검수 UI 실행/의존성 | `run_review.sh`, `requirements-review.txt`, `requirements.txt` |
 | OCR 엔진 전용 의존성 | `requirements-paddle.txt`, `requirements-tesseract.txt` |

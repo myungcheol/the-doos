@@ -1,4 +1,5 @@
 import json
+import csv
 import os
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ try:
     from PySide6.QtGui import QImage, QInputMethodEvent, QRawFont
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox
-    from desktop_review import (ReviewComboBox, ReviewWindow, RegionOcrWorker, configure_application,
+    from desktop_review import (HistoricalDateDialog, ReviewComboBox, ReviewWindow, RegionOcrWorker, configure_application,
                                 crop_selected_region, restore_qt_environment)
     from review_extensions import make_continuation
 except ImportError:
@@ -64,6 +65,51 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(len(state["person_uid_map"]), 2)
         exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
         self.assertEqual(exports[0]["raw_data"]["name_ocr"]["raw_text"], "子甲")
+
+    def test_birth_date_draft_saved_without_changing_original_text(self):
+        self.window.select_person_id("p1")
+        source = "開寶八年乙亥十月十五日生"
+        self.window.inputs["birth_text"].setText(source)
+        self.window.save_person()
+        state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        update = state["people_updates"]["p1"]
+        self.assertEqual(update["birth_text"], source)
+        self.assertEqual(update["birth_solar"]["start"], "0975-11-20")
+        self.assertEqual(update["birth_solar"]["source_text"], source)
+        exported = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(exported["reviewed_data"]["birth_solar"], update["birth_solar"])
+        with (self.root / "reviewed_people.csv").open(encoding="utf-8-sig", newline="") as handle:
+            row = next(csv.DictReader(handle))
+        self.assertEqual(json.loads(row["birth_solar"])["start"], "0975-11-20")
+        self.window.inputs["birth_text"].setText("수정된 원문")
+        self.window.save_person()
+        state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        self.assertIsNone(state["people_updates"]["p1"]["birth_solar"])
+
+    def test_date_dialog_looks_up_king_year_and_partial_lunar_month(self):
+        dialog = HistoricalDateDialog("문종 이년 이월", "birth")
+        dialog.country.setCurrentIndex(dialog.country.findData("고려"))
+        dialog.populate_reigns()
+        dialog.reign.setCurrentIndex(next(i for i in range(dialog.reign.count())
+                                          if dialog.reign.itemData(i).name == "문종 文宗"))
+        dialog.regnal_year.setText("二")
+        self.assertEqual(dialog.ce_year.text(), "1048")
+        dialog.month.setText("二")
+        dialog.convert()
+        self.assertEqual(dialog.result_value["precision"], "month")
+        self.assertEqual(dialog.result_value["start"], "1048-03-17")
+
+    def test_date_dialog_allows_unlisted_era_with_explicit_year_mapping(self):
+        dialog = HistoricalDateDialog("미등록 연호 원년", "death")
+        dialog.reign.setCurrentIndex(dialog.reign.findData("custom"))
+        dialog.custom_name.setText("미등록 연호")
+        dialog.custom_first.setText("1048")
+        dialog.custom_last.setText("1052")
+        dialog.regnal_year.setText("二")
+        self.assertEqual(dialog.ce_year.text(), "1049")
+        dialog.convert()
+        self.assertEqual(dialog.result_value["lunar"]["year"], 1049)
+        self.assertEqual(dialog.result_value["reference"]["mapping_source"], "reviewer")
 
     def test_spouse_ocr_draft_is_visible_and_unverified(self):
         self.write("ocr_results.json", [{"source_page": "sample.png",

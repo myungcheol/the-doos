@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+from historical_dates import (REIGNS, Reign, chinese_number, date_draft, format_interval,
+                              lunar_interval, resolve_regnal_year)
 
 from person_info_extractor import FIELD_LABELS, extract_person_info_draft, get_field_source_columns
 from person_data_model import (
@@ -161,7 +163,7 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
             "person_uid", "person_id", "source_page", "name_hanja_candidate", "raw_name_ocr",
             "transcribed_name_hanja", "sex_marker", "gender", "review_status",
             "generation_number", "courtesy_name_hanja", "pen_name_hanja",
-            "birth_text", "death_text", "office_title", "spouse_text", "spouses",
+            "birth_text", "death_text", "birth_solar", "death_solar", "office_title", "spouse_text", "spouses",
             "burial_text", "biography_text", "notes", "information_review_status",
             "source_record_ocr_text", "raw_data", "reviewed_data", "source_occurrences",
             "bbox", "image_file", "ocr_confidence",
@@ -170,7 +172,7 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
         csv_people = []
         for person in people:
             row = dict(person)
-            for nested_key in ("spouses", "raw_data", "reviewed_data", "source_occurrences", "bbox"):
+            for nested_key in ("spouses", "birth_solar", "death_solar", "raw_data", "reviewed_data", "source_occurrences", "bbox"):
                 if nested_key in row:
                     row[nested_key] = json.dumps(row[nested_key], ensure_ascii=False)
             csv_people.append(row)
@@ -1097,6 +1099,10 @@ def main() -> None:
                             "사망 정보", value=person_value("death_text"),
                             placeholder="예: 庚寅年卒"
                         )
+                        st.caption("양력 출생: " + format_interval(date_draft(
+                            birth_text, "birth", person_value("birth_solar", None))))
+                        st.caption("양력 사망: " + format_interval(date_draft(
+                            death_text, "death", person_value("death_solar", None))))
                         office_title = st.text_input(
                             "관직·품계·봉호", value=person_value("office_title")
                         )
@@ -1198,6 +1204,8 @@ def main() -> None:
                                     "pen_name_hanja": pen_name.strip() or None,
                                     "birth_text": birth_text.strip() or None,
                                     "death_text": death_text.strip() or None,
+                                    "birth_solar": date_draft(birth_text.strip(), "birth", update.get("birth_solar")),
+                                    "death_solar": date_draft(death_text.strip(), "death", update.get("death_solar")),
                                     "office_title": office_title.strip() or None,
                                     "spouses": reviewed_spouses,
                                     "spouse_text": legacy_spouse_text,
@@ -1221,6 +1229,69 @@ def main() -> None:
                                 save_state(root, state, all_people, all_relationships, page_results)
                                 st.success("인명과 인물 정보를 저장했습니다.")
                                 st.rerun()
+
+                    with st.expander("출생·사망 연호/왕 찾아 양력 변환"):
+                        st.caption("원문을 먼저 저장한 뒤 변환하세요. 결과는 날짜 단위에 맞는 범위로 저장되며 검토 대기 상태입니다.")
+                        for event, field, label in (("birth", "birth_text", "출생"),
+                                                    ("death", "death_text", "사망")):
+                            st.markdown(f"**{label}**")
+                            country = st.selectbox("나라", ("고려", "조선", "송"),
+                                                   key=f"date_country_{event}_{selected_person_id}")
+                            available = [entry for entry in REIGNS if entry.country == country]
+                            selected_reign = st.selectbox("왕/연호 (서기 대응 연도)", [*available, "custom"],
+                                                 format_func=lambda entry: "목록에 없음 · 직접 입력" if entry == "custom" else f"{entry.name} (원년 {entry.first_ce_year} · 마지막 {entry.last_ce_year})",
+                                                 key=f"date_reign_{event}_{selected_person_id}")
+                            if selected_reign == "custom":
+                                custom_name = st.text_input("왕/연호 이름", key=f"date_name_{event}_{selected_person_id}")
+                                custom_first = st.text_input("원년의 서기 연도", key=f"date_first_{event}_{selected_person_id}")
+                                custom_last = st.text_input("마지막 서기 연도", key=f"date_last_{event}_{selected_person_id}")
+                                first = chinese_number(custom_first)
+                                last = chinese_number(custom_last)
+                                reign = (Reign(country, custom_name, (custom_name,), first, last)
+                                         if custom_name.strip() and first and last and last >= first else None)
+                            else:
+                                reign = selected_reign
+                            regnal = st.text_input("재위 연수", key=f"date_regnal_{event}_{selected_person_id}")
+                            month_input, day_input = st.columns(2)
+                            month = month_input.text_input("음력 월 (선택)", key=f"date_month_{event}_{selected_person_id}")
+                            day = day_input.text_input("음력 일 (선택)", key=f"date_day_{event}_{selected_person_id}")
+                            leap = st.checkbox("윤달", key=f"date_leap_{event}_{selected_person_id}")
+                            confirm_date = st.checkbox("원문 날짜와 변환 결과를 대조해 확인함",
+                                                       key=f"date_confirm_{event}_{selected_person_id}")
+                            regnal_number = chinese_number(regnal)
+                            try:
+                                ce_year = resolve_regnal_year(reign, regnal_number) if reign and regnal_number else None
+                            except ValueError:
+                                ce_year = None
+                            st.caption(f"대응 서기: {ce_year or '확인 필요'}년")
+                            if st.button(f"{label} 양력 범위 저장", key=f"date_save_{event}_{selected_person_id}"):
+                                try:
+                                    if reign is None:
+                                        raise ValueError("왕/연호와 원년·마지막 해를 입력하세요.")
+                                    if not regnal_number:
+                                        raise ValueError("재위 연수를 입력하세요.")
+                                    if ((month.strip() and chinese_number(month) is None)
+                                            or (day.strip() and chinese_number(day) is None)):
+                                        raise ValueError("음력 월·일을 읽을 수 없습니다.")
+                                    year = resolve_regnal_year(reign, regnal_number)
+                                    value = lunar_interval(year, chinese_number(month) if month.strip() else None,
+                                                           chinese_number(day) if day.strip() else None, leap)
+                                    if confirm_date:
+                                        value["review_status"] = "confirmed"
+                                    value["reference"] = {"country": country, "name": reign.name,
+                                                          "regnal_year": regnal_number, "sexagenary": None,
+                                                          "mapping_source": "reviewer" if selected_reign == "custom" else "catalog",
+                                                          "first_ce_year": reign.first_ce_year,
+                                                          "last_ce_year": reign.last_ce_year}
+                                    source = update.get(field)
+                                    if not source:
+                                        raise ValueError("먼저 출생/사망 원문을 저장하세요.")
+                                    value["source_text"] = source
+                                    state["people_updates"].setdefault(selected_person_id, {})[f"{event}_solar"] = value
+                                    save_state(root, state, all_people, all_relationships, page_results)
+                                    st.rerun()
+                                except (ValueError, RuntimeError) as exc:
+                                    st.error(str(exc))
 
             with relation_tab:
                 st.subheader("선택 인물의 관계 및 관계 후보")

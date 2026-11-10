@@ -13,6 +13,7 @@ from typing import Any
 PERSON_FIELDS = (
     "transcribed_name_hanja", "sex_marker", "gender", "generation_number",
     "courtesy_name_hanja", "pen_name_hanja", "birth_text", "death_text",
+    "birth_solar", "death_solar",
     "office_title", "spouses", "spouse_text", "burial_text", "biography_text",
     "notes", "review_status", "information_review_status",
 )
@@ -184,6 +185,8 @@ def build_reviewed_data(person: dict[str, Any]) -> dict[str, Any]:
         "pen_name_hanja": person.get("pen_name_hanja"),
         "birth_text": person.get("birth_text"),
         "death_text": person.get("death_text"),
+        "birth_solar": person.get("birth_solar"),
+        "death_solar": person.get("death_solar"),
         "office_title": person.get("office_title"),
         "spouses": spouses,
         "burial_text": person.get("burial_text"),
@@ -223,12 +226,26 @@ def build_person_registry(people: list[dict[str, Any]], existing: dict[str, Any]
             if reviewed.get("review_status") == "confirmed" or not old_canonical:
                 entry["canonical_name_hanja"] = name
         previous_reviewed = dict(entry.get("reviewed_data") or {})
+        previous_occurrence = (entry.get("raw_data_latest") or {}).get("source_occurrence") or {}
+        current_occurrence = (person.get("raw_data") or {}).get("source_occurrence") or {}
+        same_occurrence = (previous_occurrence.get("source_occurrence_id")
+                           and previous_occurrence.get("source_occurrence_id") == current_occurrence.get("source_occurrence_id"))
         merged_reviewed = dict(previous_reviewed)
         for field, value in reviewed.items():
             if value not in (None, "", [], {}):
                 merged_reviewed[field] = value
             elif field not in merged_reviewed:
                 merged_reviewed[field] = value
+        # A corrected date on the same OCR occurrence invalidates its old
+        # conversion. Keep an older edition's reviewed date when a different
+        # occurrence has no usable date of its own.
+        if same_occurrence:
+            for event in ("birth", "death"):
+                solar_field = f"{event}_solar"
+                old_solar = previous_reviewed.get(solar_field)
+                if (isinstance(old_solar, dict) and reviewed.get(solar_field) is None
+                        and old_solar.get("source_text") != reviewed.get(f"{event}_text")):
+                    merged_reviewed[solar_field] = None
         # Do not downgrade an already confirmed identity record just because a
         # new edition occurrence has not yet been reviewed.
         if previous_reviewed.get("review_status") == "confirmed" and reviewed.get("review_status") != "confirmed":

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from PySide6.QtCore import Qt, Signal, QRectF, QTimer, QObject, QThread, Slot
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QImage, QPen, QPixmap, QPainter
 from PySide6.QtWidgets import (
-    QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGraphicsScene,
+    QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGraphicsScene,
     QGridLayout,
     QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
     QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget, QTextEdit,
@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from person_data_model import ensure_person_uid, strip_name_marker
+from historical_dates import (REIGNS, Reign, chinese_number, format_interval,
+                              lunar_interval, parse_date_text, resolve_regnal_year)
 from person_info_extractor import (FIELD_LABELS, extract_continuation_info_draft,
                                    extract_person_info_draft, get_field_source_columns)
 from review_extensions import (merge_review_sources, page_name, page_sort_key, orphan_regions,
@@ -420,6 +422,156 @@ class ScanView(QGraphicsView):
         super().mouseMoveEvent(event)
 
 
+class HistoricalDateDialog(QDialog):
+    """Lookup a checked regnal year and convert a partial lunar date."""
+
+    def __init__(self, source_text, event, current=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("음력 날짜 → 양력 범위")
+        self.setMinimumWidth(420)
+        self.result_value = None
+        layout = QVBoxLayout(self)
+        note = QLabel("원문을 대조해 나라·왕/연호·재위 연수를 확인하세요. 변환 결과는 검토 대기 초안입니다.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        layout.addLayout(form)
+        self.country = ReviewComboBox()
+        for country in ("고려", "조선", "송"):
+            self.country.addItem(country, country)
+        form.addRow("나라", self.country)
+        self.reign = ReviewComboBox()
+        form.addRow("왕 또는 연호", self.reign)
+        self.custom_name = QLineEdit()
+        self.custom_name.setPlaceholderText("목록에 없을 때 왕/연호 이름")
+        form.addRow("직접 입력 이름", self.custom_name)
+        self.custom_first = QLineEdit()
+        self.custom_first.setPlaceholderText("원년의 서기 연도")
+        form.addRow("직접 입력 원년", self.custom_first)
+        self.custom_last = QLineEdit()
+        self.custom_last.setPlaceholderText("마지막 서기 연도")
+        form.addRow("직접 입력 마지막 해", self.custom_last)
+        self.regnal_year = QLineEdit()
+        self.regnal_year.setPlaceholderText("예: 八, 8, 元")
+        form.addRow("재위 연수", self.regnal_year)
+        self.ce_year = QLabel("서기 연도 미정")
+        form.addRow("대응 서기", self.ce_year)
+        self.month = QLineEdit()
+        self.month.setPlaceholderText("비어 있으면 연도 단위")
+        form.addRow("음력 월", self.month)
+        self.day = QLineEdit()
+        self.day.setPlaceholderText("비어 있으면 월 단위")
+        form.addRow("음력 일", self.day)
+        self.leap = QCheckBox("윤달")
+        form.addRow(self.leap)
+        self.confirmed = QCheckBox("원문 날짜와 변환 결과를 대조해 확인함")
+        form.addRow(self.confirmed)
+        self.error = QLabel("")
+        self.error.setWordWrap(True)
+        layout.addWidget(self.error)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.convert)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.country.currentIndexChanged.connect(self.populate_reigns)
+        self.reign.currentIndexChanged.connect(self.update_year)
+        self.regnal_year.textChanged.connect(self.update_year)
+        self.custom_name.textChanged.connect(self.update_year)
+        self.custom_first.textChanged.connect(self.update_year)
+        self.custom_last.textChanged.connect(self.update_year)
+        self.source_text = source_text
+        self.event = event
+        parsed = current or {}
+        if not parsed:
+            try:
+                parsed = parse_date_text(source_text, event)
+            except (ValueError, RuntimeError):
+                parsed = {}
+        reference = parsed.get("reference") or {}
+        lunar = parsed.get("lunar") or {}
+        if reference.get("country"):
+            self.country.setCurrentIndex(max(0, self.country.findData(reference["country"])))
+        self.populate_reigns()
+        for index in range(self.reign.count()):
+            item = self.reign.itemData(index)
+            if isinstance(item, Reign) and item.name == reference.get("name"):
+                self.reign.setCurrentIndex(index)
+                break
+        else:
+            if reference.get("mapping_source") == "reviewer":
+                self.reign.setCurrentIndex(self.reign.findData("custom"))
+                self.custom_name.setText(reference.get("name") or "")
+                self.custom_first.setText(str(reference.get("first_ce_year") or ""))
+                self.custom_last.setText(str(reference.get("last_ce_year") or ""))
+        self.regnal_year.setText(str(reference.get("regnal_year") or ""))
+        self.month.setText(str(lunar.get("month") or ""))
+        self.day.setText(str(lunar.get("day") or ""))
+        self.leap.setChecked(bool(lunar.get("leap_month")))
+        self.confirmed.setChecked(parsed.get("review_status") == "confirmed")
+        self.update_year()
+
+    def populate_reigns(self, *_):
+        self.reign.clear()
+        for reign in REIGNS:
+            if reign.country == self.country.currentData():
+                self.reign.addItem(f"{reign.name} (원년 {reign.first_ce_year} · 마지막 {reign.last_ce_year})", reign)
+        self.reign.addItem("목록에 없음 · 원년/마지막 해 직접 입력", "custom")
+        self.update_year()
+
+    def selected_reign(self):
+        reign = self.reign.currentData()
+        if reign != "custom":
+            return reign
+        first = chinese_number(self.custom_first.text())
+        last = chinese_number(self.custom_last.text())
+        name = self.custom_name.text().strip()
+        if not name or first is None or last is None or last < first:
+            raise ValueError("직접 입력할 때는 이름, 원년과 마지막 서기 연도를 입력하세요.")
+        return Reign(self.country.currentData(), name, (name,), first, last)
+
+    def update_year(self, *_):
+        try:
+            reign = self.selected_reign()
+        except ValueError:
+            reign = None
+        year = chinese_number(self.regnal_year.text())
+        if reign and year:
+            try:
+                self.ce_year.setText(str(resolve_regnal_year(reign, year)))
+                return
+            except ValueError:
+                pass
+        self.ce_year.setText("서기 연도 미정")
+
+    def convert(self):
+        try:
+            reign = self.selected_reign()
+            if reign is None:
+                raise ValueError("왕 또는 연호를 선택하세요.")
+            regnal_year = chinese_number(self.regnal_year.text())
+            if regnal_year is None:
+                raise ValueError("재위 연수를 입력하세요.")
+            year = resolve_regnal_year(reign, regnal_year)
+            month = chinese_number(self.month.text()) if self.month.text().strip() else None
+            day = chinese_number(self.day.text()) if self.day.text().strip() else None
+            if ((self.month.text().strip() and month is None)
+                    or (self.day.text().strip() and day is None)):
+                raise ValueError("음력 월·일을 읽을 수 없습니다.")
+            value = lunar_interval(year, month, day, self.leap.isChecked())
+            if self.confirmed.isChecked():
+                value["review_status"] = "confirmed"
+            value["reference"] = {"country": reign.country, "name": reign.name,
+                                  "regnal_year": regnal_year, "sexagenary": None,
+                                  "mapping_source": "reviewer" if self.reign.currentData() == "custom" else "catalog",
+                                  "first_ce_year": reign.first_ce_year,
+                                  "last_ce_year": reign.last_ce_year}
+            value["source_text"] = self.source_text
+            self.result_value = value
+            self.accept()
+        except (ValueError, RuntimeError) as exc:
+            self.error.setText(str(exc))
+
+
 class ReviewWindow(QMainWindow):
     ocr_request = Signal(object)
     fields = {"transcribed_name_hanja": "검수한 이름", "generation_number": "세대",
@@ -580,6 +732,8 @@ class ReviewWindow(QMainWindow):
         self.focus.currentIndexChanged.connect(self.render_scan)
         form.addRow("OCR 강조", self.focus)
         self.inputs = {}
+        self.date_values = {}
+        self.date_results = {}
         for key, title in self.fields.items():
             widget = QTextEdit() if key in ("spouse_text", "biography_text", "notes") else QLineEdit()
             if isinstance(widget, QTextEdit):
@@ -589,6 +743,19 @@ class ReviewWindow(QMainWindow):
                 widget.textEdited.connect(self.mark_dirty)
             self.inputs[key] = widget
             form.addRow(title, widget)
+            if key in ("birth_text", "death_text"):
+                solar_key = "birth_solar" if key == "birth_text" else "death_solar"
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                label = QLabel("양력 초안 없음")
+                label.setWordWrap(True)
+                self.date_results[solar_key] = label
+                row_layout.addWidget(label, 1)
+                button = QPushButton("연호·음력 변환…")
+                button.clicked.connect(lambda _, field=key: self.open_date_dialog(field))
+                row_layout.addWidget(button)
+                form.addRow("양력 출생" if key == "birth_text" else "양력 사망", row)
         self.marker = ReviewComboBox()
         for title, marker in [("없음", None), ("子 (아들)", "子"), ("女 (딸)", "女")]:
             self.marker.addItem(title, marker)
@@ -1202,6 +1369,19 @@ class ReviewWindow(QMainWindow):
             else:
                 widget.setText(str(value if value is not None else ""))
             widget.setEnabled(bool(person))
+        for event in ("birth", "death"):
+            key = f"{event}_solar"
+            text_value = self.inputs[f"{event}_text"].text()
+            saved = update.get(key, (person or {}).get(key))
+            if isinstance(saved, dict) and saved.get("source_text") == text_value:
+                value = saved
+            else:
+                try:
+                    value = parse_date_text(text_value, event) if text_value else None
+                except (ValueError, RuntimeError):
+                    value = None
+            self.date_values[key] = value
+            self.date_results[key].setText(format_interval(value))
         marker = update.get("sex_marker", (person or {}).get("sex_marker"))
         if not marker and person:
             marker = strip_name_marker(person.get("raw_name_ocr") or person.get("name_hanja_candidate") or "")[1]
@@ -1306,6 +1486,24 @@ class ReviewWindow(QMainWindow):
             return False
         return True
 
+    def open_date_dialog(self, field):
+        if not self.selected_id:
+            return
+        solar_key = "birth_solar" if field == "birth_text" else "death_solar"
+        source = self.inputs[field].text().strip()
+        if not source.strip():
+            QMessageBox.information(self, "원문 필요", "먼저 출생 또는 사망 원문을 입력하세요.")
+            return
+        current = self.date_values.get(solar_key)
+        if not isinstance(current, dict) or current.get("source_text") != source:
+            current = None
+        dialog = HistoricalDateDialog(source, "birth" if field == "birth_text" else "death",
+                                      current, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.date_values[solar_key] = dialog.result_value
+            self.date_results[solar_key].setText(format_interval(dialog.result_value))
+            self.mark_dirty()
+
     def save_person(self):
         if not self.selected_id:
             return
@@ -1325,6 +1523,16 @@ class ReviewWindow(QMainWindow):
                        "review_status": self.name_status.currentData(),
                        "information_review_status": "confirmed" if self.info_confirmed.isChecked() else "needs_review",
                        "transcription_status": "manually_verified" if self.name_status.currentData() == "confirmed" else "pending_manual_verification"})
+        for field in ("birth", "death"):
+            key = f"{field}_solar"
+            source = values[f"{field}_text"] or ""
+            saved = self.date_values.get(key)
+            if not isinstance(saved, dict) or saved.get("source_text") != source:
+                try:
+                    saved = parse_date_text(source, field) if source else None
+                except (ValueError, RuntimeError):
+                    saved = None
+            values[key] = saved
         old = self.state["people_updates"].get(self.selected_id)
         person = next(p for p in self.page_people if p.get("person_id") == self.selected_id)
         previous_spouses = (old or {}).get("spouses", person.get("spouses") or [])

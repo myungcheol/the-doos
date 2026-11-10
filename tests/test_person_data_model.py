@@ -1,3 +1,4 @@
+import copy
 import unittest
 
 from person_data_model import (
@@ -11,6 +12,25 @@ from person_data_model import (
 
 
 class PersonDataModelTests(unittest.TestCase):
+    def test_registry_clears_stale_solar_date_after_same_source_text_is_corrected(self):
+        occurrence = {"source_occurrence_id": "OCC_1"}
+        old_solar = {"source_text": "옛 판독", "start": "0975-11-20", "end": "0975-11-20"}
+        previous = {"persons": {"PER_1": {
+            "person_uid": "PER_1", "canonical_name_hanja": "甲", "aliases": [],
+            "source_occurrences": [occurrence],
+            "reviewed_data": {"birth_text": "옛 판독", "birth_solar": old_solar},
+            "raw_data_latest": {"source_occurrence": occurrence},
+        }}}
+        person = {"person_uid": "PER_1", "name_hanja_candidate": "甲",
+                  "birth_text": "수정된 판독", "birth_solar": None,
+                  "raw_data": {"source_occurrence": occurrence}}
+        registry = build_person_registry([person], copy.deepcopy(previous))
+        self.assertEqual(registry["persons"]["PER_1"]["reviewed_data"]["birth_text"], "수정된 판독")
+        self.assertIsNone(registry["persons"]["PER_1"]["reviewed_data"]["birth_solar"])
+        other_edition = dict(person, raw_data={"source_occurrence": {"source_occurrence_id": "OCC_2"}})
+        preserved = build_person_registry([other_edition], copy.deepcopy(previous))
+        self.assertEqual(preserved["persons"]["PER_1"]["reviewed_data"]["birth_solar"], old_solar)
+
     def test_child_marker_is_removed_but_preserved_separately(self):
         self.assertEqual(strip_name_marker("子之建"), ("之建", "子", "male"))
         self.assertEqual(strip_name_marker("女明玉"), ("明玉", "女", "female"))
