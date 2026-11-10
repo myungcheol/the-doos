@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LLM-free OCR and rule-based extraction for Korean genealogy (jokbo) scans.
 
-Uses OpenCV for page/row/column geometry, Tesseract TSV for text and character
+Uses OpenCV for page/row/column geometry, PaddleOCR for text and character
 boxes, and deterministic Python rules for reviewable genealogy candidates.
 No generative AI, API key, network request, or remote model is used.
 """
@@ -19,12 +19,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-try:
-    import pytesseract
-    from pytesseract import Output
-except ImportError:  # PaddleOCR-only installation
-    pytesseract = None
-    Output = None
 
 HAN_RANGES = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF))
 CHINESE_DIGITS = {
@@ -363,28 +357,6 @@ def crop_name_region(image: np.ndarray, bbox: dict[str, int], padding: int = 7) 
     y1 = min(y_max, int(bbox["y"]) + int(bbox["height"]) + padding)
     return image[y0:y1, x0:x1]
 
-def _ocr_tokens_as_vertical_text(data: dict[str, Any]) -> tuple[str, float | None]:
-    """Join OCR tokens top-to-bottom and return mean token confidence."""
-    items: list[tuple[int, int, str, float | None]] = []
-    confidences: list[float] = []
-    for index, raw_text in enumerate(data.get("text", [])):
-        token = (raw_text or "").strip()
-        if not token:
-            continue
-        try:
-            confidence = float(data["conf"][index])
-        except (KeyError, TypeError, ValueError):
-            confidence = -1.0
-        if confidence >= 0:
-            confidences.append(confidence)
-        items.append((int(data.get("top", [0])[index]), int(data.get("left", [0])[index]), token,
-                      confidence if confidence >= 0 else None))
-    items.sort(key=lambda item: (item[0], item[1]))
-    text = "".join(item[2] for item in items)
-    mean_confidence = round(sum(confidences) / len(confidences), 2) if confidences else None
-    return text, mean_confidence
-
-
 def _paddle_payload(result_item: Any) -> dict[str, Any]:
     """Normalize PaddleOCR 3.x result objects/dicts to their inner `res` dict."""
     payload: Any = result_item
@@ -497,18 +469,14 @@ def run_paddle_ocr_image(
 def run_name_ocr_variants(
     image: np.ndarray,
     bbox: dict[str, int],
-    lang: str,
     scale: float = 3.0,
     padding: int = 7,
-    alternate_langs: tuple[str, ...] = ("HanT_vert",),
-    engine: str = "tesseract",
     paddle_ocr: Any = None,
     paddle_min_confidence: float = 70.0,
 ) -> tuple[str, list[dict[str, Any]], np.ndarray]:
-    """OCR a geometry-detected name crop with the selected engine.
+    """OCR a geometry-detected name crop with PaddleOCR.
 
-    Tesseract uses multiple PSM / threshold combinations. PaddleOCR uses the
-    same source crop with CLAHE, Otsu, adaptive thresholding and a 90-degree
+    The source crop uses CLAHE, Otsu, adaptive thresholding and a 90-degree
     counter-clockwise variant. All hypotheses are retained for review.
     """
     crop = crop_name_region(image, bbox, padding)
@@ -527,73 +495,39 @@ def run_name_ocr_variants(
     )
 
     variants: list[dict[str, Any]] = []
-    if engine == "paddleocr":
-        # Fallback is deliberately staged: one fast CLAHE pass first, then
-        # progressively more expensive variants only when the result is weak.
-        pass_specs = [
-            ("clahe_vertical", clahe, "vertical"),
-            ("otsu_vertical", otsu, "vertical"),
-            ("adaptive_vertical", adaptive, "vertical"),
-            ("clahe_rotated_ccw", cv2.rotate(clahe, cv2.ROTATE_90_COUNTERCLOCKWISE), "horizontal"),
-        ]
-        for label, prepared, order in pass_specs:
-            try:
-                text, confidence, _ = run_paddle_ocr_image(
-                    paddle_ocr, prepared, coordinate_scale=1.0, reading_order=order
-                )
-                cleaned = clean_hanzi_text(text)
-                variants.append({
-                    "variant": label, "engine": "paddleocr", "language": "chinese_cht",
-                    "model": "PP-OCRv5", "text": text, "hanja_text": cleaned,
-                    "mean_confidence": confidence, "character_count": len(cleaned),
-                    "status": "ok" if cleaned else "empty",
-                })
-            except Exception as exc:
-                variants.append({
-                    "variant": label, "engine": "paddleocr", "language": "chinese_cht",
-                    "model": "PP-OCRv5", "text": "", "hanja_text": "",
-                    "mean_confidence": None, "character_count": 0,
-                    "status": f"error: {type(exc).__name__}: {exc}",
-                })
-            # A plausible 2–4-character name with a good score is sufficient;
-            # do not run the remaining preprocessing variants.
-            current = variants[-1]
-            if (2 <= current["character_count"] <= 4
-                    and float(current.get("mean_confidence") or 0) >= paddle_min_confidence):
-                break
-    else:
-        if pytesseract is None:
-            raise RuntimeError("pytesseract is not installed. Install it or choose --ocr-engine paddleocr.")
-        installed = set(pytesseract.get_languages(config=""))
-        pass_specs: list[tuple[str, int, str, np.ndarray]] = [
-            (lang, 5, "clahe_psm5", clahe),
-            (lang, 5, "otsu_psm5", otsu),
-            (lang, 6, "clahe_psm6", clahe),
-            (lang, 11, "adaptive_psm11", adaptive),
-        ]
-        for alt_lang in alternate_langs:
-            if alt_lang in installed and alt_lang != lang:
-                pass_specs.append((alt_lang, 5, f"{alt_lang}_clahe_psm5", clahe))
-        for model, psm, label, prepared in pass_specs:
-            try:
-                data = pytesseract.image_to_data(
-                    prepared, lang=model, config=f"--oem 1 --psm {psm} -c preserve_interword_spaces=1",
-                    output_type=Output.DICT, timeout=12,
-                )
-                text, confidence = _ocr_tokens_as_vertical_text(data)
-                cleaned = clean_hanzi_text(text)
-                variants.append({
-                    "variant": label, "engine": "tesseract", "language": model, "psm": psm,
-                    "text": text, "hanja_text": cleaned, "mean_confidence": confidence,
-                    "character_count": len(cleaned), "status": "ok" if cleaned else "empty",
-                })
-            except Exception as exc:
-                variants.append({
-                    "variant": label, "engine": "tesseract", "language": model, "psm": psm,
-                    "text": "", "hanja_text": "", "mean_confidence": None,
-                    "character_count": 0, "status": f"error: {type(exc).__name__}: {exc}",
-                })
-
+    # Fallback is deliberately staged: one fast CLAHE pass first, then
+    # progressively more expensive variants only when the result is weak.
+    pass_specs = [
+        ("clahe_vertical", clahe, "vertical"),
+        ("otsu_vertical", otsu, "vertical"),
+        ("adaptive_vertical", adaptive, "vertical"),
+        ("clahe_rotated_ccw", cv2.rotate(clahe, cv2.ROTATE_90_COUNTERCLOCKWISE), "horizontal"),
+    ]
+    for label, prepared, order in pass_specs:
+        try:
+            text, confidence, _ = run_paddle_ocr_image(
+                paddle_ocr, prepared, coordinate_scale=1.0, reading_order=order
+            )
+            cleaned = clean_hanzi_text(text)
+            variants.append({
+                "variant": label, "engine": "paddleocr", "language": "chinese_cht",
+                "model": "PP-OCRv5", "text": text, "hanja_text": cleaned,
+                "mean_confidence": confidence, "character_count": len(cleaned),
+                "status": "ok" if cleaned else "empty",
+            })
+        except Exception as exc:
+            variants.append({
+                "variant": label, "engine": "paddleocr", "language": "chinese_cht",
+                "model": "PP-OCRv5", "text": "", "hanja_text": "",
+                "mean_confidence": None, "character_count": 0,
+                "status": f"error: {type(exc).__name__}: {exc}",
+            })
+        # A plausible 2–4-character name with a good score is sufficient;
+        # do not run the remaining preprocessing variants.
+        current = variants[-1]
+        if (2 <= current["character_count"] <= 4
+                and float(current.get("mean_confidence") or 0) >= paddle_min_confidence):
+            break
     usable = [v for v in variants if v["hanja_text"]]
     if usable:
         best = max(usable, key=lambda v: (
@@ -801,60 +735,17 @@ def preprocess(image: np.ndarray, mode: str) -> np.ndarray:
 
 
 def extract_text_and_confidence(
-    image: np.ndarray, lang: str, psm: int, scale: float, preprocess_mode: str,
-    engine: str = "tesseract", paddle_ocr: Any = None,
+    image: np.ndarray, scale: float, preprocess_mode: str, paddle_ocr: Any = None,
 ) -> tuple[str, float | None, np.ndarray, list[dict[str, Any]]]:
-    """Run the selected OCR engine and normalize output to a shared token schema."""
+    """Run PaddleOCR and normalize output to the existing token schema."""
     prepared = preprocess(image, preprocess_mode)
     if scale != 1.0:
         prepared = cv2.resize(prepared, None, fx=scale, fy=scale,
                               interpolation=cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA)
 
-    if engine == "paddleocr":
-        text, mean_confidence, tokens = run_paddle_ocr_image(
-            paddle_ocr, prepared, coordinate_scale=scale, reading_order="vertical"
-        )
-        return text, mean_confidence, prepared, tokens
-
-    if pytesseract is None or Output is None:
-        raise RuntimeError("pytesseract is not installed. Install pytesseract or choose --ocr-engine paddleocr.")
-    config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
-    data = pytesseract.image_to_data(prepared, lang=lang, config=config, output_type=Output.DICT, timeout=30)
-    tokens: list[dict[str, Any]] = []
-    confidences: list[float] = []
-    for index, raw_text in enumerate(data.get("text", [])):
-        token_text = (raw_text or "").strip()
-        if not token_text:
-            continue
-        try:
-            conf = float(data["conf"][index])
-        except (TypeError, ValueError, KeyError):
-            conf = -1.0
-        if conf >= 0:
-            confidences.append(conf)
-        tokens.append({
-            "text": token_text,
-            "confidence": conf if conf >= 0 else None,
-            "left": round(data["left"][index] / scale),
-            "top": round(data["top"][index] / scale),
-            "width": max(1, round(data["width"][index] / scale)),
-            "height": max(1, round(data["height"][index] / scale)),
-            "block_num": data["block_num"][index],
-            "par_num": data["par_num"][index],
-            "line_num": data["line_num"][index],
-            "word_num": data["word_num"][index],
-        })
-    mean_confidence = round(sum(confidences) / len(confidences), 2) if confidences else None
-
-    groups: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
-    order: list[tuple[int, int, int]] = []
-    for token in tokens:
-        key = (int(token["block_num"]), int(token["par_num"]), int(token["line_num"]))
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(token)
-    text = "\n".join("".join(item["text"] for item in groups[key]) for key in order)
+    text, mean_confidence, tokens = run_paddle_ocr_image(
+        paddle_ocr, prepared, coordinate_scale=scale, reading_order="vertical"
+    )
     return text, mean_confidence, prepared, tokens
 
 
@@ -862,7 +753,7 @@ def build_column_records(
     tokens: list[dict[str, Any]], regions: list[tuple[int, int]], band: np.ndarray,
     row_id: str, page_x: int, page_y: int, row_height: int, columns_dir: Path,
 ) -> list[dict[str, Any]]:
-    """Map Tesseract's vertical TSV lines to OpenCV-projected column areas."""
+    """Map vertical OCR lines to OpenCV-projected column areas."""
     grouped: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
     line_order: list[tuple[int, int, int]] = []
     for token in tokens:
@@ -932,7 +823,7 @@ def build_column_records(
             "normalized_hanzi": clean_hanzi_text(item["text"]),
             "mean_confidence": item["mean_confidence"],
             "image_file": str(image_file),
-            "ocr_status": "from_row_tsv",
+            "ocr_status": "from_row_ocr",
             "token_boxes": [
                 {"text": token["text"], "bbox": {
                     "x": page_x + token["left"], "y": page_y + token["top"],
@@ -1109,7 +1000,7 @@ def parse_relationships(
     return suggestions
 
 
-def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine: str, paddle_ocr: Any = None) -> dict[str, Any]:
+def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle_ocr: Any = None) -> dict[str, Any]:
     page_started = time.perf_counter()
     image = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if image is None:
@@ -1151,11 +1042,9 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine
         row_id = f"{path.stem}_row_{row_index:02d}"
         cv2.imwrite(str(rows_dir / f"{row_id}.png"), band)
         band_text, band_confidence, prepared, tokens = extract_text_and_confidence(
-            band, args.lang, args.psm, args.scale, args.preprocess,
-            engine=engine, paddle_ocr=paddle_ocr,
+            band, args.scale, args.preprocess, paddle_ocr=paddle_ocr,
         )
-        if engine == "paddleocr":
-            paddle_metrics["row_inferences"] += 1
+        paddle_metrics["row_inferences"] += 1
         cv2.imwrite(str(rows_dir / f"{row_id}_ocr_input.png"), prepared)
 
         regions = detect_vertical_columns(band, args.column_ink_ratio, args.min_column_width)
@@ -1174,7 +1063,7 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine
             "columns": columns, "person_candidates": [], "rule_mentions": [],
         }
         # Detect prominent name columns from the printed glyph geometry. This
-        # catches large names even when Tesseract emitted no TSV line for them.
+        # catches large names even when row OCR misses them.
         name_regions = detect_large_printed_name_regions(
             band, x, y + top,
             min_component_width=args.person_min_component_width,
@@ -1193,61 +1082,43 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine
             ocr_variants: list[dict[str, Any]] = []
             best_text = ""
 
-            if engine == "paddleocr":
-                row_text = clean_hanzi_text((matched_column or {}).get("text", ""))
-                row_confidence = (matched_column or {}).get("mean_confidence")
-                row_is_usable = (
-                    2 <= len(row_text) <= 4
-                    and row_confidence is not None
-                    and float(row_confidence) >= args.paddle_name_min_confidence
-                )
-                if row_is_usable:
-                    # Reuse the page-row inference result; no extra model call.
-                    best_text = row_text
-                    ocr_variants.append({
-                        "variant": "row_ocr_reuse", "engine": "paddleocr",
-                        "language": args.paddle_lang, "model": args.paddle_version,
-                        "text": (matched_column or {}).get("text", ""),
-                        "hanja_text": row_text, "mean_confidence": row_confidence,
-                        "character_count": len(row_text), "status": "reused_from_row_ocr",
-                    })
-                    paddle_metrics["name_reused_from_row"] += 1
-                else:
-                    # Name crop inference is only a fallback. It starts with
-                    # CLAHE and expands to other variants only if still weak.
-                    best_text, ocr_variants, _ = run_name_ocr_variants(
-                        image, geometry["bbox"], args.lang, scale=max(args.scale, 3.0),
-                        padding=args.name_crop_padding,
-                        alternate_langs=tuple(args.name_alt_langs),
-                        engine=engine, paddle_ocr=paddle_ocr,
-                        paddle_min_confidence=args.paddle_name_min_confidence,
-                    )
-                    paddle_metrics["name_fallback_regions"] += 1
-                    paddle_metrics["name_fallback_inferences"] += len(ocr_variants)
-                    if matched_column and matched_column.get("text"):
-                        ocr_variants.insert(0, {
-                            "variant": "row_ocr_reference", "engine": "paddleocr",
-                            "language": args.paddle_lang, "model": args.paddle_version,
-                            "text": matched_column.get("text", ""),
-                            "hanja_text": row_text,
-                            "mean_confidence": row_confidence,
-                            "character_count": len(row_text), "status": "reference_only",
-                        })
+            row_text = clean_hanzi_text((matched_column or {}).get("text", ""))
+            row_confidence = (matched_column or {}).get("mean_confidence")
+            row_is_usable = (
+                2 <= len(row_text) <= 4
+                and row_confidence is not None
+                and float(row_confidence) >= args.paddle_name_min_confidence
+            )
+            if row_is_usable:
+                # Reuse the page-row inference result; no extra model call.
+                best_text = row_text
+                ocr_variants.append({
+                    "variant": "row_ocr_reuse", "engine": "paddleocr",
+                    "language": args.paddle_lang, "model": args.paddle_version,
+                    "text": (matched_column or {}).get("text", ""),
+                    "hanja_text": row_text, "mean_confidence": row_confidence,
+                    "character_count": len(row_text), "status": "reused_from_row_ocr",
+                })
+                paddle_metrics["name_reused_from_row"] += 1
             else:
-                best_text, ocr_variants, name_crop = run_name_ocr_variants(
-                    image, geometry["bbox"], args.lang, scale=max(args.scale, 3.0),
+                # Name crop inference is only a fallback. It starts with
+                # CLAHE and expands to other variants only if still weak.
+                best_text, ocr_variants, _ = run_name_ocr_variants(
+                    image, geometry["bbox"], scale=max(args.scale, 3.0),
                     padding=args.name_crop_padding,
-                    alternate_langs=tuple(args.name_alt_langs),
-                    engine=engine, paddle_ocr=paddle_ocr,
+                    paddle_ocr=paddle_ocr,
+                    paddle_min_confidence=args.paddle_name_min_confidence,
                 )
+                paddle_metrics["name_fallback_regions"] += 1
+                paddle_metrics["name_fallback_inferences"] += len(ocr_variants)
                 if matched_column and matched_column.get("text"):
                     ocr_variants.insert(0, {
-                        "variant": "row_tsv_reference", "language": args.lang,
-                        "psm": args.psm, "text": matched_column.get("text", ""),
-                        "hanja_text": clean_hanzi_text(matched_column.get("text", "")),
-                        "mean_confidence": matched_column.get("mean_confidence"),
-                        "character_count": len(clean_hanzi_text(matched_column.get("text", ""))),
-                        "status": "reference_only",
+                        "variant": "row_ocr_reference", "engine": "paddleocr",
+                        "language": args.paddle_lang, "model": args.paddle_version,
+                        "text": matched_column.get("text", ""),
+                        "hanja_text": row_text,
+                        "mean_confidence": row_confidence,
+                        "character_count": len(row_text), "status": "reference_only",
                     })
             cv2.imwrite(str(image_file_path), name_crop)
             usable_variants = [v for v in ocr_variants if v.get("hanja_text")]
@@ -1262,7 +1133,7 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine
             if any(v.get("status") == "reused_from_row_ocr" for v in ocr_variants):
                 ocr_status = "row_ocr_reused"
             elif usable_variants:
-                ocr_status = "name_crop_staged_fallback" if engine == "paddleocr" else "name_crop_multi_pass_ocr"
+                ocr_status = "name_crop_staged_fallback"
             else:
                 ocr_status = "geometry_only_manual_review"
             raw_ocr_text = hanzi_text
@@ -1335,7 +1206,7 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine
             f"===== {row['row_id']} | generation={row['generation_text']} | bbox={row['bbox']} | confidence={row['band_confidence']} ====="
         )
         text_parts.append(row["band_text"])
-        text_parts.append("--- columns (right-to-left; reconstructed from TSV) ---")
+        text_parts.append("--- columns (right-to-left; reconstructed from OCR tokens) ---")
         for col in row["columns"]:
             text_parts.append(
                 f"{col['column_id']} | bbox={col['bbox']} | font_size_ratio={col['font_size_ratio']} | conf={col['mean_confidence']} | {col['text']}"
@@ -1348,11 +1219,11 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, engine
     return {
         "source_image": str(path), "image_size": {"width": image_w, "height": image_h},
         "table_roi": {"x": x, "y": y, "width": width, "height": height}, "roi_method": roi_method,
-        "ocr_engine": engine,
-        "ocr_language": args.lang if engine == "tesseract" else args.paddle_lang,
-        "ocr_model": args.paddle_version if engine == "paddleocr" else "Tesseract",
+        "ocr_engine": "paddleocr",
+        "ocr_language": args.paddle_lang,
+        "ocr_model": args.paddle_version,
         "elapsed_seconds": round(time.perf_counter() - page_started, 3),
-        "paddle_metrics": paddle_metrics if engine == "paddleocr" else None,
+        "paddle_metrics": paddle_metrics,
         "rows_expected": args.rows,
         "row_boundaries": [asdict(item) for item in boundaries], "rows": all_rows,
         "blocks": legacy_blocks, "people_candidates": all_people,
@@ -1384,19 +1255,6 @@ def collect_images(inputs: list[str]) -> list[Path]:
         else:
             print(f"[WARN] Skipping unsupported or missing input: {path}", file=sys.stderr)
     return sorted(set(found), key=lambda item: str(item).lower())
-
-
-def check_tesseract_language(lang: str) -> None:
-    if pytesseract is None:
-        raise RuntimeError("pytesseract is not installed. Install it or select --ocr-engine paddleocr.")
-    try:
-        available = set(pytesseract.get_languages(config=""))
-    except Exception as exc:
-        raise RuntimeError("Tesseract executable not found. Install Tesseract first.") from exc
-    missing = [part for part in lang.split("+") if part not in available]
-    if missing:
-        relevant = sorted(item for item in available if "chi" in item.lower() or "Han" in item)
-        raise RuntimeError(f"Missing model(s): {', '.join(missing)}. Available relevant models: {', '.join(relevant)}")
 
 
 def initialize_paddle_ocr(args: argparse.Namespace) -> Any:
@@ -1436,71 +1294,10 @@ def initialize_paddle_ocr(args: argparse.Namespace) -> Any:
         ) from exc
 
 
-def write_engine_comparison(output_dir: Path, results_by_engine: dict[str, list[dict[str, Any]]]) -> None:
-    """Create side-by-side row and person OCR comparisons for --ocr-engine both."""
-    if not {"tesseract", "paddleocr"}.issubset(results_by_engine):
-        return
-    tesseract_pages = {Path(item["source_image"]).name: item for item in results_by_engine["tesseract"]}
-    paddle_pages = {Path(item["source_image"]).name: item for item in results_by_engine["paddleocr"]}
-    row_comparison: list[dict[str, Any]] = []
-    person_comparison: list[dict[str, Any]] = []
-    page_summary: list[dict[str, Any]] = []
-    for page_name in sorted(set(tesseract_pages) | set(paddle_pages)):
-        t_page = tesseract_pages.get(page_name)
-        p_page = paddle_pages.get(page_name)
-        page_summary.append({
-            "source_page": page_name,
-            "tesseract_seconds": t_page.get("elapsed_seconds") if t_page else None,
-            "paddleocr_seconds": p_page.get("elapsed_seconds") if p_page else None,
-            "tesseract_people": len(t_page.get("people_candidates", [])) if t_page else None,
-            "paddleocr_people": len(p_page.get("people_candidates", [])) if p_page else None,
-            "tesseract_relationships": len(t_page.get("relationship_candidates", [])) if t_page else None,
-            "paddleocr_relationships": len(p_page.get("relationship_candidates", [])) if p_page else None,
-        })
-        t_rows = {row["row_number"]: row for row in (t_page or {}).get("rows", [])}
-        p_rows = {row["row_number"]: row for row in (p_page or {}).get("rows", [])}
-        for row_number in sorted(set(t_rows) | set(p_rows)):
-            tr, pr = t_rows.get(row_number, {}), p_rows.get(row_number, {})
-            row_comparison.append({
-                "source_page": page_name, "row_number": row_number,
-                "tesseract_text": tr.get("band_text", ""),
-                "tesseract_confidence": tr.get("band_confidence"),
-                "paddleocr_text": pr.get("band_text", ""),
-                "paddleocr_confidence": pr.get("band_confidence"),
-            })
-        t_people = {p.get("person_id"): p for p in (t_page or {}).get("people_candidates", [])}
-        p_people = {p.get("person_id"): p for p in (p_page or {}).get("people_candidates", [])}
-        for person_id in sorted(set(t_people) | set(p_people)):
-            tp, pp = t_people.get(person_id, {}), p_people.get(person_id, {})
-            person_comparison.append({
-                "source_page": page_name, "person_id": person_id,
-                "tesseract_text": tp.get("name_hanja_candidate", ""),
-                "tesseract_confidence": tp.get("ocr_confidence"),
-                "paddleocr_text": pp.get("name_hanja_candidate", ""),
-                "paddleocr_confidence": pp.get("ocr_confidence"),
-                "bbox": tp.get("bbox") or pp.get("bbox"),
-            })
-    (output_dir / "engine_comparison.json").write_text(json.dumps({
-        "pages": page_summary, "rows": row_comparison, "people": person_comparison,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
-    write_csv(output_dir / "engine_comparison_pages.csv", page_summary, list(page_summary[0].keys()) if page_summary else [])
-    write_csv(output_dir / "engine_comparison_rows.csv", row_comparison, [
-        "source_page", "row_number", "tesseract_text", "tesseract_confidence",
-        "paddleocr_text", "paddleocr_confidence",
-    ])
-    write_csv(output_dir / "engine_comparison_people.csv", person_comparison, [
-        "source_page", "person_id", "tesseract_text", "tesseract_confidence",
-        "paddleocr_text", "paddleocr_confidence", "bbox",
-    ])
-
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="LLM-free jokbo OCR using Tesseract or PaddleOCR with rule-based genealogy extraction.")
+    parser = argparse.ArgumentParser(description="LLM-free jokbo OCR using PaddleOCR with rule-based genealogy extraction.")
     parser.add_argument("inputs", nargs="+", help="Input image files or directories")
     parser.add_argument("-o", "--output", default="jokbo-output", help="Output directory")
-    parser.add_argument("--ocr-engine", choices=["tesseract", "paddleocr", "both"], default="tesseract",
-                        help="OCR backend; both runs the same scans through both engines and writes side-by-side comparisons")
-    parser.add_argument("--lang", default="chi_tra_vert", help="Tesseract model; default chi_tra_vert")
     parser.add_argument("--paddle-lang", default="chinese_cht", help="PaddleOCR language; default chinese_cht (Traditional Chinese)")
     parser.add_argument("--paddle-version", choices=["PP-OCRv5", "PP-OCRv4"], default="PP-OCRv5",
                         help="PaddleOCR model family; PP-OCRv5 is recommended for Traditional Chinese and vertical text")
@@ -1515,7 +1312,6 @@ def parse_args() -> argparse.Namespace:
         help="Enable Paddle oneDNN CPU acceleration (disabled by default due to a known PIR compatibility bug)",
     )
     parser.add_argument("--rows", type=int, default=6, help="Expected horizontal row count (default 6)")
-    parser.add_argument("--psm", type=int, default=5, help="Tesseract page segmentation mode")
     parser.add_argument("--scale", type=float, default=3.0, help="OCR image enlargement factor")
     parser.add_argument("--preprocess", choices=["clahe", "gray", "adaptive", "otsu"], default="clahe")
     parser.add_argument("--roi", help="Manual table ROI x,y,width,height in original image coordinates")
@@ -1530,23 +1326,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--person-right-margin-exclusion", type=int, default=45, help="Exclude the recurring book-title strip at the far right of a page band")
     parser.add_argument("--person-min-vertical-glyph-gap", type=int, default=27, help="Minimum vertical gap between large glyphs in a person-name column")
     parser.add_argument("--name-crop-padding", type=int, default=7, help="Padding around geometry-detected name crop in source pixels")
-    parser.add_argument("--name-alt-langs", default="HanT_vert", help="Comma-separated optional alternate Tesseract models for name OCR; installed models only")
-    parser.add_argument("--tesseract-cmd", help="Optional path to the Tesseract executable")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    args.name_alt_langs = tuple(item.strip() for item in args.name_alt_langs.split(",") if item.strip())
     if args.rows < 1:
         print("[ERROR] --rows must be at least 1", file=sys.stderr)
         return 2
     if not 0 <= args.paddle_name_min_confidence <= 100:
         print("[ERROR] --paddle-name-min-confidence must be between 0 and 100", file=sys.stderr)
         return 2
-    if args.tesseract_cmd and pytesseract is not None:
-        pytesseract.pytesseract.tesseract_cmd = args.tesseract_cmd
-
     images = collect_images(args.inputs)
     if not images:
         print("[ERROR] No supported image files found.", file=sys.stderr)
@@ -1554,94 +1344,75 @@ def main() -> int:
     output_dir = Path(args.output).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    engines = ["tesseract", "paddleocr"] if args.ocr_engine == "both" else [args.ocr_engine]
-    results_by_engine: dict[str, list[dict[str, Any]]] = {}
-    for engine in engines:
-        engine_output_dir = output_dir / engine if args.ocr_engine == "both" else output_dir
-        engine_output_dir.mkdir(parents=True, exist_ok=True)
-        paddle_ocr = None
-        if engine == "tesseract":
-            try:
-                check_tesseract_language(args.lang)
-            except Exception as exc:
-                print(f"[ERROR] {exc}", file=sys.stderr)
-                return 2
-        else:
-            try:
-                paddle_ocr = initialize_paddle_ocr(args)
-            except Exception as exc:
-                print(f"[ERROR] {exc}", file=sys.stderr)
-                return 2
+    try:
+        paddle_ocr = initialize_paddle_ocr(args)
+    except Exception as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 2
 
-        results, people, relationships, mentions = [], [], [], []
-        for image_path in images:
-            print(f"[OCR:{engine}] {image_path}")
-            try:
-                result = ocr_one_image(image_path, args, engine_output_dir, engine, paddle_ocr)
-                results.append(result)
-                people.extend(result["people_candidates"])
-                relationships.extend({**item, "source_page": image_path.name} for item in result["relationship_candidates"])
-                for row in result["rows"]:
-                    mentions.extend({**item, "source_page": image_path.name} for item in row["rule_mentions"])
-                print(
-                    f"[OK:{engine}] {image_path.name}: {len(result['rows'])} rows, "
-                    f"{sum(len(row['columns']) for row in result['rows'])} OCR columns, "
-                    f"{len(result['people_candidates'])} person candidates, "
-                    f"{len(result['relationship_candidates'])} relationship candidates, "
-                    f"{result['elapsed_seconds']:.2f}s"
-                )
-                if engine == "paddleocr":
-                    metrics = result.get("paddle_metrics") or {}
-                    total_calls = metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0)
-                    print(
-                        f"[PADDLE-STATS] calls={total_calls} "
-                        f"(row={metrics.get('row_inferences', 0)}, "
-                        f"name_reused={metrics.get('name_reused_from_row', 0)}, "
-                        f"fallback_regions={metrics.get('name_fallback_regions', 0)}, "
-                        f"fallback_calls={metrics.get('name_fallback_inferences', 0)})"
-                    )
-            except Exception as exc:
-                print(f"[ERROR:{engine}] {image_path}: {exc}", file=sys.stderr)
+    results, people, relationships, mentions = [], [], [], []
+    for image_path in images:
+        print(f"[OCR:paddleocr] {image_path}")
+        try:
+            result = ocr_one_image(image_path, args, output_dir, paddle_ocr)
+            results.append(result)
+            people.extend(result["people_candidates"])
+            relationships.extend({**item, "source_page": image_path.name} for item in result["relationship_candidates"])
+            for row in result["rows"]:
+                mentions.extend({**item, "source_page": image_path.name} for item in row["rule_mentions"])
+            print(
+                f"[OK:paddleocr] {image_path.name}: {len(result['rows'])} rows, "
+                f"{sum(len(row['columns']) for row in result['rows'])} OCR columns, "
+                f"{len(result['people_candidates'])} person candidates, "
+                f"{len(result['relationship_candidates'])} relationship candidates, "
+                f"{result['elapsed_seconds']:.2f}s"
+            )
+            metrics = result.get("paddle_metrics") or {}
+            total_calls = metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0)
+            print(
+                f"[PADDLE-STATS] calls={total_calls} "
+                f"(row={metrics.get('row_inferences', 0)}, "
+                f"name_reused={metrics.get('name_reused_from_row', 0)}, "
+                f"fallback_regions={metrics.get('name_fallback_regions', 0)}, "
+                f"fallback_calls={metrics.get('name_fallback_inferences', 0)})"
+            )
+        except Exception as exc:
+            print(f"[ERROR:paddleocr] {image_path}: {exc}", file=sys.stderr)
 
-        (engine_output_dir / "ocr_results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-        (engine_output_dir / "people_candidates.json").write_text(json.dumps(people, ensure_ascii=False, indent=2), encoding="utf-8")
-        (engine_output_dir / "relationship_candidates.json").write_text(json.dumps(relationships, ensure_ascii=False, indent=2), encoding="utf-8")
-        (engine_output_dir / "rule_mentions.json").write_text(json.dumps(mentions, ensure_ascii=False, indent=2), encoding="utf-8")
-        write_csv(engine_output_dir / "people_candidates.csv", people, [
-            "person_id", "source_page", "name_hanja_candidate", "generation_number", "evidence_text",
-            "source_column_id", "source_row_id", "bbox", "image_file", "ocr_variants", "ranked_ocr_hypotheses",
-            "best_ocr_variant", "ocr_confidence", "transcribed_name_hanja", "transcription_status", "detection_score", "review_status",
-        ])
-        write_csv(engine_output_dir / "relationship_candidates.csv", relationships, [
-            "relationship_id", "source_page", "type", "parent_candidate_id", "parent_name_hanja_candidate",
-            "candidate_parent_ids", "child_candidate_id", "child_name_hanja_candidate", "relationship_basis",
-            "placement_role", "inferred_child_sex", "child_order", "parent_center_x", "child_center_x",
-            "branch_bounds_x", "horizontal_distance_px", "evidence_text", "source_row_ids", "confidence", "review_status", "warning",
-        ])
-        results_by_engine[engine] = results
-        if engine == "paddleocr":
-            metric_rows = []
-            for result in results:
-                metrics = result.get("paddle_metrics") or {}
-                metric_rows.append({
-                    "source_page": Path(result.get("source_image", "page")).name,
-                    "elapsed_seconds": result.get("elapsed_seconds"),
-                    "row_inferences": metrics.get("row_inferences", 0),
-                    "name_reused_from_row": metrics.get("name_reused_from_row", 0),
-                    "name_fallback_regions": metrics.get("name_fallback_regions", 0),
-                    "name_fallback_inferences": metrics.get("name_fallback_inferences", 0),
-                    "total_inferences": metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0),
-                })
-            write_csv(engine_output_dir / "paddleocr_metrics_pages.csv", metric_rows, [
-                "source_page", "elapsed_seconds", "row_inferences", "name_reused_from_row",
-                "name_fallback_regions", "name_fallback_inferences", "total_inferences",
-            ])
+    (output_dir / "ocr_results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output_dir / "people_candidates.json").write_text(json.dumps(people, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output_dir / "relationship_candidates.json").write_text(json.dumps(relationships, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output_dir / "rule_mentions.json").write_text(json.dumps(mentions, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_csv(output_dir / "people_candidates.csv", people, [
+        "person_id", "source_page", "name_hanja_candidate", "generation_number", "evidence_text",
+        "source_column_id", "source_row_id", "bbox", "image_file", "ocr_variants", "ranked_ocr_hypotheses",
+        "best_ocr_variant", "ocr_confidence", "transcribed_name_hanja", "transcription_status", "detection_score", "review_status",
+    ])
+    write_csv(output_dir / "relationship_candidates.csv", relationships, [
+        "relationship_id", "source_page", "type", "parent_candidate_id", "parent_name_hanja_candidate",
+        "candidate_parent_ids", "child_candidate_id", "child_name_hanja_candidate", "relationship_basis",
+        "placement_role", "inferred_child_sex", "child_order", "parent_center_x", "child_center_x",
+        "branch_bounds_x", "horizontal_distance_px", "evidence_text", "source_row_ids", "confidence", "review_status", "warning",
+    ])
+    metric_rows = []
+    for result in results:
+        metrics = result.get("paddle_metrics") or {}
+        metric_rows.append({
+            "source_page": Path(result.get("source_image", "page")).name,
+            "elapsed_seconds": result.get("elapsed_seconds"),
+            "row_inferences": metrics.get("row_inferences", 0),
+            "name_reused_from_row": metrics.get("name_reused_from_row", 0),
+            "name_fallback_regions": metrics.get("name_fallback_regions", 0),
+            "name_fallback_inferences": metrics.get("name_fallback_inferences", 0),
+            "total_inferences": metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0),
+        })
+    write_csv(output_dir / "paddleocr_metrics_pages.csv", metric_rows, [
+        "source_page", "elapsed_seconds", "row_inferences", "name_reused_from_row",
+        "name_fallback_regions", "name_fallback_inferences", "total_inferences",
+    ])
 
-    if args.ocr_engine == "both":
-        write_engine_comparison(output_dir, results_by_engine)
-        print(f"\nComparison files: {output_dir.resolve() / 'engine_comparison_people.csv'}")
     print(f"\nDone. No LLM/API was used. Results: {output_dir.resolve()}")
-    return 0 if any(results_by_engine.values()) else 1
+    return 0 if results else 1
 
 
 if __name__ == "__main__":

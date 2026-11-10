@@ -427,9 +427,10 @@ class DesktopReviewTests(unittest.TestCase):
         captured = []
         worker.finished.connect(captured.append)
         crop = np.full((20, 10, 3), 255, dtype=np.uint8)
-        with patch("jokbo_ocr.run_name_ocr_variants", return_value=("甲乙", [{"hanja_text": "甲乙"}], crop)) as recognize:
+        with patch("jokbo_ocr.initialize_paddle_ocr", return_value=object()), \
+             patch("jokbo_ocr.run_name_ocr_variants", return_value=("甲乙", [{"hanja_text": "甲乙"}], crop)) as recognize:
             worker.recognize({"page": "sample.png", "bbox": {"x": 7, "y": 8, "width": 10, "height": 20},
-                              "crop": crop, "engine": "tesseract"})
+                              "crop": crop})
         self.assertEqual(captured[0]["variants"][0]["hanja_text"], "甲乙")
         self.assertEqual(recognize.call_args.kwargs["padding"], 0)
         self.assertEqual(recognize.call_args.kwargs["scale"], 3.0)

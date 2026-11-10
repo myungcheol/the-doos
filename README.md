@@ -18,7 +18,7 @@
 8. [데이터 모델: 원본·검수·고유 ID](#8-데이터-모델-원본검수고유-id)
 9. [부모·자녀 관계 추출 규칙](#9-부모자녀-관계-추출-규칙)
 10. [검수 결과 및 내보내기 파일](#10-검수-결과-및-내보내기-파일)
-11. [성능 확인과 엔진 비교](#11-성능-확인과-엔진-비교)
+11. [성능 확인](#11-성능-확인과-엔진-비교)
 12. [테스트](#12-테스트)
 13. [문제 해결](#13-문제-해결)
 14. [현재 한계와 검수 원칙](#14-현재-한계와-검수-원칙)
@@ -35,7 +35,7 @@
 이 프로젝트는 OCR 텍스트를 만드는 데서 끝나지 않고, 장기적으로 족보의 인물·출처·가족관계를 구조화하는 것을 목표로 합니다.
 
 - **OpenCV**: 족보 표 영역, 가로 행, 세로 텍스트 열, 인명 후보 영역 검출
-- **Tesseract 또는 PaddleOCR 3.x**: 세로쓰기 한자 본문과 인명 OCR
+- **PaddleOCR 3.x**: 세로쓰기 한자 본문과 인명 OCR
 - **Python 규칙**: 인명 후보 정리, 부모·자녀 관계 후보, 인물별 기록 영역과 정보 초안 추출
 - **Streamlit**: 원본 스캔을 보면서 인명과 관계를 검수하는 로컬 웹 UI
 - **JSON / CSV**: OCR 원문, 검수 정보, 판본별 출처, 영구 인물 ID, 관계를 내보내기
@@ -51,14 +51,9 @@ OpenCV: 표 영역 및 행 분할
       v
 세로 열 검출 및 OCR
       |
-      +----------------------+----------------------+
-      |                                             |
-      v                                             v
-Tesseract                                  PaddleOCR 3.x
-      |                                             |
-      +----------------------+----------------------+
-                             |
-                             v
+PaddleOCR 3.x
+      |
+      v
                   공통 텍스트 / 좌표 / confidence
                              |
                              v
@@ -97,7 +92,7 @@ Tesseract                                  PaddleOCR 3.x
 - JPG, JPEG, PNG, TIF, TIFF, BMP, WEBP 형식을 지원합니다.
 - 표 외곽과 가로 행을 검출하고, 각 행 내부의 세로 열을 재구성합니다.
 - 인명 후보는 글자 크기, 연결 요소, 세로 간격, x좌표 군집 등 이미지 기하 정보를 이용해 검출합니다.
-- Tesseract, PaddleOCR, 두 엔진 비교 실행을 선택할 수 있습니다.
+- PaddleOCR 3.x로 본문과 인명 후보를 읽습니다.
 
 ### PaddleOCR 추론 최적화
 
@@ -159,7 +154,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-PaddleOCR와 Tesseract를 별도 가상환경에서 사용해도 됩니다. 이미 동작하는 `.venv-paddle` 환경이 있다면 새 가상환경을 만들 필요는 없습니다.
+이미 동작하는 `.venv-paddle` 환경이 있다면 새 가상환경을 만들 필요는 없습니다.
 
 ### 3.3 PaddleOCR 3.x CPU 설치
 
@@ -190,29 +185,7 @@ PY
 
 GPU를 사용하려면 시스템 CUDA 환경과 호환되는 PaddlePaddle GPU 패키지를 별도로 설치하고 `--paddle-device gpu:0`을 지정해야 합니다. CPU용 설치 명령과 GPU용 설치 명령을 혼용하지 마세요.
 
-### 3.4 Tesseract 설치 (선택 사항)
-
-Tesseract를 단독 엔진 또는 PaddleOCR 비교용으로 사용하려면 Ubuntu/Debian에서 다음 패키지를 설치합니다.
-
-```bash
-sudo apt update
-sudo apt install -y \
-  tesseract-ocr \
-  tesseract-ocr-chi-tra \
-  tesseract-ocr-chi-tra-vert
-
-pip install -r requirements-tesseract.txt
-```
-
-언어팩 확인:
-
-```bash
-tesseract --list-langs
-```
-
-기본 언어인 `chi_tra_vert`가 목록에 있는지 확인합니다. 이름 crop의 대체 언어로 `HanT_vert`를 지정할 수도 있지만, 해당 모델이 설치된 경우에만 사용할 수 있습니다.
-
-### 3.5 검수 UI 패키지 설치
+### 3.4 검수 UI 패키지 설치
 
 ```bash
 pip install -r requirements-review.txt
@@ -230,13 +203,12 @@ pip install -r requirements-desktop.txt
 
 프로젝트 폴더에서 `jokbo_ocr.py`를 실행합니다.
 
-### 4.1 PaddleOCR만 실행 (일반적인 사용 권장)
+### 4.1 PaddleOCR 실행
 
 이미지 한 장:
 
 ```bash
 python jokbo_ocr.py ./scan/001.jpg \
-  --ocr-engine paddleocr \
   --paddle-version PP-OCRv5 \
   --paddle-lang chinese_cht \
   --paddle-device cpu \
@@ -248,7 +220,6 @@ python jokbo_ocr.py ./scan/001.jpg \
 
 ```bash
 python jokbo_ocr.py ./scan/ \
-  --ocr-engine paddleocr \
   --paddle-version PP-OCRv5 \
   --paddle-lang chinese_cht \
   --paddle-device cpu \
@@ -256,47 +227,9 @@ python jokbo_ocr.py ./scan/ \
   --output output/
 ```
 
-### 4.2 Tesseract만 실행
+PaddleOCR 결과는 지정한 출력 디렉터리에 바로 저장됩니다. 기존 `ocr_results.json` 형식과 `ocr_engine: "paddleocr"` 값은 유지합니다.
 
-```bash
-python jokbo_ocr.py ./scan/ \
-  --ocr-engine tesseract \
-  --lang chi_tra_vert \
-  --rows 6 \
-  --output output-tesseract/
-```
-
-### 4.3 두 엔진 비교 실행
-
-```bash
-python jokbo_ocr.py ./scan/001.jpg \
-  --ocr-engine both \
-  --rows 6 \
-  --output compare/
-```
-
-`both` 모드는 같은 입력을 두 엔진에 각각 실행하고 결과를 나란히 저장합니다. 결과 경로는 다음과 같습니다.
-
-```text
-compare/
-├── tesseract/
-│   ├── ocr_results.json
-│   ├── people_candidates.json
-│   └── ...
-├── paddleocr/
-│   ├── ocr_results.json
-│   ├── people_candidates.json
-│   ├── paddleocr_metrics_pages.csv
-│   └── ...
-├── engine_comparison.json
-├── engine_comparison_pages.csv
-├── engine_comparison_rows.csv
-└── engine_comparison_people.csv
-```
-
-검수 UI에서 PaddleOCR 결과를 보려면 OCR 결과 디렉터리로 `compare/paddleocr`를 지정합니다.
-
-### 4.4 주요 명령줄 옵션
+### 4.2 주요 명령줄 옵션
 
 전체 옵션은 다음 명령으로 확인합니다.
 
@@ -310,8 +243,6 @@ python jokbo_ocr.py --help
 |---|---:|---|
 | `inputs` | 필수 | 이미지 파일 또는 이미지 디렉터리. 여러 경로 지정 가능 |
 | `--output`, `-o` | `jokbo-output` | OCR 결과를 저장할 디렉터리 |
-| `--ocr-engine` | `tesseract` | `tesseract`, `paddleocr`, `both` 중 선택 |
-| `--lang` | `chi_tra_vert` | Tesseract 언어 모델 |
 | `--paddle-lang` | `chinese_cht` | PaddleOCR 언어 코드 |
 | `--paddle-version` | `PP-OCRv5` | `PP-OCRv5` 또는 `PP-OCRv4` |
 | `--paddle-device` | `cpu` | 예: `cpu`, `gpu:0` |
@@ -319,7 +250,6 @@ python jokbo_ocr.py --help
 | `--paddle-name-min-confidence` | `70` | 행 OCR 인명 결과 재사용 및 추가 OCR 중단 기준 |
 | `--paddle-enable-mkldnn` | 꺼짐 | oneDNN CPU 가속을 명시적으로 활성화 |
 | `--rows` | `6` | 예상 가로 행/구획 수 |
-| `--psm` | `5` | Tesseract page segmentation mode |
 | `--scale` | `3.0` | OCR 이미지 확대 배율 |
 | `--preprocess` | `clahe` | `clahe`, `gray`, `adaptive`, `otsu` |
 | `--roi` | 자동 검출 | 수동 표 영역 `x,y,width,height` 지정 |
@@ -333,8 +263,6 @@ python jokbo_ocr.py --help
 | `--person-right-margin-exclusion` | `45` | 오른쪽 반복 책 제목 영역 제외 폭 |
 | `--person-min-vertical-glyph-gap` | `27` | 이름 글자 사이 최소 세로 간격 |
 | `--name-crop-padding` | `7` | 인명 crop 주위 여백(px) |
-| `--name-alt-langs` | `HanT_vert` | 설치된 Tesseract 대체 언어 모델 목록 |
-| `--tesseract-cmd` | 자동 | Tesseract 실행 파일 경로 직접 지정 |
 
 참고: `--min-name-font-ratio`는 하위 호환을 위해 남아 있는 deprecated 옵션입니다. 현재 인명 후보는 주로 이미지 기하 정보를 이용해 검출합니다.
 
@@ -454,8 +382,7 @@ streamlit run review_app.py
 브라우저에서 `http://localhost:8501`에 접속합니다. 왼쪽 사이드바의 `OCR 결과 디렉터리`에 OCR 결과 폴더를 입력합니다.
 
 - 일반 PaddleOCR 실행: `output`
-- `--ocr-engine both` 실행: `compare/paddleocr`
-- Tesseract 단독 실행: Tesseract 결과 폴더
+- 과거 비교 실행에서 저장된 PaddleOCR 결과: `compare/paddleocr`
 
 검수 UI는 `ocr_results.json`, `people_candidates.json`, `relationship_candidates.json`을 읽습니다. 이 원본 OCR 후보 파일을 직접 수정하지 않습니다.
 
@@ -750,7 +677,7 @@ PER_<UUID>
 
 `review_state.json`과 `person_registry.json`은 검수 작업을 이어가는 데 중요합니다. 주기적으로 백업하세요. `person_registry.json`은 프로젝트 작업 디렉터리의 기본 경로를 사용하며, 사이드바에서 다른 공유 경로로 변경할 수 있습니다.
 
-## 11. 성능 확인과 엔진 비교
+## 11. 성능 확인
 
 PaddleOCR 실행 결과의 `paddleocr_metrics_pages.csv`에는 다음 값이 들어갑니다.
 
@@ -766,9 +693,7 @@ PaddleOCR 실행 결과의 `paddleocr_metrics_pages.csv`에는 다음 값이 들
 
 v5의 반복 crop OCR 구조와 v6 이후 최적화 구조를 비교할 때는 처리 시간뿐 아니라 `total_inferences`도 확인하세요. 첫 실행의 모델 다운로드/초기화 시간과 이후 캐시가 준비된 실행 시간은 구분해 측정하는 것이 좋습니다.
 
-`engine_comparison_people.csv`와 `engine_comparison_rows.csv`는 같은 인명/행에 대해 두 OCR 엔진의 텍스트를 비교하는 용도입니다.
-
-**Tesseract와 PaddleOCR confidence 숫자를 직접 비교해 어느 엔진이 정확한지 판단하지 마세요.** confidence 산출 방식이 다를 수 있습니다. 검수한 정답 문자열을 기준으로 이름 완전 일치율, 문자 오류율(CER), 본문 판독 품질을 비교하는 편이 더 적절합니다.
+OCR confidence는 보정된 정확도 확률이 아닙니다. 검수한 정답 문자열을 기준으로 이름 완전 일치율과 문자 오류율(CER)을 평가하세요.
 
 ## 12. 테스트
 
@@ -811,30 +736,18 @@ print("PaddleOCR:", paddleocr.__version__)
 PY
 ```
 
-### 13.2 `tesseract` 실행 파일 또는 언어 모델을 찾을 수 없음
-
-Tesseract 실행 파일과 `chi_tra_vert` 언어팩이 설치되었는지 확인합니다.
-
-```bash
-which tesseract
-tesseract --list-langs
-```
-
-Tesseract를 사용하지 않을 경우 OCR 실행 명령에서 `--ocr-engine paddleocr`를 지정합니다.
-
-### 13.3 검수 UI에서 OCR 결과를 찾지 못함
+### 13.2 검수 UI에서 OCR 결과를 찾지 못함
 
 사이드바의 `OCR 결과 디렉터리`가 `ocr_results.json`이 있는 위치인지 확인합니다.
 
-- PaddleOCR 단독 실행: 보통 `output`
-- `both` 실행: `output/paddleocr`
-- Tesseract 단독 실행: 지정한 결과 디렉터리
+- 현재 실행: 보통 `output`
+- 과거 비교 실행에서 저장된 PaddleOCR 결과: `output/paddleocr`
 
-### 13.4 원본 이미지가 표시되지 않음
+### 13.3 원본 이미지가 표시되지 않음
 
 OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합니다. 원본을 다른 곳으로 옮긴 경우 경로가 끊어질 수 있습니다. 원본 이미지를 찾을 수 없으면 검수 UI는 페이지 출력 폴더의 `table_roi.jpg`를 대체 이미지로 시도합니다. 원본 전체 페이지보다 표시 범위가 제한될 수 있습니다.
 
-### 13.5 확대 이미지가 느리거나 브라우저가 무거움
+### 13.4 확대 이미지가 느리거나 브라우저가 무거움
 
 확대 배율이 높을수록 이미지 렌더링과 메모리 사용량이 커집니다. 필요한 영역만 확인한 뒤 `이미지 화면 맞춤`으로 돌아오세요. 최대 배율 제한은 없지만 브라우저와 시스템 자원에는 현실적인 한계가 있습니다.
 
@@ -861,10 +774,10 @@ v6.7에서 아직 인물을 선택하지 않은 첫 화면 렌더링 시 OCR 강
 
 | 버전 | 주요 추가/변경 사항 |
 |---|---|
-| v2 | LLM에 의존하지 않는 OpenCV + Tesseract + Python 규칙 기반 처리로 전환하는 초기 구조 |
+| v2 | LLM에 의존하지 않는 OpenCV + Python 규칙 기반 처리의 초기 구조 |
 | v3 | 이미지 기하 기반 인명 후보 검출 개선, 오탐 제거, 위치를 이용한 부모·자녀 후보 생성 |
 | v4 | 인명 crop 전용 OCR, 여러 전처리/OCR 후보 보존, 복수 부모 branch 구분 및 관계 근거 기록 |
-| v5 | Tesseract/PaddleOCR 선택 실행, 두 엔진 비교 출력, 인명 OCR 후보 비교 |
+| v5 | 인명 OCR 후보 비교 및 OCR 결과 구조 확장 |
 | v5 oneDNN 수정 | CPU PaddleOCR 실행 시 PIR/oneDNN 호환 오류를 피하도록 oneDNN 비활성화를 기본값으로 설정 |
 | v6 | 행 OCR 결과를 인명 후보에 재사용해 중복 추론을 줄이고, Streamlit 인명/관계 검수 UI 추가 |
 | v6.1 | 페이지 전체 보기, 이미지 조작/관계 취소 동작 및 검수 메시지 위치 개선 |
@@ -892,7 +805,6 @@ the-doos/
 ├── run_review.sh                # 검수 UI 실행 스크립트
 ├── requirements.txt             # 공통 의존성
 ├── requirements-paddle.txt      # PaddleOCR 의존성
-├── requirements-tesseract.txt   # Tesseract Python 의존성
 ├── requirements-review.txt      # Streamlit 검수 UI 의존성
 ├── .gitignore
 └── tests/
@@ -929,7 +841,7 @@ python -m unittest discover -s tests -v
 python jokbo_ocr.py --help
 ```
 
-- **OCR을 실제로 돌릴 때**만 3.3절의 PaddlePaddle/PaddleOCR 설치(또는 3.4절의 Tesseract 설치)가 추가로 필요합니다. 모델·언어팩 없이도 실행 가능한 단위 테스트와 OCR 추론 테스트를 혼동하지 마세요.
+- **OCR을 실제로 돌릴 때**만 3.3절의 PaddlePaddle/PaddleOCR 설치가 추가로 필요합니다. 모델 없이도 실행 가능한 단위 테스트와 OCR 추론 테스트를 혼동하지 마세요.
 - OCR 실행 예시는 4절, 검수 UI는 6절을 따릅니다. 처음에는 `scan/001.jpg` **한 페이지만 별도 출력 폴더에** 실행해 보세요.
 - 검수 UI에는 기존 OCR 결과 폴더(`ocr_results.json`이 있는 곳)를 지정합니다. **OCR 결과가 없는 새 clone 상태에서 UI만 실행해도 검수할 페이지는 없습니다.**
 - 사용자 작업 디렉터리가 꼭 `~/workspaces/jokbo_ocr_project`일 필요는 없습니다. clone한 저장소 루트에서 명령을 실행합니다.
@@ -959,7 +871,7 @@ python jokbo_ocr.py --help
 | 왕/연호 연수와 음력→양력 범위 계산 | `historical_dates.py`, `tests/test_historical_dates.py` |
 | `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `person_data_model.py`, `tests/test_person_data_model.py` |
 | 로컬 검수 UI 실행/의존성 | `run_review.sh`, `requirements-review.txt`, `requirements.txt` |
-| OCR 엔진 전용 의존성 | `requirements-paddle.txt`, `requirements-tesseract.txt` |
+| OCR 의존성 | `requirements-paddle.txt` |
 
 `person_data_extractor.py`도 저장소에 남아 있습니다. **현재 검수 UI가 직접 import하는 모듈은 `person_info_extractor.py`**입니다. 유사한 파일명이 있다는 이유로 둘을 일괄 수정하거나 삭제하지 말고 실제 import와 사용 경로를 확인하세요.
 

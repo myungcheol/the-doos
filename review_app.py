@@ -100,7 +100,7 @@ def cached_extract_person_info_draft(
 
 def find_output_root(raw_path: str) -> Path | None:
     path = Path(raw_path).expanduser().resolve()
-    candidates = [path, path / "paddleocr", path / "tesseract"]
+    candidates = [path, path / "paddleocr"]
     for candidate in candidates:
         if (candidate / "ocr_results.json").exists():
             return candidate
@@ -537,7 +537,7 @@ def main() -> None:
     root = find_output_root(raw_root)
     if root is None:
         st.info("먼저 OCR을 실행한 뒤 `ocr_results.json`이 생성된 결과 폴더를 지정하세요. 예: `output` 또는 `output/paddleocr`.")
-        st.code("python jokbo_ocr.py ./scan/ --ocr-engine paddleocr --rows 6 --output output")
+        st.code("python jokbo_ocr.py ./scan/ --rows 6 --output output")
         return
 
     page_results = read_json(root / "ocr_results.json", [])

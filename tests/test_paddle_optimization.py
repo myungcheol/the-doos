@@ -1,4 +1,8 @@
 import unittest
+import json
+import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import cv2
@@ -31,6 +35,28 @@ class CountingPaddle:
 
 
 class PaddleOptimizationTests(unittest.TestCase):
+    def test_cli_defaults_to_paddle_and_writes_existing_output_schema(self):
+        # Other tests reload this module; patch and call the same live module.
+        module = sys.modules["jokbo_ocr"]
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "ocr"
+            with patch.object(sys, "argv", ["jokbo_ocr.py", "sample.jpg", "--output", str(output)]):
+                args = module.parse_args()
+                self.assertEqual(args.paddle_lang, "chinese_cht")
+                self.assertFalse(hasattr(args, "ocr_engine"))
+                result = {
+                    "source_image": "sample.jpg", "rows": [], "people_candidates": [],
+                    "relationship_candidates": [], "paddle_metrics": {}, "elapsed_seconds": 0.1,
+                    "ocr_engine": "paddleocr", "ocr_language": args.paddle_lang,
+                }
+                with patch("jokbo_ocr.collect_images", return_value=[Path("sample.jpg")]), \
+                     patch("jokbo_ocr.initialize_paddle_ocr", return_value=object()), \
+                     patch("jokbo_ocr.ocr_one_image", return_value=result) as recognize:
+                    self.assertEqual(module.main(), 0)
+                self.assertEqual(recognize.call_args.args[2], output)
+                self.assertEqual(json.loads((output / "ocr_results.json").read_text())[0]["ocr_engine"], "paddleocr")
+                self.assertTrue((output / "paddleocr_metrics_pages.csv").exists())
+
     def test_column_match_requires_vertical_overlap(self):
         geometry = {"bbox": {"x": 100, "y": 200, "width": 25, "height": 90}, "center_x": 112.5}
         same_x_wrong_y = {
@@ -51,7 +77,7 @@ class PaddleOptimizationTests(unittest.TestCase):
         with patch("jokbo_ocr.cv2.createCLAHE", wraps=cv2.createCLAHE):
             text, variants, crop = run_name_ocr_variants(
                 image, {"x": 30, "y": 30, "width": 40, "height": 80},
-                lang="chi_tra_vert", engine="paddleocr", paddle_ocr=backend,
+                paddle_ocr=backend,
                 paddle_min_confidence=70,
             )
         self.assertEqual(text, "子之逢")

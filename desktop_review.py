@@ -68,7 +68,7 @@ class RegionOcrWorker(QObject):
     def recognize(self, request):
         try:
             from jokbo_ocr import initialize_paddle_ocr, run_name_ocr_variants
-            if request["engine"] == "paddleocr" and self.paddle_ocr is None:
+            if self.paddle_ocr is None:
                 self.paddle_ocr = initialize_paddle_ocr(SimpleNamespace(
                     paddle_version="PP-OCRv5", paddle_lang="chinese_cht", paddle_device="cpu",
                     paddle_cpu_threads=4, paddle_enable_mkldnn=False,
@@ -76,7 +76,7 @@ class RegionOcrWorker(QObject):
             crop = request["crop"]
             _, variants, _ = run_name_ocr_variants(
                 crop, {"x": 0, "y": 0, "width": crop.shape[1], "height": crop.shape[0]},
-                lang="chi_tra_vert", scale=3.0, padding=0, engine=request["engine"],
+                scale=3.0, padding=0,
                 paddle_ocr=self.paddle_ocr, paddle_min_confidence=101,
             )
             result = {"request": request, "variants": variants}
@@ -1201,11 +1201,8 @@ class ReviewWindow(QMainWindow):
             self.ocr_worker.finished.connect(self.show_region_ocr_result)
             self.ocr_thread.finished.connect(self.ocr_worker.deleteLater)
             self.ocr_thread.start()
-        engine = self.region_page.get("ocr_engine") or next(
-            (page.get("ocr_engine") for page in self.page_results if page.get("ocr_engine")), "paddleocr"
-        )
         request = {"page": page_name(self.region_page), "bbox": dict(self.region_bbox),
-                   "crop": crop, "engine": "paddleocr" if engine in ("both", "paddleocr") else "tesseract"}
+                   "crop": crop}
         self.ocr_running = True
         self.run_region_ocr_button.setEnabled(False)
         self.region_candidates.clear()

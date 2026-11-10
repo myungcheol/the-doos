@@ -5,7 +5,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 ## Project mission and current reality
 
 - Convert scanned traditional vertical Chinese-character Korean genealogy (`족보`) pages into structured, human-reviewed people, source occurrences, and parent/child edges. The source edition currently being reviewed was published in **1987**; future editions may be linked to the same people.
-- Runtime pipeline: **OpenCV + PaddleOCR/Tesseract + deterministic Python rules + Streamlit review UI**. No LLM is required or desired in the OCR/extraction pipeline.
+- Runtime pipeline: **OpenCV + PaddleOCR + deterministic Python rules + Streamlit/PySide6 review UI**. No LLM is required or desired in the OCR/extraction pipeline.
 - A database has **not** been implemented. The persisted workflow uses JSON/CSV and `person_registry.json`. Do not describe the future DB schema in README §8.5 as production code.
 - `scan/` contains many scanned pages. Prefer **one-page tests** with `scan/001.jpg`; do not process the entire corpus or publish additional scanned/person data without explicit need.
 
@@ -32,7 +32,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 4. **Page geometry is a heuristic:** OCR text runs vertically; columns read **right-to-left**. The eldest son may be below the father at a similar x, later sons appear to the left, and daughters can appear to the right. The geometry suggests candidates; **it does not prove kinship**. `親族也` is a phrase, not a person.
 5. **Multiple partners:** a person may have multiple wives and/or concubines. Preserve an array of separately typed partner entries; do not collapse it into a single authoritative string.
 6. **Stable identity vs source:** `PER_<UUID>` remains constant across revised editions; publication year, printed page, scan page, row, right-to-left column, ordinal, and bbox are stored separately in `source_occurrences`. Never derive the permanent UID from edition/year/page/column or merge namesakes automatically.
-7. **Review status:** preserve `needs_review`, `confirmed`, `rejected` semantics. OCR confidence is **not** calibrated probability; PaddleOCR and Tesseract confidence numbers are not directly comparable.
+7. **Review status:** preserve `needs_review`, `confirmed`, `rejected` semantics. OCR confidence is **not** calibrated probability.
 8. **Source provenance:** OCR field evidence must retain original-image coordinate bbox. A crop/ROI can have an offset; ensure coordinate transforms are correct and test both offset and no-offset paths.
 
 ## Review UI expectations
@@ -80,8 +80,8 @@ The **Git history is the source of truth for what changed**; [docs/WORKLOG.md](d
 python -m unittest discover -s tests -v
 python jokbo_ocr.py --help
 
-# OCR only after installing an engine; inspect a single sample
-python jokbo_ocr.py ./scan/001.jpg --ocr-engine paddleocr --rows 6 --output output/
+# OCR only after installing PaddleOCR; inspect a single sample
+python jokbo_ocr.py ./scan/001.jpg --rows 6 --output output/
 
 # Review existing OCR output (the folder must have ocr_results.json)
 streamlit run review_app.py
