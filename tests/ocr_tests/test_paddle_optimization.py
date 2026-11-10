@@ -117,7 +117,9 @@ class PaddleOptimizationTests(unittest.TestCase):
                     self.assertEqual(module.main(), 0)
                 self.assertEqual(recognize.call_args.args[2], output)
                 self.assertEqual(json.loads((output / "sample/page.json").read_text())["ocr_engine"], "paddleocr")
-                self.assertTrue((output / "paddleocr_metrics_pages.csv").exists())
+                self.assertFalse((output / "paddleocr_metrics_pages.csv").exists())
+                self.assertFalse((output / "people_candidates.csv").exists())
+                self.assertFalse((output / "relationship_candidates.csv").exists())
 
     def test_column_match_requires_vertical_overlap(self):
         geometry = {"bbox": {"x": 100, "y": 200, "width": 25, "height": 90}, "center_x": 112.5}

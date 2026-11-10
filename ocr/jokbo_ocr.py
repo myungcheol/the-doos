@@ -9,7 +9,6 @@ No generative AI, API key, network request, or remote model is used.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import re
 import sys
@@ -1202,19 +1201,6 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         cv2.line(debug_image, (0, boundary.y), (width-1, boundary.y), color, 2)
     cv2.imwrite(str(page_dir / "layout_debug.jpg"), debug_image)
 
-    text_parts = []
-    for row in all_rows:
-        text_parts.append(
-            f"===== {row['row_id']} | generation={row['generation_text']} | bbox={row['bbox']} | confidence={row['band_confidence']} ====="
-        )
-        text_parts.append(row["band_text"])
-        text_parts.append("--- columns (right-to-left; reconstructed from OCR tokens) ---")
-        for col in row["columns"]:
-            text_parts.append(
-                f"{col['column_id']} | bbox={col['bbox']} | font_size_ratio={col['font_size_ratio']} | conf={col['mean_confidence']} | {col['text']}"
-            )
-        text_parts.append("")
-    (page_dir / "ocr.txt").write_text("\n".join(text_parts), encoding="utf-8")
     return {
         "source_image": str(path), "image_size": {"width": image_w, "height": image_h},
         "table_roi": {"x": x, "y": y, "width": width, "height": height}, "roi_method": roi_method,
@@ -1228,18 +1214,6 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         "blocks": legacy_blocks, "people_candidates": all_people,
         "relationship_candidates": relationships, "page_output_dir": str(page_dir),
     }
-
-
-def write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            normalized = {
-                key: json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else value
-                for key, value in row.items()
-            }
-            writer.writerow(normalized)
 
 
 def collect_images(inputs: list[str]) -> list[Path]:
@@ -1384,40 +1358,12 @@ def main() -> int:
         print("[ERROR] No pages were processed; existing page JSON files were left unchanged.", file=sys.stderr)
         return 1
     try:
-        results, people, relationships, warnings = load_ocr_output(output_dir)
+        _, _, _, warnings = load_ocr_output(output_dir)
         for warning in warnings:
             print(f"[WARN] {warning}", file=sys.stderr)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"[ERROR] OCR output could not be loaded: {exc}", file=sys.stderr)
         return 2
-
-    write_csv(output_dir / "people_candidates.csv", people, [
-        "person_id", "source_page", "name_hanja_candidate", "generation_number", "evidence_text",
-        "source_column_id", "source_row_id", "bbox", "image_file", "ocr_variants", "ranked_ocr_hypotheses",
-        "best_ocr_variant", "ocr_confidence", "transcribed_name_hanja", "transcription_status", "detection_score", "review_status",
-    ])
-    write_csv(output_dir / "relationship_candidates.csv", relationships, [
-        "relationship_id", "source_page", "type", "parent_candidate_id", "parent_name_hanja_candidate",
-        "candidate_parent_ids", "child_candidate_id", "child_name_hanja_candidate", "relationship_basis",
-        "placement_role", "inferred_child_sex", "child_order", "parent_center_x", "child_center_x",
-        "branch_bounds_x", "horizontal_distance_px", "evidence_text", "source_row_ids", "confidence", "review_status", "warning",
-    ])
-    metric_rows = []
-    for result in results:
-        metrics = result.get("paddle_metrics") or {}
-        metric_rows.append({
-            "source_page": Path(result.get("source_image", "page")).name,
-            "elapsed_seconds": result.get("elapsed_seconds"),
-            "row_inferences": metrics.get("row_inferences", 0),
-            "name_reused_from_row": metrics.get("name_reused_from_row", 0),
-            "name_fallback_regions": metrics.get("name_fallback_regions", 0),
-            "name_fallback_inferences": metrics.get("name_fallback_inferences", 0),
-            "total_inferences": metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0),
-        })
-    write_csv(output_dir / "paddleocr_metrics_pages.csv", metric_rows, [
-        "source_page", "elapsed_seconds", "row_inferences", "name_reused_from_row",
-        "name_fallback_regions", "name_fallback_inferences", "total_inferences",
-    ])
 
     print(f"\nDone. No LLM/API was used. Results: {output_dir.resolve()}")
     return 0

@@ -38,7 +38,7 @@
 - **PaddleOCR 3.x**: 세로쓰기 한자 본문과 인명 OCR
 - **Python 규칙**: 인명 후보 정리, 부모·자녀 관계 후보, 인물별 기록 영역과 정보 초안 추출
 - **PySide6**: 원본 스캔을 보면서 인명과 관계를 검수하는 데스크톱 UI
-- **JSON / CSV**: OCR 원문, 검수 정보, 판본별 출처, 영구 인물 ID, 관계를 내보내기
+- **JSON**: OCR 원문, 검수 정보, 판본별 출처, 영구 인물 ID, 관계를 저장
 
 전체 흐름은 다음과 같습니다.
 
@@ -63,7 +63,7 @@ PaddleOCR 3.x
                 Python 규칙 기반 관계 후보 생성
                              |
                              v
-                JSON / CSV 원본 후보 파일 저장
+                   페이지별 JSON 원본 저장
                              |
                              v
                   PySide6 검수 UI 실행
@@ -104,7 +104,7 @@ v5까지는 행 OCR 이후 각 인명 crop에 여러 전처리를 적용해 반�
 4. 매칭되지 않거나 기준 미달인 인명만 crop OCR을 추가 실행합니다.
 5. 추가 OCR은 CLAHE부터 시도하고, 결과가 계속 기준 미달일 때 Otsu, Adaptive Threshold, 90도 회전 이미지를 순서대로 시도합니다.
 
-기본 재사용/중단 confidence 기준은 70입니다. 실제 추론 횟수와 처리 시간은 `paddleocr_metrics_pages.csv`에서 확인할 수 있습니다.
+기본 재사용/중단 confidence 기준은 70입니다. 실제 추론 횟수와 처리 시간은 각 페이지의 `page.json`에 있는 `paddle_metrics`와 `elapsed_seconds`에서 확인할 수 있습니다.
 
 ### 인물 및 가족관계 검수
 
@@ -279,13 +279,9 @@ OCR 실행 결과의 기본 구조:
 
 ```text
 output/
-├── people_candidates.csv
-├── relationship_candidates.csv
-├── paddleocr_metrics_pages.csv       # PaddleOCR 실행 시
 └── 001/                              # 원본 파일 stem별 페이지 폴더
     ├── table_roi.jpg
     ├── layout_debug.jpg
-    ├── ocr.txt
     ├── page.json                    # 이 페이지의 OCR 원본·행·열·인물·관계 후보
     ├── rows/
     └── columns/
@@ -296,15 +292,11 @@ output/
 | 파일 | 설명 |
 |---|---|
 | `001/page.json` | 원본 이미지 경로·크기, 표 ROI, OCR 엔진·모델·성능, 행·열·토큰 bbox, 인물·관계 후보를 저장하는 페이지별 단일 JSON |
-| `people_candidates.csv` | 인물 후보의 주요 필드를 표 형식으로 저장 |
-| `relationship_candidates.csv` | 관계 후보를 표 형식으로 저장 |
-| `paddleocr_metrics_pages.csv` | PaddleOCR 페이지별 추론 횟수와 처리 시간 |
 | `table_roi.jpg` | 검출된 족보 표 영역 이미지 |
 | `layout_debug.jpg` | 행/레이아웃/인명 후보 검출 결과를 확인하기 위한 디버그 이미지 |
-| `ocr.txt` | 페이지의 OCR 텍스트를 읽기 쉬운 형태로 모은 파일 |
 | `rows/`, `columns/` | 분할된 행 및 세로 열 이미지 |
 
-`page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR과 `rule_mentions` 표식, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. 루트 CSV는 전체 페이지에서 읽어 만든 표 형식 내보내기이며 검수 앱의 원본 저장소로 사용하지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
+`page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR과 `rule_mentions` 표식, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. OCR 원문과 성능 정보도 이 파일에 있으므로 별도 CSV나 `ocr.txt`를 만들지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
 
 인물 후보에는 보통 다음 정보가 포함됩니다.
 
@@ -366,7 +358,7 @@ python -m review.desktop_review output/
 
 오른쪽의 `인물 검수` 탭에서 OCR 원문과 필드별 근거를 확인하고 값을 수정한 뒤 `인물 저장`을 누릅니다. 관계 탭에서 후보를 승인·거절하거나 부모를 지정하고 자녀를 추가할 수 있습니다. `이어진 기록` 탭에서는 이전 페이지 인물에게 연결할 OCR 영역을 검토합니다. 선택 영역 OCR 후보는 복사하여 원하는 필드에 붙여넣을 수 있습니다.
 
-저장 시 기존 `review_state.json` 형식과 JSON/CSV 내보내기를 사용합니다. 저장 전에 외부 검수 상태 변경을 감지하므로 충돌 시 폴더를 다시 열어야 합니다. 데스크톱에서 생성한 UID는 검수 상태와 내보내기에 저장되며 공용 `person_registry.json`은 자동 변경하지 않습니다.
+저장 시 기존 `review_state.json` 형식과 JSON 내보내기를 사용합니다. 저장 전에 외부 검수 상태 변경을 감지하므로 충돌 시 폴더를 다시 열어야 합니다. 데스크톱에서 생성한 UID는 검수 상태와 내보내기에 저장되며 공용 `person_registry.json`은 자동 변경하지 않습니다.
 
 현재 데스크톱 앱에는 판본 메타데이터 편집, 공용 레지스트리 갱신·기존 UID 연결, 관계 후보의 부모/자녀 교체와 관계 되돌리기 기능이 없습니다. 이러한 작업이 필요하면 저장된 JSON을 백업하고 별도 도구로 검토해야 합니다.
 
@@ -474,7 +466,7 @@ PER_<UUID>
 
 ### 8.5 권장 데이터베이스 구조
 
-프로젝트 자체는 DB에 직접 저장하지 않고 JSON/CSV를 내보냅니다. 향후 DB로 옮길 때는 아래처럼 정규화하는 방식을 권장합니다.
+프로젝트 자체는 DB에 직접 저장하지 않고 JSON을 내보냅니다. 향후 DB로 옮길 때는 아래처럼 정규화하는 방식을 권장합니다.
 
 **Person**
 
@@ -534,27 +526,22 @@ PER_<UUID>
 |---|---|
 | `review_state.json` | 인물 수정 내용, 관계 수정/거절, 수동 관계, `person_uid_map`, 판본 및 페이지 메타데이터 |
 | `reviewed_people.json` | OCR 원문, 검수 정보, `person_uid`, raw/reviewed data, 출처 정보가 포함된 인물 데이터 |
-| `reviewed_people.csv` | 인물 데이터를 CSV로 내보냄. 중첩 구조는 JSON 문자열로 저장 |
 | `reviewed_relationships.json` | 부모/자녀 로컬 후보 ID와 영구 `person_uid`를 함께 저장 |
-| `reviewed_relationships.csv` | 관계 상태, 부모/자녀 이름과 `person_uid`를 저장 |
 
 `review_state.json`과 기존 `person_registry.json`은 검수 작업을 이어가는 데 중요합니다. 주기적으로 백업하세요. 데스크톱 앱은 `person_registry.json`을 자동 갱신하지 않습니다.
 
 ## 11. 성능 확인
 
-PaddleOCR 실행 결과의 `paddleocr_metrics_pages.csv`에는 다음 값이 들어갑니다.
+각 페이지 `page.json`의 `paddle_metrics`에는 다음 값이 들어가며, 페이지 전체 처리 시간은 `elapsed_seconds`에 저장됩니다.
 
 | 필드 | 의미 |
 |---|---|
-| `source_page` | 원본 페이지 파일명 |
-| `elapsed_seconds` | 페이지 처리 시간 |
 | `row_inferences` | 행 OCR 추론 횟수 |
 | `name_reused_from_row` | 행 OCR 결과를 재사용한 인명 수 |
 | `name_fallback_regions` | 추가 crop OCR이 필요했던 인명 영역 수 |
 | `name_fallback_inferences` | 인명 crop 추가 추론 횟수 |
-| `total_inferences` | 행 OCR + 인명 fallback 추론 총 횟수 |
 
-v5의 반복 crop OCR 구조와 v6 이후 최적화 구조를 비교할 때는 처리 시간뿐 아니라 `total_inferences`도 확인하세요. 첫 실행의 모델 다운로드/초기화 시간과 이후 캐시가 준비된 실행 시간은 구분해 측정하는 것이 좋습니다.
+v5의 반복 crop OCR 구조와 v6 이후 최적화 구조를 비교할 때는 `elapsed_seconds`뿐 아니라 `row_inferences + name_fallback_inferences`도 확인하세요. 첫 실행의 모델 다운로드/초기화 시간과 이후 캐시가 준비된 실행 시간은 구분해 측정하는 것이 좋습니다.
 
 OCR confidence는 보정된 정확도 확률이 아닙니다. 검수한 정답 문자열을 기준으로 이름 완전 일치율과 문자 오류율(CER)을 평가하세요.
 
@@ -622,7 +609,7 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 4. **자동 부모·자녀 관계는 판면 규칙의 추정 결과입니다.** 검수 전에는 확정 계보로 사용하지 마세요.
 5. **배우자 유형은 원문 확인이 필요합니다.** 배우자 키워드가 검출되었다고 부인/첩 구분이 자동 확정되는 것은 아닙니다.
 6. **개정판의 동일인 연결은 사람이 판단해야 합니다.** 이름이 같다는 이유로 `person_uid`를 자동 병합하지 않습니다.
-7. **DB 저장은 아직 구현하지 않았습니다.** 현재는 검수된 JSON/CSV를 내보내며 공용 ID 레지스트리는 자동 갱신하지 않습니다.
+7. **DB 저장은 아직 구현하지 않았습니다.** 현재는 검수된 JSON을 내보내며 공용 ID 레지스트리는 자동 갱신하지 않습니다.
 8. **UI는 로컬 검수용입니다.** 검수 파일과 스캔의 접근 권한을 관리하세요.
 
 족보에는 생존 인물이나 가족에 관한 정보가 포함될 수 있습니다. 원본 이미지와 검수 결과의 접근 권한을 관리하고 외부 공개 전에 자료 권리 및 개인정보 문제를 확인하세요.
@@ -682,7 +669,7 @@ the-doos/
 
 - 이 프로젝트는 **1987년 발행 족보**의 스캔본을 출발점으로, 판본이 달라져도 재사용할 수 있는 인물·가족관계·출처 데이터를 만드는 로컬 도구입니다.
 - 입력 스캔은 저장소의 `scan/`에 있으며 `scan/001.jpg`는 작은 단위의 재현/확인에 적합합니다. `scan/`의 모든 파일을 테스트 목적으로 일괄 OCR하지 마세요.
-- **아직 구현된 데이터베이스 서비스는 없습니다.** 현재 영속적인 결과는 JSON/CSV와 인물 ID 레지스트리이며, 향후 DB 테이블 구조는 8.5절의 제안입니다.
+- **아직 구현된 데이터베이스 서비스는 없습니다.** 현재 영속적인 결과는 JSON과 인물 ID 레지스트리이며, 향후 DB 테이블 구조는 8.5절의 제안입니다.
 - 이 저장소는 OCR/검수 앱 외에 과거 실험 파일을 포함할 수 있습니다. 현재 실행 진입점은 `ocr.jokbo_ocr`와 `review.desktop_review`입니다.
 
 ### 17.2 첫 실행 순서
@@ -740,7 +727,7 @@ python -m ocr.jokbo_ocr --help
 | OCR/추론 원본 | `output/001/page.json` | 페이지별 OCR 원본·메타데이터·후보. 수작업 검수 값은 별도로 보관 |
 | OCR 좌표/이미지 | `output/001/page.json`, `table_roi.jpg`, `layout_debug.jpg` | 행·열·인물 bbox 및 디버깅 근거 |
 | 검수 작업 상태 | OCR 결과 폴더의 `review_state.json` | 수작업 정정, 확인/거절, 수동 관계 등. 백업 후 변경 |
-| 검수된 내보내기 | `reviewed_people.json/csv`, `reviewed_relationships.json/csv` | 사람이 확정/검토 중인 상태를 함께 보관 |
+| 검수된 내보내기 | `reviewed_people.json`, `reviewed_relationships.json` | 사람이 확정/검토 중인 상태를 함께 보관 |
 | 공용 인물 레지스트리 | `person_registry.json` | 영구 인물 ID/출처. **저장소 루트에도 파일이 추적되고 있으므로 실험·실행만으로 변경된 내용을 무심코 커밋하지 말 것** |
 
 `review_state.json`과 `person_registry.json`을 초기화하면 UUID 연결과 검수 이력이 손상될 수 있습니다. 별도 테스트용 디렉터리를 사용하고, 실제 데이터 변경은 의도·백업·차이를 확인한 후 진행하세요. `.gitignore`가 모든 임시 파일이나 검수 산출물을 자동으로 제외한다고 가정하지 말고, 커밋 전에 `git status`로 검토하세요.

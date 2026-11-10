@@ -198,6 +198,16 @@
 
 ---
 
+### 2026-11-10 — 중복 CSV 및 OCR 텍스트 산출물 제거
+
+- **문제/맥락:** 페이지 OCR과 검수 결과가 JSON에 모두 저장되는데도 같은 내용을 CSV와 `ocr.txt`로 추가 생성해 출력 폴더가 복잡해졌다. 데스크톱 검수기는 이 파일들을 읽지 않는다.
+- **수정:** OCR의 `people_candidates.csv`, `relationship_candidates.csv`, `paddleocr_metrics_pages.csv`, 페이지별 `ocr.txt` 생성을 제거했다. 검수 저장은 `reviewed_people.json`, `reviewed_relationships.json`만 내보내고 CSV를 만들지 않는다. OCR 원문·좌표·후보·성능은 계속 `page.json`에 보존한다.
+- **호환성:** 기존 출력 폴더에 이미 있는 CSV와 `ocr.txt`는 사용자 산출물로 보고 자동 삭제하지 않는다. `page.json`, `review_state.json`, 검수 JSON 형식은 변경하지 않는다.
+- **검증:** 새 임시 출력에서 CSV와 `ocr.txt`가 생성되지 않는 회귀 테스트, 전체 단위 테스트와 패키지 컴파일을 실행한다. 실제 PaddleOCR 모델 추론과 데스크톱 수동 조작은 수행하지 않는다.
+- **관련 커밋:** 이 기록을 포함한 커밋.
+
+---
+
 ### 새 작업 기록 템플릿 (복사해 작성)
 
 ```markdown

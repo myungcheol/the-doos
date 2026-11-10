@@ -1,7 +1,6 @@
 """Shared persistence and source-image helpers for the desktop review app."""
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
 from typing import Any
@@ -80,36 +79,6 @@ def write_exports(root: Path, people: list[dict[str, Any]], relationships: list[
     (root / "reviewed_relationships.json").write_text(
         json.dumps(relationships, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    with (root / "reviewed_people.csv").open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=[
-            "person_uid", "person_id", "source_page", "name_hanja_candidate", "raw_name_ocr",
-            "transcribed_name_hanja", "sex_marker", "gender", "review_status",
-            "generation_number", "courtesy_name_hanja", "pen_name_hanja",
-            "birth_text", "death_text", "birth_date", "death_date", "birth_solar", "death_solar",
-            "office_title", "spouse_text", "spouses",
-            "burial_text", "biography_text", "notes", "information_review_status",
-            "source_record_ocr_text", "raw_data", "reviewed_data", "source_occurrences",
-            "bbox", "image_file", "ocr_confidence",
-        ], extrasaction="ignore")
-        writer.writeheader()
-        csv_people = []
-        for person in people:
-            row = dict(person)
-            for nested_key in ("spouses", "birth_date", "death_date", "birth_solar", "death_solar",
-                               "raw_data", "reviewed_data", "source_occurrences", "bbox"):
-                if nested_key in row:
-                    row[nested_key] = json.dumps(row[nested_key], ensure_ascii=False)
-            csv_people.append(row)
-        writer.writerows(csv_people)
-    with (root / "reviewed_relationships.csv").open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=[
-            "relationship_id", "source_page", "type", "parent_candidate_id",
-            "parent_name_hanja_candidate", "parent_person_uid", "child_candidate_id",
-            "child_name_hanja_candidate", "child_person_uid", "relationship_basis",
-            "review_status", "warning",
-        ], extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(relationships)
 
 
 def build_review_data(root: Path, base_people: list[dict[str, Any]],

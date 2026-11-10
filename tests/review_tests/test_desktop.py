@@ -1,6 +1,5 @@
 """PySide6 desktop review tests."""
 import json
-import csv
 import os
 import tempfile
 import unittest
@@ -101,9 +100,8 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(update["birth_date"]["sexagenary_year"], "乙亥")
         exported = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))[0]
         self.assertEqual(exported["reviewed_data"]["birth_solar"], update["birth_solar"])
-        with (self.root / "reviewed_people.csv").open(encoding="utf-8-sig", newline="") as handle:
-            row = next(csv.DictReader(handle))
-        self.assertEqual(json.loads(row["birth_solar"])["start"], "0975-11-20")
+        self.assertFalse((self.root / "reviewed_people.csv").exists())
+        self.assertFalse((self.root / "reviewed_relationships.csv").exists())
         self.window.inputs["birth_text"].setText("수정된 원문")
         self.window.save_person()
         state = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))

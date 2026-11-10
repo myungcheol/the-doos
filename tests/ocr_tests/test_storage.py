@@ -92,6 +92,8 @@ class OcrStorageTests(unittest.TestCase):
                 self.assertEqual(module.main(), 0)
             self.assertEqual([path.relative_to(output).as_posix() for path in output.rglob("*.json")],
                              ["001/page.json"])
+            self.assertFalse((output / "001/ocr.txt").exists())
+            self.assertFalse(list(output.glob("*.csv")))
             self.assertEqual(load_ocr_output(output)[0][0]["image_size"], {"width": 100, "height": 120})
 
 

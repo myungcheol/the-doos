@@ -6,7 +6,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 
 - Convert scanned traditional vertical Chinese-character Korean genealogy (`족보`) pages into structured, human-reviewed people, source occurrences, and parent/child edges. The source edition currently being reviewed was published in **1987**; future editions may be linked to the same people.
 - Runtime pipeline: **OpenCV + PaddleOCR + deterministic Python rules + PySide6 desktop review UI**. No LLM is required or desired in the OCR/extraction pipeline.
-- A database has **not** been implemented. The persisted workflow uses JSON/CSV and `person_registry.json`. Do not describe the future DB schema in README §8.5 as production code.
+- A database has **not** been implemented. The persisted workflow uses JSON and `person_registry.json`. Do not describe the future DB schema in README §8.5 as production code.
 - `scan/` contains many scanned pages. Prefer **one-page tests** with `scan/001.jpg`; do not process the entire corpus or publish additional scanned/person data without explicit need.
 
 ## Where to look first
@@ -16,7 +16,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 | OCR CLI, layout, name/relationship candidates, engine optimizations | `ocr/jokbo_ocr.py` |
 | Page JSON persistence and legacy OCR loading | `ocr/storage.py` |
 | Desktop review workflow and overlays | `review/desktop_review.py` |
-| Review state and JSON/CSV exports | `review/core.py` |
+| Review state and JSON exports | `review/core.py` |
 | Cross-page continuations and recovered candidates | `review/extensions.py` |
 | Person-record OCR draft and evidence bounding boxes | `review/person_info.py` |
 | Stable `person_uid`, source occurrences, raw/reviewed records | `review/data_model.py` |
