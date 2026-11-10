@@ -5,7 +5,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 ## Project mission and current reality
 
 - Convert scanned traditional vertical Chinese-character Korean genealogy (`족보`) pages into structured, human-reviewed people, source occurrences, and parent/child edges. The source edition currently being reviewed was published in **1987**; future editions may be linked to the same people.
-- Runtime pipeline: **OpenCV + PaddleOCR + deterministic Python rules + Streamlit/PySide6 review UI**. No LLM is required or desired in the OCR/extraction pipeline.
+- Runtime pipeline: **OpenCV + PaddleOCR + deterministic Python rules + PySide6 desktop review UI**. No LLM is required or desired in the OCR/extraction pipeline.
 - A database has **not** been implemented. The persisted workflow uses JSON/CSV and `person_registry.json`. Do not describe the future DB schema in README §8.5 as production code.
 - `scan/` contains many scanned pages. Prefer **one-page tests** with `scan/001.jpg`; do not process the entire corpus or publish additional scanned/person data without explicit need.
 
@@ -14,8 +14,8 @@ This file is the **canonical repository-level instruction file** for coding agen
 | Task | Entry point |
 |---|---|
 | OCR CLI, layout, name/relationship candidates, engine optimizations | `jokbo_ocr.py` |
-| Streamlit review workflow and exports | `review_app.py` |
-| Browser-side image pan/zoom/click and overlay rendering | `components/jokbo_image_viewer/index.html` |
+| Desktop review workflow and overlays | `desktop_review.py` |
+| Review state and JSON/CSV exports | `review_core.py` |
 | Review list filters, matching scan number labels, relationship anchors, OCR focus | `review_helpers.py` |
 | Person-record OCR draft and evidence bounding boxes | `person_info_extractor.py` |
 | Stable `person_uid`, source occurrences, raw/reviewed records | `person_data_model.py` |
@@ -40,9 +40,9 @@ This file is the **canonical repository-level instruction file** for coding agen
 - Reviewer can click people directly in the scan; labels `1, 2, 3...` must match relationship list numbers for that page.
 - Relationship creation is **1:N**: select parent once, add multiple children; allow cancel/undo, show pre-existing confirmed/unreviewed edges. Connect parent bbox **bottom-center** to child bbox **top-center**, avoiding text overlap.
 - Use visibly distinct overlay colors **plus clear status labels**; do not rely on nearly identical shades of blue/green/orange.
-- Scanned page stays visible while the independent right-hand panel scrolls. Zoom/pan are browser-local with no arbitrary maximum zoom; avoid animations/flash or unnecessary Streamlit reruns. Image click must stay fast and preserve zoom/pan.
+- Scanned page stays visible while the independent right-hand panel scrolls. Keep zoom/pan responsive and preserve image coordinates across selection and page changes.
 - Clicking an individual or choosing a birth/death/office/partner/burial/name field should expose the **correct OCR evidence bbox**. Use real source columns when available, and make missing evidence explicit rather than fabricating a precise bbox.
-- A page with **no selected person** must render normally: initialize OCR focus before use. Regression: `focus` previously caused `UnboundLocalError` at the viewer payload call.
+- A page with **no selected person** must render normally; keep a first-load desktop regression test.
 - Maintain existing `review_state.json` compatibility. Protect reviewer edits and avoid resetting UUID mappings or re-generating registry data during a cosmetic UI change.
 
 ## Suggested workflow for every task
@@ -53,9 +53,9 @@ This file is the **canonical repository-level instruction file** for coding agen
 4. Run:
    ```bash
    python -m unittest discover -s tests -v
-   python -m compileall -q jokbo_ocr.py review_app.py review_helpers.py person_info_extractor.py person_data_model.py tests
+   python -m compileall -q jokbo_ocr.py desktop_review.py review_core.py review_helpers.py person_info_extractor.py person_data_model.py tests
    ```
-   For viewer edits, also check JavaScript syntax and **manually verify in Streamlit** if an environment is available. Never claim actual browser or PaddleOCR inference testing when it was not performed.
+   For UI edits, manually verify in the desktop app if a display environment is available. Never claim actual GUI interaction or PaddleOCR inference testing when it was not performed.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.
 6. Update the **single consolidated README.md** (especially workflow/code map and change history) for meaningful behavior changes; do not add versioned README clones. Follow **Development history** below to decide whether a WORKLOG entry is warranted.
 7. If the user requests GitHub updates, commit only intended files and push after tests; do not force-push, overwrite others' work, or claim success before verifying the remote branch/commit. Report precise tests and unverified areas. Include the resulting commit SHA in the worklog when practical; see the guidance below.
@@ -66,7 +66,7 @@ The **Git history is the source of truth for what changed**; [docs/WORKLOG.md](d
 
 - Before architectural changes, nontrivial bug investigations, data-model changes, or OCR/performance tuning, consult relevant entries in `docs/WORKLOG.md`. For routine edits, do not read the entire growing log just to begin.
 - After **significant** work, append a dated entry: problem/context, root cause or hypothesis, approach and trade-offs, tests and measurements (with environment/conditions), unresolved limitations, and related Git commit SHA or link.
-- Record rejected approaches and their reasons when they could prevent repeated investigation. Do not claim an unrun test passed; distinguish unit tests, actual OCR inference, and manual Streamlit/browser testing.
+- Record rejected approaches and their reasons when they could prevent repeated investigation. Do not claim an unrun test passed; distinguish unit tests, actual OCR inference, and manual desktop UI testing.
 - Do **not** add a worklog entry for every typo, formatting fix, or trivial change already clear from the commit message. Keep entries concise and searchable; use headings and paths/symbols.
 - Preserve earlier entries as historical records. If a conclusion becomes outdated, add a dated correction or superseding entry rather than silently rewriting or deleting history.
 - Avoid duplicate release notes: user-facing features and current instructions go in `README.md`; detailed technical rationale belongs in `docs/WORKLOG.md`; concise change summaries belong in Git commit messages.
@@ -84,11 +84,11 @@ python jokbo_ocr.py --help
 python jokbo_ocr.py ./scan/001.jpg --rows 6 --output output/
 
 # Review existing OCR output (the folder must have ocr_results.json)
-streamlit run review_app.py
+python desktop_review.py output/
 ```
 
 ## Open questions / safe defaults
 
 - Text, character, and column OCR segmentation can miss characters and mix adjacent people's biographies. Do not silently treat keywords or name strings as verified; surface evidence and review status.
 - User preferences: avoid LLM dependency, favor efficient OCR inference and responsive local UI, retain review history and provenance, use the existing **main** branch workflow, and communicate technical changes in Korean.
-- See README §13 for oneDNN/PIR compatibility and prior `focus` regression; keep a test for both.
+- See README §13 for oneDNN/PIR compatibility; keep a desktop first-load test.

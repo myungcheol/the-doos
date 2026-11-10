@@ -39,7 +39,7 @@ from review_extensions import (merge_review_sources, page_name, page_sort_key, o
 # OpenCV's Linux wheel may replace these variables during import, directing Qt
 # at cv2's plugin directory instead of PySide6's input-method plugins.
 _qt_environment = {key: os.environ.get(key) for key in ("QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_FONTDIR")}
-from review_app import (effective_name, effective_relationship,
+from review_core import (effective_name, effective_relationship,
                         find_output_root, get_page_image, parse_optional_generation,
                         relationship_key, save_state, would_create_cycle)
 import cv2

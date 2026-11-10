@@ -123,7 +123,7 @@ def resolve_regnal_year(reign: Reign, year: int) -> int:
 
 def _valid_lunar(year: int, month: int, day: int, leap: bool) -> date:
     if sxtwl is None:
-        raise RuntimeError("양력 변환에는 sxtwl이 필요합니다. requirements-review.txt를 설치하세요.")
+        raise RuntimeError("양력 변환에는 sxtwl이 필요합니다. requirements-desktop.txt를 설치하세요.")
     if not (1 <= year <= 9998 and 1 <= month <= 12 and 1 <= day <= 30):
         raise ValueError("음력 연·월·일 범위를 확인하세요.")
     solar = sxtwl.fromLunar(year, month, day, leap)

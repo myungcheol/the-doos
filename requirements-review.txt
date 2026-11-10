@@ -1,4 +1,0 @@
--r requirements.txt
-streamlit>=1.47
-pandas>=1.5
-sxtwl==2.0.7
