@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from ocr.pipeline import run_paddle_ocr_image, clean_hanzi_text
+from ocr.jokbo_ocr import run_paddle_ocr_image, clean_hanzi_text
 
 
 class FakeResult:

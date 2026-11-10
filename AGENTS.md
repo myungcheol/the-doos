@@ -13,9 +13,9 @@ This file is the **canonical repository-level instruction file** for coding agen
 
 | Task | Entry point |
 |---|---|
-| OCR CLI, layout, name/relationship candidates, engine optimizations | `ocr/pipeline.py` (`jokbo_ocr.py` launcher) |
+| OCR CLI, layout, name/relationship candidates, engine optimizations | `ocr/jokbo_ocr.py` |
 | Page JSON persistence and legacy OCR loading | `ocr/storage.py` |
-| Desktop review workflow and overlays | `review/desktop.py` (`desktop_review.py` launcher) |
+| Desktop review workflow and overlays | `review/desktop_review.py` |
 | Review state and JSON/CSV exports | `review/core.py` |
 | Cross-page continuations and recovered candidates | `review/extensions.py` |
 | Person-record OCR draft and evidence bounding boxes | `review/person_info.py` |
@@ -23,7 +23,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 | Tests and regression examples | `tests/` |
 | Setup, CLI, data formats, review steps, user workflow | README §§3–12, 17–19 |
 
-The two root scripts are stable command-line launchers. Put OCR implementation in `ocr/` and review implementation in `review/`; do not grow the launchers into duplicate implementations.
+Run package entry points with `python -m ocr.jokbo_ocr` and `python -m review.desktop_review` from the repository root.
 
 ## Non-negotiable domain and data invariants
 
@@ -54,7 +54,7 @@ The two root scripts are stable command-line launchers. Put OCR implementation i
 4. Run:
    ```bash
    python -m unittest discover -s tests -v
-   python -m compileall -q jokbo_ocr.py desktop_review.py ocr review tests
+   python -m compileall -q ocr review tests
    ```
    For UI edits, manually verify in the desktop app if a display environment is available. Never claim actual GUI interaction or PaddleOCR inference testing when it was not performed.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.
@@ -79,13 +79,13 @@ The **Git history is the source of truth for what changed**; [docs/WORKLOG.md](d
 ```bash
 # From the repository root; see README §3 for environment setup
 python -m unittest discover -s tests -v
-python jokbo_ocr.py --help
+python -m ocr.jokbo_ocr --help
 
 # OCR only after installing PaddleOCR; inspect a single sample
-python jokbo_ocr.py ./scan/001.jpg --rows 6 --output output/
+python -m ocr.jokbo_ocr ./scan/001.jpg --rows 6 --output output/
 
 # Review OCR output containing */page.json (legacy ocr_results.json also supported)
-python desktop_review.py output/
+python -m review.desktop_review output/
 ```
 
 ## Open questions / safe defaults

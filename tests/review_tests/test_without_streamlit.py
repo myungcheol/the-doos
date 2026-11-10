@@ -18,7 +18,7 @@ def reject_streamlit(name, *args, **kwargs):
         raise AssertionError('desktop app imported Streamlit')
     return original_import(name, *args, **kwargs)
 builtins.__import__ = reject_streamlit
-import review.desktop
+import review.desktop_review
 import review.core
 """
         environment = dict(os.environ, QT_QPA_PLATFORM="offscreen")

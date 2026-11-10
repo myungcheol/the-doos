@@ -195,14 +195,14 @@ pip install -r requirements-desktop.txt
 
 ## 4. OCR 실행
 
-프로젝트 폴더에서 `jokbo_ocr.py`를 실행합니다.
+프로젝트 폴더에서 `ocr.jokbo_ocr` 모듈을 실행합니다.
 
 ### 4.1 PaddleOCR 실행
 
 이미지 한 장:
 
 ```bash
-python jokbo_ocr.py ./scan/001.jpg \
+python -m ocr.jokbo_ocr ./scan/001.jpg \
   --paddle-version PP-OCRv5 \
   --paddle-lang chinese_cht \
   --paddle-device cpu \
@@ -213,7 +213,7 @@ python jokbo_ocr.py ./scan/001.jpg \
 폴더 안의 모든 지원 이미지:
 
 ```bash
-python jokbo_ocr.py ./scan/ \
+python -m ocr.jokbo_ocr ./scan/ \
   --paddle-version PP-OCRv5 \
   --paddle-lang chinese_cht \
   --paddle-device cpu \
@@ -224,7 +224,7 @@ python jokbo_ocr.py ./scan/ \
 연속된 일부 페이지만 실행하려면 Bash/WSL의 중괄호 범위 확장을 사용할 수 있습니다. 다음 명령은 `scan/genealogy/003.jpg`부터 `010.jpg`까지 8장을 처리합니다.
 
 ```bash
-python jokbo_ocr.py ./scan/genealogy/{003..010}.jpg \
+python -m ocr.jokbo_ocr ./scan/genealogy/{003..010}.jpg \
   --paddle-version PP-OCRv5 \
   --paddle-lang chinese_cht \
   --paddle-device cpu \
@@ -232,7 +232,7 @@ python jokbo_ocr.py ./scan/genealogy/{003..010}.jpg \
   --output output/
 ```
 
-`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `jokbo_ocr.py`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 같은 출력 폴더에 001~002 결과가 있으면 해당 페이지 파일을 유지하고 `003/page.json`부터 `010/page.json`까지 추가합니다. 같은 페이지를 다시 처리하면 그 페이지의 `page.json`만 교체하며, `review_state.json`의 검수 내용은 변경하지 않습니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
+`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `ocr.jokbo_ocr`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 같은 출력 폴더에 001~002 결과가 있으면 해당 페이지 파일을 유지하고 `003/page.json`부터 `010/page.json`까지 추가합니다. 같은 페이지를 다시 처리하면 그 페이지의 `page.json`만 교체하며, `review_state.json`의 검수 내용은 변경하지 않습니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
 
 페이지별 `page.json`이 OCR 원본 저장소입니다. 루트의 통합 OCR JSON은 새로 만들거나 갱신하지 않습니다. 기존 `ocr_results.json`과 후보 JSON, 페이지별 `rows.json`을 가진 폴더도 계속 읽을 수 있으며, 같은 페이지의 새 `page.json`이 있으면 새 파일을 우선합니다. 기존 파일을 자동 삭제하거나 검수 데이터를 변환하지 않습니다. 이전 버전에서 루트 목록에 빠진 페이지도 페이지 폴더와 원본 스캔을 찾을 수 있으면 검수 앱에서 열 수 있습니다.
 
@@ -241,7 +241,7 @@ python jokbo_ocr.py ./scan/genealogy/{003..010}.jpg \
 전체 옵션은 다음 명령으로 확인합니다.
 
 ```bash
-python jokbo_ocr.py --help
+python -m ocr.jokbo_ocr --help
 ```
 
 자주 쓰는 옵션:
@@ -327,7 +327,7 @@ output/
 그래픽 데스크톱 환경에서 실행합니다.
 
 ```bash
-python desktop_review.py output/
+python -m review.desktop_review output/
 ```
 
 폴더 인자를 생략하면 창에서 OCR 결과 폴더를 선택합니다. 왼쪽 검수 영역은 현재 검수 페이지와 직전 페이지를 나란히 표시합니다. 예를 들어 002쪽을 고르면 왼쪽에 002쪽, 오른쪽에 001쪽이 표시되고, 다음 페이지를 고르면 003쪽과 002쪽이 표시됩니다. 오른쪽 페이지의 인물을 클릭하면 `이어진 기록` 탭의 연결 대상으로 지정할 수 있습니다. 첫 페이지는 직전 페이지가 없으므로 왼쪽에만 표시됩니다. 각 스캔에서 인물을 클릭하고 드래그로 이동합니다. `+`/`−`는 두 이미지를 함께 확대·축소하고 `Ctrl+휠`은 마우스가 놓인 이미지만 확대·축소합니다. 오른쪽에서 인물 정보와 검수 상태를 저장하거나 관계 후보를 승인·거절하고, 부모를 지정한 뒤 자녀들을 연결할 수 있습니다. OCR 항목을 선택하고 박스에 마우스를 올리면 원문이 이미지 위에 표시됩니다. `배우자 원문 (검수 초안)`에는 OCR로 읽은 문구가 표시되고, 배우자는 별도의 JSON 배열에서 여러 항목으로 편집합니다. 기존 항목의 유형과 나머지 속성을 유지해야 합니다.
@@ -654,13 +654,11 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 ```text
 the-doos/
 ├── README.md
-├── jokbo_ocr.py                 # 기존 OCR 실행 명령을 유지하는 얇은 진입점
-├── desktop_review.py           # 기존 검수 UI 실행 명령을 유지하는 얇은 진입점
 ├── ocr/
-│   ├── pipeline.py             # OCR, 레이아웃, 인명 및 관계 후보 처리
+│   ├── jokbo_ocr.py            # OCR CLI, 레이아웃, 인명 및 관계 후보 처리
 │   └── storage.py              # 페이지별 OCR 저장·구형 결과 호환 읽기
 ├── review/
-│   ├── desktop.py              # PySide6 데스크톱 검수 UI
+│   ├── desktop_review.py       # PySide6 데스크톱 검수 UI
 │   ├── core.py                 # 검수 상태 및 내보내기 공통 함수
 │   ├── extensions.py           # 이어진 기록 및 누락 인명 검수 확장
 │   ├── person_info.py          # 기존 OCR 열 기반 인물 정보 초안 추출
@@ -685,7 +683,7 @@ the-doos/
 - 이 프로젝트는 **1987년 발행 족보**의 스캔본을 출발점으로, 판본이 달라져도 재사용할 수 있는 인물·가족관계·출처 데이터를 만드는 로컬 도구입니다.
 - 입력 스캔은 저장소의 `scan/`에 있으며 `scan/001.jpg`는 작은 단위의 재현/확인에 적합합니다. `scan/`의 모든 파일을 테스트 목적으로 일괄 OCR하지 마세요.
 - **아직 구현된 데이터베이스 서비스는 없습니다.** 현재 영속적인 결과는 JSON/CSV와 인물 ID 레지스트리이며, 향후 DB 테이블 구조는 8.5절의 제안입니다.
-- 이 저장소는 OCR/검수 앱 외에 과거 실험 파일을 포함할 수 있습니다. 현재 실행 진입점은 `jokbo_ocr.py`와 `desktop_review.py`입니다.
+- 이 저장소는 OCR/검수 앱 외에 과거 실험 파일을 포함할 수 있습니다. 현재 실행 진입점은 `ocr.jokbo_ocr`와 `review.desktop_review`입니다.
 
 ### 17.2 첫 실행 순서
 
@@ -697,7 +695,7 @@ source .venv-paddle/bin/activate
 python -m pip install -U pip
 pip install -r requirements-desktop.txt
 python -m unittest discover -s tests -v
-python jokbo_ocr.py --help
+python -m ocr.jokbo_ocr --help
 ```
 
 - **OCR을 실제로 돌릴 때**만 3.3절의 PaddlePaddle/PaddleOCR 설치가 추가로 필요합니다. 모델 없이도 실행 가능한 단위 테스트와 OCR 추론 테스트를 혼동하지 마세요.
@@ -708,7 +706,7 @@ python jokbo_ocr.py --help
 ### 17.3 실제 작업을 시작할 때
 
 1. `git status`와 `git log -5 --oneline`으로 현재 코드/미커밋 변경 사항을 확인합니다.
-2. 문제를 재현하고 **19절의 변경 절차**를 따릅니다. UI 문제라면 `review/desktop.py`를, 검수 저장·내보내기 문제라면 `review/core.py`를 확인합니다.
+2. 문제를 재현하고 **19절의 변경 절차**를 따릅니다. UI 문제라면 `review/desktop_review.py`를, 검수 저장·내보내기 문제라면 `review/core.py`를 확인합니다.
 3. 입력 스캔, OCR 원본과 `review_state.json`은 서로 다른 역할을 합니다. 실험 출력 디렉터리로 테스트하고 검수자의 기존 결과를 덮어쓰지 않습니다.
 4. 작업 결과에는 변경 파일, 재현/테스트 결과, 실제로 실행하지 못한 테스트, 커밋 SHA를 구분해서 기록합니다.
 
@@ -718,21 +716,21 @@ python jokbo_ocr.py --help
 
 | 찾고 싶은 것 / 하려는 일 | 우선 읽을 파일 |
 |---|---|
-| OCR 전체 처리 흐름, CLI 옵션, OpenCV 레이아웃·인명/관계 후보 생성 | `ocr/pipeline.py` |
-| PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `ocr/pipeline.py`, `tests/ocr_tests/test_paddle_adapter.py`, `tests/ocr_tests/test_paddle_optimization.py` |
-| 부자관계 추론의 판면/기하 규칙 | `ocr/pipeline.py`, `tests/ocr_tests/test_relationship_layout.py` |
+| OCR 전체 처리 흐름, CLI 옵션, OpenCV 레이아웃·인명/관계 후보 생성 | `ocr/jokbo_ocr.py` |
+| PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `ocr/jokbo_ocr.py`, `tests/ocr_tests/test_paddle_adapter.py`, `tests/ocr_tests/test_paddle_optimization.py` |
+| 부자관계 추론의 판면/기하 규칙 | `ocr/jokbo_ocr.py`, `tests/ocr_tests/test_relationship_layout.py` |
 | 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr/storage.py`, `tests/ocr_tests/test_storage.py` |
-| 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `review/desktop.py`, `tests/review_tests/test_desktop.py` |
+| 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `review/desktop_review.py`, `tests/review_tests/test_desktop.py` |
 | 검수 상태·내보내기·원본 이미지 로딩 | `review/core.py` |
 | 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review/extensions.py`, `tests/review_tests/test_extensions.py` |
-| 실제 줌/팬, 클릭, bbox·관계선의 화면 표시 | `review/desktop.py` |
+| 실제 줌/팬, 클릭, bbox·관계선의 화면 표시 | `review/desktop_review.py` |
 | 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `review/person_info.py`, `tests/review_tests/test_person_info.py` |
 | 왕/연호 연수와 음력→양력 범위 계산 | `review/historical_dates.py`, `tests/review_tests/test_historical_dates.py` |
 | `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `review/data_model.py`, `tests/review_tests/test_data_model.py` |
-| 데스크톱 검수 UI 실행/의존성 | `review/desktop.py`, `desktop_review.py`, `requirements-desktop.txt` |
+| 데스크톱 검수 UI 실행/의존성 | `review/desktop_review.py`, `requirements-desktop.txt` |
 | OCR 의존성 | `requirements-paddle.txt` |
 
-루트의 `jokbo_ocr.py`와 `desktop_review.py`는 기존 실행 명령을 보존하는 진입점입니다. 실제 기능 수정은 각각 `ocr/`와 `review/` 아래에서 수행합니다.
+실행도 구현 위치와 같은 패키지 모듈을 사용합니다: `python -m ocr.jokbo_ocr`, `python -m review.desktop_review`.
 
 ### 18.2 데이터별 위치와 구분
 

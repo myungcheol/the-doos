@@ -5,6 +5,7 @@ Uses OpenCV for page/row/column geometry, PaddleOCR for text and character
 boxes, and deterministic Python rules for reviewable genealogy candidates.
 No generative AI, API key, network request, or remote model is used.
 """
+
 from __future__ import annotations
 
 import argparse

@@ -1,7 +1,7 @@
 """Relationship geometry tests."""
 import unittest
 
-import ocr.pipeline as module
+import ocr.jokbo_ocr as module
 
 
 def person(pid, x, y, name):

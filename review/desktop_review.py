@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Qt desktop review interface for existing Jokbo OCR output."""
+
 from __future__ import annotations
 
 import argparse
@@ -68,7 +69,7 @@ class RegionOcrWorker(QObject):
     @Slot(object)
     def recognize(self, request):
         try:
-            from ocr.pipeline import initialize_paddle_ocr, run_name_ocr_variants
+            from ocr.jokbo_ocr import initialize_paddle_ocr, run_name_ocr_variants
             if self.paddle_ocr is None:
                 self.paddle_ocr = initialize_paddle_ocr(SimpleNamespace(
                     paddle_version="PP-OCRv5", paddle_lang="chinese_cht", paddle_device="cpu",

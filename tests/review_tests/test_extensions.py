@@ -6,7 +6,7 @@ import unittest
 import cv2
 import numpy as np
 
-from ocr.pipeline import detect_large_printed_name_regions
+from ocr.jokbo_ocr import detect_large_printed_name_regions
 from review.data_model import ensure_person_uid
 from review.extensions import (merge_review_sources, previous_row_people, orphan_columns, orphan_regions,
                                make_continuation, apply_continuations, recover_name_candidates,

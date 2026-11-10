@@ -80,7 +80,7 @@ class OcrStorageTests(unittest.TestCase):
             def predict(self, image):
                 return []
 
-        module = importlib.import_module("ocr.pipeline")
+        module = importlib.import_module("ocr.jokbo_ocr")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             scan = root / "001.png"
@@ -88,7 +88,7 @@ class OcrStorageTests(unittest.TestCase):
             output = root / "output"
             with patch.object(sys, "argv", ["jokbo_ocr.py", str(scan), "--output", str(output),
                                            "--rows", "1", "--no-auto-roi"]), \
-                 patch("ocr.pipeline.initialize_paddle_ocr", return_value=EmptyPaddle()):
+                 patch("ocr.jokbo_ocr.initialize_paddle_ocr", return_value=EmptyPaddle()):
                 self.assertEqual(module.main(), 0)
             self.assertEqual([path.relative_to(output).as_posix() for path in output.rglob("*.json")],
                              ["001/page.json"])

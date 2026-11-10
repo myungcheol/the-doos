@@ -277,7 +277,7 @@ def apply_continuations(person, state):
 
 def recover_name_candidates(image, page, people, offset=(0, 0)):
     """Geometry-only rescan using existing OCR text; never invokes an OCR engine."""
-    from ocr.pipeline import detect_large_printed_name_regions, find_matching_ocr_column, clean_hanzi_text
+    from ocr.jokbo_ocr import detect_large_printed_name_regions, find_matching_ocr_column, clean_hanzi_text
 
     additions = []
     height, width = image.shape[:2]

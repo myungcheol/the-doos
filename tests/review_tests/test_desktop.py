@@ -14,7 +14,7 @@ try:
     from PySide6.QtGui import QImage, QInputMethodEvent, QRawFont
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QMessageBox
-    from review.desktop import (HistoricalDateDialog, ReviewComboBox, ReviewWindow, RegionOcrWorker, configure_application,
+    from review.desktop_review import (HistoricalDateDialog, ReviewComboBox, ReviewWindow, RegionOcrWorker, configure_application,
                                 crop_selected_region, restore_qt_environment)
     from review.extensions import make_continuation
 except ImportError:
@@ -424,8 +424,8 @@ class DesktopReviewTests(unittest.TestCase):
             {"hanja_text": "甲乙", "mean_confidence": 80, "variant": "대비"},
             {"hanja_text": "丙丁", "mean_confidence": 50, "variant": "확대"},
         ]
-        with patch("ocr.pipeline.initialize_paddle_ocr", return_value=object()), patch(
-            "ocr.pipeline.run_name_ocr_variants", return_value=("甲乙", variants, None)
+        with patch("ocr.jokbo_ocr.initialize_paddle_ocr", return_value=object()), patch(
+            "ocr.jokbo_ocr.run_name_ocr_variants", return_value=("甲乙", variants, None)
         ):
             QTest.mouseClick(self.window.run_region_ocr_button, Qt.MouseButton.LeftButton)
             for _ in range(50):
@@ -449,8 +449,8 @@ class DesktopReviewTests(unittest.TestCase):
         captured = []
         worker.finished.connect(captured.append)
         crop = np.full((20, 10, 3), 255, dtype=np.uint8)
-        with patch("ocr.pipeline.initialize_paddle_ocr", return_value=object()), \
-             patch("ocr.pipeline.run_name_ocr_variants", return_value=("甲乙", [{"hanja_text": "甲乙"}], crop)) as recognize:
+        with patch("ocr.jokbo_ocr.initialize_paddle_ocr", return_value=object()), \
+             patch("ocr.jokbo_ocr.run_name_ocr_variants", return_value=("甲乙", [{"hanja_text": "甲乙"}], crop)) as recognize:
             worker.recognize({"page": "sample.png", "bbox": {"x": 7, "y": 8, "width": 10, "height": 20},
                               "crop": crop})
         self.assertEqual(captured[0]["variants"][0]["hanja_text"], "甲乙")
@@ -491,7 +491,7 @@ class DesktopReviewTests(unittest.TestCase):
         recovered = {"person_id": "new_candidate", "source_page": "sample.png", "source_row_id": "row1",
                      "bbox": {"x": 60, "y": 10, "width": 20, "height": 40}, "raw_name_ocr": "",
                      "review_status": "needs_review"}
-        with patch("review.desktop.recover_name_candidates", return_value=[recovered]), patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+        with patch("review.desktop_review.recover_name_candidates", return_value=[recovered]), patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
             self.window.recover_people()
         self.assertEqual([p["person_id"] for p in self.window.page_people], ["p1", "p2", "new_candidate"])
         self.assertEqual(self.window.selected_id, "new_candidate")
