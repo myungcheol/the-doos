@@ -17,7 +17,6 @@ This file is the **canonical repository-level instruction file** for coding agen
 | Desktop review workflow and overlays | `desktop_review.py` |
 | Review state and JSON/CSV exports | `review_core.py` |
 | Page JSON persistence and legacy OCR loading | `ocr_storage.py` |
-| Review list filters, matching scan number labels, relationship anchors, OCR focus | `review_helpers.py` |
 | Person-record OCR draft and evidence bounding boxes | `person_info_extractor.py` |
 | Stable `person_uid`, source occurrences, raw/reviewed records | `person_data_model.py` |
 | Tests and regression examples | `tests/` |
@@ -54,7 +53,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 4. Run:
    ```bash
    python -m unittest discover -s tests -v
-   python -m compileall -q jokbo_ocr.py desktop_review.py review_core.py ocr_storage.py review_helpers.py person_info_extractor.py person_data_model.py tests
+   python -m compileall -q jokbo_ocr.py desktop_review.py review_core.py ocr_storage.py person_info_extractor.py person_data_model.py tests
    ```
    For UI edits, manually verify in the desktop app if a display environment is available. Never claim actual GUI interaction or PaddleOCR inference testing when it was not performed.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.

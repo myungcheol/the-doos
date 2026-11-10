@@ -658,7 +658,6 @@ the-doos/
 ├── desktop_review.py           # PySide6 데스크톱 검수 UI
 ├── review_core.py              # 검수 상태 및 내보내기 공통 함수
 ├── ocr_storage.py              # 페이지별 OCR 저장·구형 결과 호환 읽기
-├── review_helpers.py            # 관계 표시/필터 및 인물 번호 헬퍼
 ├── person_info_extractor.py     # 기존 OCR 열 기반 인물 정보 초안 추출
 ├── person_data_model.py         # Raw/Reviewed data, person_uid, source occurrence, registry
 ├── requirements.txt             # 공통 의존성
@@ -670,8 +669,7 @@ the-doos/
     ├── test_paddle_optimization.py
     ├── test_person_data_model.py
     ├── test_person_info_extractor.py
-    ├── test_relationship_layout.py
-    └── test_review_helpers.py
+    └── test_relationship_layout.py
 ```
 
 
@@ -725,7 +723,6 @@ python jokbo_ocr.py --help
 | 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr_storage.py`, `tests/test_ocr_storage.py` |
 | 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review_extensions.py`, `tests/test_review_extensions.py` |
 | 실제 줌/팬, 클릭, bbox·관계선의 화면 표시 | `desktop_review.py` |
-| 관계 목록 번호/필터, 관계선 끝점, OCR focus 안전 처리 | `review_helpers.py`, `tests/test_review_helpers.py` |
 | 인물별 출생·사망·관직·배우자·묘소 OCR 초안과 evidence bbox | `person_info_extractor.py`, `tests/test_person_info_extractor.py` |
 | 왕/연호 연수와 음력→양력 범위 계산 | `historical_dates.py`, `tests/test_historical_dates.py` |
 | `raw_data`/`reviewed_data`, `PER_<UUID>`, 판본 출처, 레지스트리 | `person_data_model.py`, `tests/test_person_data_model.py` |
