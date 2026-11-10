@@ -229,12 +229,13 @@ python jokbo_ocr.py ./scan/genealogy/{003..010}.jpg \
   --paddle-lang chinese_cht \
   --paddle-device cpu \
   --rows 6 \
-  --output output/genealogy-003-010/
+  --output output/
 ```
 
-`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `jokbo_ocr.py`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 기존 OCR 결과의 통합 JSON을 덮어쓰지 않도록 작업 범위마다 별도 출력 폴더를 사용하는 편이 안전합니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
+`{003..010}`은 셸에서 여덟 개의 파일 경로로 확장되고, `jokbo_ocr.py`의 `inputs` 인자는 여러 경로를 한 번에 받습니다. 같은 출력 폴더에 001~002 결과가 이미 있으면 루트 통합 JSON에 기존 페이지를 남기고 003~010 결과를 추가합니다. 같은 페이지를 다시 처리하면 그 페이지의 OCR 후보만 새 결과로 교체하며, `review_state.json`의 검수 내용은 변경하지 않습니다. Windows PowerShell에서는 중괄호 범위가 같은 방식으로 확장되지 않으므로 WSL/Bash에서 실행하거나 파일 경로를 각각 나열하세요.
 
 PaddleOCR 결과는 지정한 출력 디렉터리에 바로 저장됩니다. 기존 `ocr_results.json` 형식과 `ocr_engine: "paddleocr"` 값은 유지합니다.
+이전 버전에서 일부 페이지만 재실행해 루트 통합 JSON에서 빠진 페이지가 있더라도 페이지별 `rows.json`과 후보 JSON이 남아 있으면 데스크톱 검수 앱의 페이지 자동 검색으로 열 수 있습니다. 이번 변경은 이미 빠진 페이지를 루트에 자동 복원하지 않습니다. 기존 검수 상태가 있다면 해당 페이지를 다시 OCR하기 전에 인물 ID와 검수 상태의 대응을 확인하세요.
 
 ### 4.2 주요 명령줄 옵션
 

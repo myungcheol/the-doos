@@ -35,6 +35,61 @@ class CountingPaddle:
 
 
 class PaddleOptimizationTests(unittest.TestCase):
+    def test_successive_ocr_batches_keep_unprocessed_pages_and_review_state(self):
+        module = sys.modules["jokbo_ocr"]
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "ocr"
+            output.mkdir()
+
+            def run_batch(names, revision="first", failure=False):
+                def page_result(path, _args, _output, _backend):
+                    if failure:
+                        raise RuntimeError("OCR failed")
+                    name = path.name
+                    return {
+                        "source_image": str(path), "rows": [{"columns": [], "rule_mentions": [
+                            {"marker": "子", "source_row_id": f"{path.stem}_row_01"}
+                        ]}],
+                        "people_candidates": [{"person_id": f"{path.stem}_P0001", "source_page": name,
+                                               "name_hanja_candidate": revision}],
+                        "relationship_candidates": [{"relationship_id": "R0001"}],
+                        "paddle_metrics": {}, "elapsed_seconds": 0.1,
+                    }
+
+                with patch.object(sys, "argv", ["jokbo_ocr.py", *names, "--output", str(output)]), \
+                     patch("jokbo_ocr.collect_images", return_value=[Path(name) for name in names]), \
+                     patch("jokbo_ocr.initialize_paddle_ocr", return_value=object()), \
+                     patch("jokbo_ocr.ocr_one_image", side_effect=page_result):
+                    return module.main()
+
+            self.assertEqual(run_batch(["001.jpg", "002.jpg"]), 0)
+            review_state = b'{"people_updates":{"001_P0001":{"notes":"reviewed"}}}'
+            (output / "review_state.json").write_bytes(review_state)
+            self.assertEqual(run_batch(["003.jpg", "004.jpg"]), 0)
+            pages = json.loads((output / "ocr_results.json").read_text())
+            self.assertEqual([Path(page["source_image"]).name for page in pages],
+                             ["001.jpg", "002.jpg", "003.jpg", "004.jpg"])
+            self.assertEqual(len(json.loads((output / "people_candidates.json").read_text())), 4)
+            self.assertEqual(len(json.loads((output / "relationship_candidates.json").read_text())), 4)
+            self.assertEqual(len(json.loads((output / "rule_mentions.json").read_text())), 4)
+            self.assertEqual((output / "review_state.json").read_bytes(), review_state)
+
+            self.assertEqual(run_batch(["002.jpg"], revision="updated"), 0)
+            people = json.loads((output / "people_candidates.json").read_text())
+            self.assertEqual(len(people), 4)
+            self.assertEqual(next(item for item in people if item["source_page"] == "002.jpg")
+                             ["name_hanja_candidate"], "updated")
+            self.assertEqual((output / "review_state.json").read_bytes(), review_state)
+
+            aggregate_before_failure = (output / "ocr_results.json").read_bytes()
+            self.assertEqual(run_batch(["005.jpg"], failure=True), 1)
+            self.assertEqual((output / "ocr_results.json").read_bytes(), aggregate_before_failure)
+
+            (output / "ocr_results.json").write_text("{invalid json", encoding="utf-8")
+            self.assertEqual(run_batch(["006.jpg"]), 2)
+            self.assertEqual((output / "ocr_results.json").read_text(), "{invalid json")
+            self.assertEqual((output / "review_state.json").read_bytes(), review_state)
+
     def test_cli_defaults_to_paddle_and_writes_existing_output_schema(self):
         # Other tests reload this module; patch and call the same live module.
         module = sys.modules["jokbo_ocr"]

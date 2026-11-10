@@ -1329,6 +1329,53 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_output_list(path: Path, fallback: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Read an existing aggregate without silently discarding malformed output."""
+    if not path.exists():
+        return list(fallback or [])
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+        raise ValueError(f"Expected a JSON array of objects: {path}")
+    return data
+
+
+def merge_output_pages(
+    output_dir: Path, new_pages: list[dict[str, Any]], new_people: list[dict[str, Any]],
+    new_relationships: list[dict[str, Any]], new_mentions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep earlier pages and replace only pages successfully processed now."""
+    old_pages = load_output_list(output_dir / "ocr_results.json")
+    old_people = load_output_list(
+        output_dir / "people_candidates.json",
+        [person for page in old_pages for person in page.get("people_candidates", [])],
+    )
+    old_relationships = load_output_list(
+        output_dir / "relationship_candidates.json",
+        [{**rel, "source_page": Path(page["source_image"]).name}
+         for page in old_pages for rel in page.get("relationship_candidates", [])],
+    )
+    old_mentions = load_output_list(
+        output_dir / "rule_mentions.json",
+        [{**mention, "source_page": Path(page["source_image"]).name}
+         for page in old_pages for row in page.get("rows", [])
+         for mention in row.get("rule_mentions", [])],
+    )
+    replaced = {Path(page["source_image"]).name for page in new_pages}
+    for records, label in ((old_people, "people_candidates"),
+                           (old_relationships, "relationship_candidates"),
+                           (old_mentions, "rule_mentions")):
+        if any(not item.get("source_page") for item in records):
+            raise ValueError(f"Missing source_page in existing {label}.json")
+    if any(not page.get("source_image") for page in old_pages):
+        raise ValueError("Missing source_image in existing ocr_results.json")
+    pages = [page for page in old_pages if Path(page["source_image"]).name not in replaced] + new_pages
+    people = [item for item in old_people if item["source_page"] not in replaced] + new_people
+    relationships = [item for item in old_relationships if item["source_page"] not in replaced] + new_relationships
+    mentions = [item for item in old_mentions if item["source_page"] not in replaced] + new_mentions
+    pages.sort(key=lambda page: Path(page["source_image"]).name.lower())
+    return pages, people, relationships, mentions
+
+
 def main() -> int:
     args = parse_args()
     if args.rows < 1:
@@ -1379,6 +1426,17 @@ def main() -> int:
         except Exception as exc:
             print(f"[ERROR:paddleocr] {image_path}: {exc}", file=sys.stderr)
 
+    if not results:
+        print("[ERROR] No pages were processed; existing aggregate files were left unchanged.", file=sys.stderr)
+        return 1
+    try:
+        results, people, relationships, mentions = merge_output_pages(
+            output_dir, results, people, relationships, mentions,
+        )
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        print(f"[ERROR] Existing OCR output could not be merged: {exc}", file=sys.stderr)
+        return 2
+
     (output_dir / "ocr_results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     (output_dir / "people_candidates.json").write_text(json.dumps(people, ensure_ascii=False, indent=2), encoding="utf-8")
     (output_dir / "relationship_candidates.json").write_text(json.dumps(relationships, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1412,7 +1470,7 @@ def main() -> int:
     ])
 
     print(f"\nDone. No LLM/API was used. Results: {output_dir.resolve()}")
-    return 0 if results else 1
+    return 0
 
 
 if __name__ == "__main__":
