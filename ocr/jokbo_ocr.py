@@ -28,6 +28,8 @@ CHINESE_DIGITS = {
 }
 CHINESE_UNITS = {"十": 10, "百": 100, "千": 1000}
 GENERATION_RE = re.compile(r"([一二三四五六七八九十百千零〇○兩两]+)世")
+
+
 @dataclass
 class LineBoundary:
     y: int
@@ -285,6 +287,33 @@ def detect_large_printed_name_regions(
         })
     return sorted(results, key=lambda item: item["center_x"], reverse=True)
 
+def page_title_margin(columns, row_bbox, margin=45):
+    """Exclude a right book-title strip only when its OCR identifies a title."""
+    edge = row_bbox["x"] + row_bbox["width"] - margin
+    for column in columns:
+        box = column.get("bbox") or {}
+        text = clean_hanzi_text(column.get("text", ""))
+        if box.get("x", 0) >= edge and ("世譜" in text or "杜氏" in text):
+            return margin
+    return 0
+
+
+def detect_row_name_regions(band, page_x, page_y, columns, **options):
+    """Use printed geometry, allowing a short 子/女 glyph with OCR evidence."""
+    regions = detect_large_printed_name_regions(band, page_x, page_y, **options)
+    minimum = options.get("min_component_height", 18)
+    relaxed = dict(options, min_component_height=max(14, minimum - 2))
+    for candidate in detect_large_printed_name_regions(band, page_x, page_y, **relaxed):
+        box = candidate["bbox"]
+        if any(abs(candidate["center_x"] - region["center_x"]) <= 8 for region in regions):
+            continue
+        if any(clean_hanzi_text(c.get("text", "")) in {"子", "女"}
+               and abs((b := c.get("bbox", {})).get("x", 0) + b.get("width", 0) / 2 - candidate["center_x"]) <= 8
+               and abs(b.get("y", 0) - box["y"]) <= 10 for c in columns):
+            regions.append(candidate)
+    return sorted(regions, key=lambda region: region["center_x"], reverse=True)
+
+
 def find_matching_ocr_column(
     geometry: dict[str, Any], columns: list[dict[str, Any]], max_distance: float = 24.0
 ) -> dict[str, Any] | None:
@@ -316,6 +345,27 @@ def find_matching_ocr_column(
         ranked.append((overlap_score, -center_distance, column))
     if not ranked:
         return None
+    # Row OCR can split 子 and the name into separate vertical fragments.
+    fragments = []
+    for _, _, column in ranked:
+        b = column["bbox"]
+        if (abs(b["x"] + b["width"] / 2 - (tx0 + tx1) / 2) <= 8
+                and b["width"] <= (tx1 - tx0) * 1.6
+                and b["height"] <= (ty1 - ty0) * 1.2):
+            fragments.append(column)
+    fragments.sort(key=lambda column: column["bbox"]["y"])
+    text = "\n".join(str(column.get("text") or "") for column in fragments)
+    if len(fragments) > 1 and 2 <= len(clean_hanzi_text(text)) <= 4:
+        boxes = [column["bbox"] for column in fragments]
+        left, top = min(b["x"] for b in boxes), min(b["y"] for b in boxes)
+        confidence = [c["mean_confidence"] for c in fragments if c.get("mean_confidence") is not None]
+        return {**fragments[0], "text": text,
+                "bbox": {"x": left, "y": top,
+                         "width": max(b["x"] + b["width"] for b in boxes) - left,
+                         "height": max(b["y"] + b["height"] for b in boxes) - top},
+                "mean_confidence": min(confidence) if confidence else None,
+                "token_boxes": [t for c in fragments for t in c.get("token_boxes", [])],
+                "source_column_ids": [c.get("column_id") for c in fragments]}
     return max(ranked, key=lambda item: (item[0], item[1]))[2]
 
 
@@ -690,6 +740,37 @@ def detect_vertical_columns(band: np.ndarray, ink_ratio: float = 0.08, min_width
     return regions
 
 
+def recover_missing_column_tokens(band, regions, tokens, args, paddle_ocr):
+    """OCR uncovered printed columns once, retaining band-local token coordinates."""
+    recovered = list(tokens)
+    calls = 0
+    for left, right in regions:
+        width = right - left
+        if width < 8:
+            continue
+        if any(max(0, min(right, t["left"] + t["width"]) - max(left, t["left"])) >= width * 0.5
+               for t in tokens):
+            continue
+        x0, x1 = max(0, left - 3), min(band.shape[1], right + 3)
+        crop = cv2.copyMakeBorder(band[:, x0:x1], 8, 8, 8, 8, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+        _, _, _, extra = extract_text_and_confidence(crop, args.scale, args.preprocess, paddle_ocr)
+        calls += 1
+        # Distinct OCR blocks keep these tokens separate during column reconstruction.
+        block = max((t["block_num"] for t in recovered), default=0) + 1
+        for token in extra:
+            token = dict(token, left=token["left"] + x0 - 8, top=token["top"] - 8,
+                         block_num=block, ocr_method="uncovered_column_fallback")
+            # Detection polygons can extend a pixel into the white padding.
+            # Clip intersecting boxes rather than discarding the whole OCR line.
+            right_edge = min(band.shape[1], token["left"] + token["width"])
+            bottom_edge = min(band.shape[0], token["top"] + token["height"])
+            token["left"], token["top"] = max(0, token["left"]), max(0, token["top"])
+            token["width"], token["height"] = right_edge - token["left"], bottom_edge - token["top"]
+            if token["width"] > 0 and token["height"] > 0:
+                recovered.append(token)
+    return recovered, calls
+
+
 def preprocess(image: np.ndarray, mode: str) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image.copy()
     if mode == "gray":
@@ -984,7 +1065,9 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
     paddle_metrics = {
         "row_inferences": 0, "name_reused_from_row": 0,
         "name_fallback_regions": 0, "name_fallback_inferences": 0,
+        "column_fallback_inferences": 0,
     }
+    title_margin = 0
     line_margin = 3
     for row_index, (top_boundary, bottom_boundary) in enumerate(zip(boundaries, boundaries[1:]), start=1):
         top = min(height - 1, top_boundary.y + (line_margin if row_index > 1 else 2))
@@ -1001,6 +1084,8 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         cv2.imwrite(str(rows_dir / f"{row_id}_ocr_input.png"), prepared)
 
         regions = detect_vertical_columns(band, args.column_ink_ratio, args.min_column_width)
+        tokens, calls = recover_missing_column_tokens(band, regions, tokens, args, paddle_ocr)
+        paddle_metrics["column_fallback_inferences"] += calls
         columns = build_column_records(tokens, regions, band, row_id, x, y+top, bottom-top, columns_dir)
         for left, right in regions:
             cv2.rectangle(debug_image, (left, top), (right, bottom), (255, 0, 0), 1)
@@ -1017,13 +1102,15 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         }
         # Detect prominent name columns from the printed glyph geometry. This
         # catches large names even when row OCR misses them.
-        name_regions = detect_large_printed_name_regions(
-            band, x, y + top,
+        if row_index == 1:
+            title_margin = page_title_margin(columns, row["bbox"], args.person_right_margin_exclusion)
+        name_regions = detect_row_name_regions(
+            band, x, y + top, columns,
             min_component_width=args.person_min_component_width,
             min_component_height=args.person_min_component_height,
             min_component_area=args.person_min_component_area,
             x_cluster_tolerance=args.person_x_cluster_tolerance,
-            right_margin_exclusion=args.person_right_margin_exclusion,
+            right_margin_exclusion=title_margin,
             min_vertical_glyph_gap=args.person_min_vertical_glyph_gap,
         )
         for region_index, geometry in enumerate(name_regions, start=1):
@@ -1094,6 +1181,8 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
                 "name_hanja_candidate": hanzi_text,
                 "evidence_text": raw_ocr_text,
                 "source_column_id": source_column_id,
+                "source_ocr_column_ids": (matched_column or {}).get("source_column_ids")
+                    or ([(matched_column or {})["column_id"]] if matched_column else []),
                 "source_row_id": row_id,
                 "bbox": geometry["bbox"],
                 "image_file": image_file,
@@ -1247,7 +1336,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--person-min-component-height", type=int, default=18, help="Minimum height of a large printed component for person-region detection")
     parser.add_argument("--person-min-component-area", type=int, default=100, help="Minimum ink area of a large printed component for person-region detection")
     parser.add_argument("--person-x-cluster-tolerance", type=float, default=8.0, help="Horizontal tolerance for grouping large components into a vertical column")
-    parser.add_argument("--person-right-margin-exclusion", type=int, default=45, help="Exclude the recurring book-title strip at the far right of a page band")
+    parser.add_argument("--person-right-margin-exclusion", type=int, default=45, help="Width to exclude only when right-side OCR identifies a recurring book title")
     parser.add_argument("--person-min-vertical-glyph-gap", type=int, default=27, help="Minimum vertical gap between large glyphs in a person-name column")
     parser.add_argument("--name-crop-padding", type=int, default=7, help="Padding around geometry-detected name crop in source pixels")
     return parser.parse_args()
@@ -1294,10 +1383,11 @@ def main() -> int:
                 f"{result['elapsed_seconds']:.2f}s"
             )
             metrics = result.get("paddle_metrics") or {}
-            total_calls = metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0)
+            total_calls = metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0) + metrics.get("column_fallback_inferences", 0)
             print(
                 f"[PADDLE-STATS] calls={total_calls} "
                 f"(row={metrics.get('row_inferences', 0)}, "
+                f"column_fallback={metrics.get('column_fallback_inferences', 0)}, "
                 f"name_reused={metrics.get('name_reused_from_row', 0)}, "
                 f"fallback_regions={metrics.get('name_fallback_regions', 0)}, "
                 f"fallback_calls={metrics.get('name_fallback_inferences', 0)})"

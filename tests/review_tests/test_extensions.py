@@ -218,6 +218,28 @@ class SplitGlyphTests(unittest.TestCase):
         results = detect_large_printed_name_regions(image[82:216, 55:644], 55, 82)
         self.assertEqual(len(results), 1)
 
+    def test_sample_page_003_recovers_six_rightmost_names(self):
+        path = Path(__file__).resolve().parents[2] / "scan/genealogy/003.jpg"
+        if not path.exists():
+            self.skipTest("샘플 스캔 미포함")
+        rows = []
+        for index, (y, height) in enumerate([(90, 132), (228, 132), (366, 128),
+                                           (500, 128), (634, 126), (766, 137)], start=1):
+            rows.append({"row_id": f"r{index}", "bbox": {"x": 59, "y": y, "width": 587, "height": height}, "columns": []})
+        rows[1]["columns"] = [
+            {"column_id": "c1", "text": "子", "bbox": {"x": 607, "y": 245, "width": 25, "height": 22}},
+            {"column_id": "c2", "text": "瑛", "bbox": {"x": 605, "y": 291, "width": 27, "height": 35}}]
+        page = {"source_image": str(path), "rows": rows}
+        image = cv2.imread(str(path))
+        full = recover_name_candidates(image, page, [])
+        rightmost = [p for p in full if p["bbox"]["x"] > 600]
+        self.assertEqual(len(rightmost), 6)
+        self.assertEqual(next(p for p in rightmost if p["source_row_id"] == "r2")["raw_name_ocr"], "子\n瑛")
+        roi = image[88:905, 59:646]
+        offset = recover_name_candidates(roi, page, [], (59, 88))
+        self.assertEqual([p["bbox"] for p in full], [p["bbox"] for p in offset])
+        self.assertEqual(recover_name_candidates(image, page, full), [])
+
 
 if __name__ == "__main__":
     unittest.main()

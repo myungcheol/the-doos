@@ -104,6 +104,8 @@ v5까지는 행 OCR 이후 각 인명 crop에 여러 전처리를 적용해 반�
 4. 매칭되지 않거나 기준 미달인 인명만 crop OCR을 추가 실행합니다.
 5. 추가 OCR은 CLAHE부터 시도하고, 결과가 계속 기준 미달일 때 Otsu, Adaptive Threshold, 90도 회전 이미지를 순서대로 시도합니다.
 
+행 OCR이 놓친 세로 열은 이미지의 잉크 분포와 OCR 좌표를 비교해 찾아, 해당 열만 추가 인식합니다. 원문과 토큰 bbox는 원본 좌표로 저장합니다. 오른쪽 책 제목 제외는 그 위치의 OCR에서 `杜氏` 또는 `世譜`가 확인될 때만 적용하므로, 오른쪽 끝까지 인물이 있는 페이지도 후보를 찾습니다. `子/女`가 작게 인쇄된 경우에는 기존 OCR 표식 근거가 있을 때 높이 조건을 보완하고, 분리된 이름 조각은 세로 순서로 재사용합니다.
+
 기본 재사용/중단 confidence 기준은 70입니다. 실제 추론 횟수와 처리 시간은 각 페이지의 `page.json`에 있는 `paddle_metrics`와 `elapsed_seconds`에서 확인할 수 있습니다.
 
 ### 인물 및 가족관계 검수
@@ -267,7 +269,7 @@ python -m ocr.jokbo_ocr --help
 | `--person-min-component-height` | `18` | 인명 영역 검출용 큰 글자 구성요소 최소 높이 |
 | `--person-min-component-area` | `100` | 인명 영역 검출용 최소 잉크 면적 |
 | `--person-x-cluster-tolerance` | `8.0` | 인명 글자 x좌표 군집 허용 범위 |
-| `--person-right-margin-exclusion` | `45` | 오른쪽 반복 책 제목 영역 제외 폭 |
+| `--person-right-margin-exclusion` | `45` | 오른쪽 OCR에서 책 제목을 확인한 페이지의 제외 폭 |
 | `--person-min-vertical-glyph-gap` | `27` | 이름 글자 사이 최소 세로 간격 |
 | `--name-crop-padding` | `7` | 인명 crop 주위 여백(px) |
 
@@ -540,8 +542,9 @@ PER_<UUID>
 | `name_reused_from_row` | 행 OCR 결과를 재사용한 인명 수 |
 | `name_fallback_regions` | 추가 crop OCR이 필요했던 인명 영역 수 |
 | `name_fallback_inferences` | 인명 crop 추가 추론 횟수 |
+| `column_fallback_inferences` | 행 OCR에서 누락된 세로 열의 추가 추론 횟수 |
 
-v5의 반복 crop OCR 구조와 v6 이후 최적화 구조를 비교할 때는 `elapsed_seconds`뿐 아니라 `row_inferences + name_fallback_inferences`도 확인하세요. 첫 실행의 모델 다운로드/초기화 시간과 이후 캐시가 준비된 실행 시간은 구분해 측정하는 것이 좋습니다.
+v5의 반복 crop OCR 구조와 v6 이후 최적화 구조를 비교할 때는 `elapsed_seconds`뿐 아니라 `row_inferences + name_fallback_inferences + column_fallback_inferences`도 확인하세요. 첫 실행의 모델 다운로드/초기화 시간과 이후 캐시가 준비된 실행 시간은 구분해 측정하는 것이 좋습니다.
 
 OCR confidence는 보정된 정확도 확률이 아닙니다. 검수한 정답 문자열을 기준으로 이름 완전 일치율과 문자 오류율(CER)을 평가하세요.
 

@@ -277,10 +277,12 @@ def apply_continuations(person, state):
 
 def recover_name_candidates(image, page, people, offset=(0, 0)):
     """Geometry-only rescan using existing OCR text; never invokes an OCR engine."""
-    from ocr.jokbo_ocr import detect_large_printed_name_regions, find_matching_ocr_column, clean_hanzi_text
+    from ocr.jokbo_ocr import detect_row_name_regions, page_title_margin, find_matching_ocr_column, clean_hanzi_text
 
     additions = []
     height, width = image.shape[:2]
+    first_row = next(iter(page.get("rows", [])), {})
+    title_margin = page_title_margin(first_row.get("columns", []), first_row.get("bbox", {"x": 0, "width": width}))
     for row in page.get("rows", []):
         b = row.get("bbox") or {}
         x, y = max(0, int(b.get("x", 0) - offset[0])), max(0, int(b.get("y", 0) - offset[1]))
@@ -288,7 +290,8 @@ def recover_name_candidates(image, page, people, offset=(0, 0)):
         bottom = min(height, int(b.get("y", 0) + b.get("height", 0) - offset[1]))
         if right <= x or bottom <= y:
             continue
-        for region in detect_large_printed_name_regions(image[y:bottom, x:right], x + offset[0], y + offset[1]):
+        for region in detect_row_name_regions(image[y:bottom, x:right], x + offset[0], y + offset[1],
+                                             row.get("columns", []), right_margin_exclusion=title_margin):
             box = region["bbox"]
             center_x, center_y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
             if any((other := p.get("bbox") or {}) and other.get("x", 0) - 5 <= center_x <= other.get("x", 0) + other.get("width", 0) + 5
@@ -302,6 +305,7 @@ def recover_name_candidates(image, page, people, offset=(0, 0)):
             candidate_id = Path(page_name(page)).stem + "_RECOVERED_" + uuid.uuid4().hex[:12].upper()
             additions.append({"person_id": candidate_id, "source_page": page_name(page),
                               "source_row_id": row.get("row_id"), "source_column_id": column.get("column_id") or candidate_id,
+                              "source_ocr_column_ids": column.get("source_column_ids") or ([column["column_id"]] if column else []),
                               "bbox": box, "raw_name_ocr": text, "name_hanja_candidate": clean_hanzi_text(text),
                               "ocr_confidence": column.get("mean_confidence") if text else None,
                               "review_status": "needs_review", "candidate_type": "review_geometry_recovery",

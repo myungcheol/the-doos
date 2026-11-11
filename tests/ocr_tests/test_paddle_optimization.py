@@ -5,6 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -38,6 +39,49 @@ class CountingPaddle:
 
 
 class PaddleOptimizationTests(unittest.TestCase):
+    def test_title_margin_requires_right_side_title_evidence(self):
+        box = {"x": 50, "width": 600}
+        self.assertEqual(pipeline.page_title_margin([
+            {"text": "杜陵杜氏", "bbox": {"x": 615}}], box), 45)
+        self.assertEqual(pipeline.page_title_margin([
+            {"text": "子成林", "bbox": {"x": 615}}], box), 0)
+        self.assertEqual(pipeline.page_title_margin([
+            {"text": "杜氏", "bbox": {"x": 300}}], box), 0)
+
+    def test_split_name_columns_are_reused_in_vertical_order(self):
+        columns = [
+            {"column_id": "c2", "text": "瑛", "mean_confidence": 90,
+             "bbox": {"x": 605, "y": 291, "width": 27, "height": 35}},
+            {"column_id": "c1", "text": "子", "mean_confidence": 95,
+             "bbox": {"x": 607, "y": 245, "width": 25, "height": 22}},
+            {"column_id": "c3", "text": "下四", "mean_confidence": 95,
+             "bbox": {"x": 606, "y": 380, "width": 25, "height": 22}},
+        ]
+        matched = find_matching_ocr_column({"bbox": {"x": 606, "y": 249, "width": 26, "height": 75}}, columns)
+        self.assertEqual(matched["text"], "子\n瑛")
+        self.assertEqual(matched["source_column_ids"], ["c1", "c2"])
+
+    def test_missing_column_fallback_preserves_offsets_and_does_not_repeat_covered_ocr(self):
+        image = np.full((100, 100, 3), 255, dtype=np.uint8)
+        existing = {"text": "已讀", "left": 10, "top": 5, "width": 14, "height": 80,
+                    "block_num": 1, "par_num": 1, "line_num": 1, "word_num": 1, "confidence": 90}
+        extra = {**existing, "text": "出生", "left": 11, "top": 13, "width": 12}
+        args = SimpleNamespace(scale=3, preprocess="clahe")
+        with patch.object(pipeline, "extract_text_and_confidence", return_value=("出生", 90, image, [extra])) as ocr:
+            tokens, calls = pipeline.recover_missing_column_tokens(image, [(10, 24), (50, 64)], [existing], args, object())
+        self.assertEqual(calls, 1)
+        self.assertEqual(ocr.call_count, 1)
+        self.assertEqual((tokens[1]["left"], tokens[1]["top"]), (50, 5))
+        self.assertEqual(tokens[1]["block_num"], 2)
+        self.assertEqual(tokens[0], existing)
+
+        extra["top"] = 7
+        with patch.object(pipeline, "extract_text_and_confidence", return_value=("出生", 90, image, [extra])):
+            clipped, _ = pipeline.recover_missing_column_tokens(image, [(50, 64)], [], args, object())
+        self.assertEqual(clipped[0]["text"], "出生")
+        self.assertEqual(clipped[0]["top"], 0)
+        self.assertEqual(clipped[0]["height"], 79)
+
     def test_successive_ocr_batches_keep_unprocessed_pages_and_review_state(self):
         module = pipeline
         with tempfile.TemporaryDirectory() as temporary:
