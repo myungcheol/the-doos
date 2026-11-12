@@ -18,12 +18,28 @@ import uuid
 from ocr.storage import load_ocr_output, page_name, validate_page_result
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 class DatabaseError(RuntimeError):
     pass
 
 
 class ReviewConflict(DatabaseError):
     pass
+
+
+def load_database_environment(path=None):
+    """Load the project .env without replacing process environment variables."""
+    env_path = Path(path) if path is not None else PROJECT_ROOT / '.env'
+    if not env_path.is_file():
+        return env_path
+    try:
+        from dotenv import load_dotenv
+    except ImportError as exc:
+        raise DatabaseError('requirements-postgres.txt를 설치하세요. (.env 로더 누락)') from exc
+    load_dotenv(env_path, override=False)
+    return env_path
 
 
 def digest(value):
@@ -90,12 +106,16 @@ class AssetStore:
 
 
 class PostgresStore:
-    def __init__(self, dsn=None, asset_root=None):
-        self.dsn = dsn or os.environ.get('JOKBO_DATABASE_URL')
+    def __init__(self, dsn=None, asset_root=None, env_file=None):
+        load_database_environment(env_file)
+        self.dsn = dsn or os.environ.get('DATABASE_URL') or os.environ.get('JOKBO_DATABASE_URL')
         root = asset_root or os.environ.get('JOKBO_ASSET_ROOT')
         if not self.dsn or not root:
-            raise DatabaseError('JOKBO_DATABASE_URL과 JOKBO_ASSET_ROOT를 설정하세요.')
-        self.assets = AssetStore(root)
+            raise DatabaseError('.env에 DATABASE_URL과 JOKBO_ASSET_ROOT를 설정하세요.')
+        root_path = Path(root).expanduser()
+        if not root_path.is_absolute():
+            root_path = PROJECT_ROOT / root_path
+        self.assets = AssetStore(root_path)
 
     @contextmanager
     def connection(self):

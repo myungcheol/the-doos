@@ -14,7 +14,8 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from database.store import AssetStore, DatabaseError, PostgresStore, ReviewConflict
+from database.store import (AssetStore, DatabaseError, PostgresStore, ReviewConflict,
+                            load_database_environment)
 from ocr.storage import save_page_result
 from review.core import get_page_image
 
@@ -35,6 +36,31 @@ def fixture(root, name='001.png'):
 
 
 class AssetTests(unittest.TestCase):
+    def test_dotenv_loads_database_settings_without_overriding_shell(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env_file = Path(folder) / '.env'
+            env_file.write_text(
+                'DATABASE_URL=postgresql://file-user:file-pass@db/file-db\n'
+                'JOKBO_ASSET_ROOT=./file-assets\n', encoding='utf-8'
+            )
+            keys = ('DATABASE_URL', 'JOKBO_DATABASE_URL', 'JOKBO_ASSET_ROOT')
+            saved = {key: os.environ.get(key) for key in keys}
+            try:
+                for key in keys:
+                    os.environ.pop(key, None)
+                load_database_environment(env_file)
+                store = PostgresStore(env_file=env_file)
+                self.assertEqual(store.dsn, 'postgresql://file-user:file-pass@db/file-db')
+                self.assertEqual(store.assets.root, Path(__file__).resolve().parents[2] / 'file-assets')
+                os.environ['DATABASE_URL'] = 'postgresql://shell/db'
+                self.assertEqual(PostgresStore(env_file=env_file).dsn, 'postgresql://shell/db')
+            finally:
+                for key in keys:
+                    if saved[key] is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = saved[key]
+
     def test_identical_copy_checksum_and_corruption(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

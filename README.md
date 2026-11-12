@@ -198,14 +198,17 @@ pip install -r requirements-desktop.txt
 
 ### 3.5 PostgreSQL 설치와 전환
 
-파일 방식은 그대로 사용할 수 있습니다. DB 방식을 사용할 때는 PostgreSQL 서버와 빈 UTF-8 데이터베이스를 준비합니다. PostgreSQL 17에서 통합 테스트했으며, 접속 계정은 처음 `jokbo` 스키마를 생성할 권한이 필요합니다.
+파일 방식은 그대로 사용할 수 있습니다. 로컬 개발에서는 Docker Compose로 PostgreSQL 17.12를 실행합니다. Python 프로그램은 저장소 루트 `.env`를 자동으로 읽으므로 매번 `export`할 필요가 없습니다.
 
 ```bash
 pip install -r requirements-postgres.txt
-# 로컬 PostgreSQL에서 현재 OS 사용자의 접속이 설정된 경우
-createdb --encoding=UTF8 jokbo
-export JOKBO_DATABASE_URL='postgresql:///jokbo'
-export JOKBO_ASSET_ROOT="$PWD/jokbo-assets"
+
+# 최초 한 번: 예제 파일을 복사하고 POSTGRES_PASSWORD와 DATABASE_URL을 같은 값으로 수정
+cp .env.example .env
+
+# PostgreSQL 시작과 healthcheck 완료 대기
+docker compose up -d --wait postgres
+# 애플리케이션 스키마 생성(반복 실행 가능)
 python -m database init
 
 # 기존 OCR·검수 상태·UUID·이미지를 함께 가져오기
@@ -214,7 +217,35 @@ python -m database import output/
 python -m review.desktop_review --storage postgres --edition jokbo-1987
 ```
 
-원격 DB는 `JOKBO_DATABASE_URL`에 해당 접속 문자열을 지정합니다. 비밀번호는 코드·저장소에 넣지 않고 PostgreSQL 접속 설정이나 환경변수로 관리합니다. `JOKBO_ASSET_ROOT`는 모든 OCR/검수 프로세스가 같은 파일 내용을 볼 수 있는 영구 디렉터리입니다. 여러 컴퓨터에서는 공유 파일시스템을 같은 내용으로 마운트하고 각 컴퓨터의 경로를 지정하세요. DB에 로컬 절대 경로만 저장하는 방식은 사용하지 않습니다.
+`compose.yaml`은 PostgreSQL을 `127.0.0.1:${POSTGRES_PORT}`에만 공개하고 `jokbo-local_postgres-data` Docker volume에 데이터를 보존합니다. 컨테이너를 멈췄다가 다시 시작해도 데이터는 남습니다.
+
+```bash
+docker compose ps
+docker compose logs -f postgres
+docker compose stop postgres
+docker compose start postgres
+```
+
+`.env`의 주요 값은 다음과 같습니다.
+
+| 변수 | 용도 |
+|---|---|
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` | 로컬 Compose 컨테이너 생성·접속 설정 |
+| `DATABASE_URL` | OCR, 검수 UI, `python -m database`가 사용하는 PostgreSQL URL |
+| `JOKBO_ASSET_ROOT` | 원본 스캔과 ROI의 내용 주소 저장소. 상대 경로는 저장소 루트 기준 |
+
+`POSTGRES_*`를 변경하면 `DATABASE_URL`의 사용자·비밀번호·포트·DB도 같은 값으로 맞춰야 합니다. 이미 volume이 생성된 뒤 `POSTGRES_*`만 바꾸어도 기존 DB 계정은 자동 변경되지 않습니다. 그 경우 기존 설정을 되돌리거나 PostgreSQL에서 계정을 명시적으로 변경하세요. `docker compose down`은 컨테이너와 네트워크만 제거하고 volume은 유지합니다. `docker compose down --volumes`는 로컬 DB 데이터를 삭제하므로 초기화가 명확히 필요할 때만 사용합니다.
+
+실제 서비스도 같은 코드로 `.env`의 `DATABASE_URL`을 읽습니다. 예를 들어 관리형 PostgreSQL URL과 서비스가 접근할 수 있는 영구 디스크 경로를 지정합니다.
+
+```dotenv
+DATABASE_URL=postgresql://service_user:strong-password@postgres.example.internal:5432/jokbo?sslmode=require
+JOKBO_ASSET_ROOT=/srv/jokbo/assets
+```
+
+명령을 실행한 셸에 `DATABASE_URL` 또는 `JOKBO_ASSET_ROOT`가 이미 있으면 그 값이 `.env`보다 우선합니다. 예전 `JOKBO_DATABASE_URL`도 읽지만 새 설정에는 `DATABASE_URL`을 사용하세요. `.env`와 DB dump는 Git에서 제외됩니다. 접속 계정은 처음 `jokbo` 스키마를 생성할 권한이 필요합니다.
+
+`JOKBO_ASSET_ROOT`는 모든 OCR/검수 프로세스가 같은 파일 내용을 볼 수 있는 영구 디렉터리입니다. 여러 컴퓨터에서는 공유 파일시스템을 같은 내용으로 마운트하고 각 컴퓨터의 경로를 지정하세요. DB에 로컬 절대 경로만 저장하는 방식은 사용하지 않습니다.
 
 `import`는 새 `page.json`과 구형 출력 모두 읽고, `review_state.json`의 UUID·수기 수정·추가 인물·이어진 기록·알 수 없는 확장 필드를 보존합니다. 원래 파일과 루트 `person_registry.json`은 변경하지 않습니다. **이미 사용한 동일 JSON 가져오기는 반복할 수 있지만, 변경된 JSON 검수 상태로 기존 DB 검수를 덮어쓰지는 않습니다.** 읽기 경고, 없는 이미지, 중복 후보 ID, 잘못된 관계가 있으면 해당 가져오기 트랜잭션 전체를 취소합니다.
 
@@ -586,7 +617,7 @@ python -m database ancestors PER_실제UUID --kind biological
 python -m database export /tmp/jokbo-export-new --edition jokbo-1987
 python -m database verify-assets
 # 전체 DB(대기 OCR·모든 검수 이력 포함) 백업
-pg_dump --format=custom "$JOKBO_DATABASE_URL" > jokbo-backup.dump
+pg_dump --format=custom "$DATABASE_URL" > jokbo-backup.dump
 ```
 
 `export`는 활성 OCR·현재 검수·관리 이미지를 기존 파일 검수기로 읽을 수 있게 내보냅니다. **전체 이력 백업은 `pg_dump`와 이미지 저장소 백업을 함께** 해야 합니다. 이미지 객체는 불변·추가 전용이므로 DB dump 후 저장소를 복사하면 dump가 참조한 이미지를 포함할 수 있습니다(동시 삭제 금지). 복구 후 `verify-assets`로 누락·크기·SHA-256을 검사합니다. 이미지 저장소의 이동은 `JOKBO_ASSET_ROOT` 변경으로 대응할 수 있습니다. S3 업로드·이미지 자동 정리 기능은 구현하지 않았습니다.

@@ -12,6 +12,14 @@
 
 ## 기록
 
+### 2026-11-12 — 로컬 Docker Compose와 `.env` 기반 DB 접속
+
+- **문제/맥락:** PostgreSQL 저장 기능은 있었지만 사용자가 서버와 환경변수를 직접 준비해야 했다. 로컬 개발은 재현 가능한 한 명령 실행이 필요하고, 실제 서비스는 코드 변경 없이 외부 PostgreSQL URL을 사용해야 했다.
+- **선택:** `compose.yaml`에 PostgreSQL 17.12, localhost 전용 포트, healthcheck, 종료 유예와 named volume을 정의했다. Compose와 Python이 같은 루트 `.env`를 사용한다. 애플리케이션은 `python-dotenv`로 `.env`를 읽고 표준 `DATABASE_URL`을 우선하며 기존 `JOKBO_DATABASE_URL`은 호환 입력으로 유지한다. 프로세스 환경변수는 `.env`로 덮어쓰지 않는다. 상대 `JOKBO_ASSET_ROOT`는 실행 위치와 무관하게 저장소 루트를 기준으로 해석한다.
+- **운영/보안:** `.env.example`에는 로컬 변수의 관계를 설명하고 실제 `.env`·dump·관리 이미지는 계속 Git에서 제외한다. Compose DB는 외부 인터페이스에 노출하지 않는다. 운영은 `.env`의 외부 `DATABASE_URL`과 모든 프로세스가 공유하는 영구 asset 경로를 사용한다. PostgreSQL volume과 asset 저장소는 서로 다른 백업 대상이다.
+- **검증:** 실제 `docker compose up -d --wait postgres`로 이미지를 받아 service가 `healthy`이고 `127.0.0.1:5432`에만 바인딩되는 것을 확인했다. 루트 `.env`를 자동으로 읽어 `python -m database init`을 실행했다. Compose DB에서 합성 판본으로 전체 125개 단위/DB 통합 테스트가 통과했고, 테스트 판본과 고아 UUID를 정확한 대상 확인 후 제거하여 최종 DB가 스키마 버전 1, 판본·인물·페이지 0건임을 확인했다. `compileall`, Compose 설정 검사와 `git diff --check`도 통과했다. 실제 OCR 추론과 작업 데이터 이관은 수행하지 않았다.
+- **관련 커밋:** 이 기록을 포함한 변경.
+
 ### 2026-11-10 — OCR 생몰 날짜를 구성 항목으로 보존
 
 - **문제/원인:** 기존 생몰 필드는 OCR 원문 문자열과 양력 범위만 저장했다. 세로 열에서 `왕명·재위 연수·간지 첫 글자`와 `生`이 분리되면 OCR에 보이는 부분과 왕년으로 추론한 60갑자를 구분해 검수할 수 없었다. 왕년 없이 간지·월·일만 있는 사망 기록도 양력 변환 실패 시 구조화된 정보를 잃었다.
