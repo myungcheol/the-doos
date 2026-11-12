@@ -20,6 +20,7 @@ from typing import Any
 import cv2
 import numpy as np
 from .storage import check_page_target, load_ocr_output, save_page_result
+from .page_geometry import correct_page_geometry, map_evidence, transform_box
 
 HAN_RANGES = ((0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF))
 CHINESE_DIGITS = {
@@ -293,7 +294,7 @@ def page_title_margin(columns, row_bbox, margin=45):
     for column in columns:
         box = column.get("bbox") or {}
         text = clean_hanzi_text(column.get("text", ""))
-        if box.get("x", 0) >= edge and ("世譜" in text or "杜氏" in text):
+        if box.get("x", 0) + box.get("width", 0)/2 >= edge and ("世譜" in text or "杜氏" in text):
             return margin
     return 0
 
@@ -1090,27 +1091,38 @@ def parse_relationships(
 
 def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle_ocr: Any = None) -> dict[str, Any]:
     page_started = time.perf_counter()
-    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
-    if image is None:
+    source_image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if source_image is None:
         raise RuntimeError(f"Could not read image: {path}")
-    image_h, image_w = image.shape[:2]
+    image_h, image_w = source_image.shape[:2]
+    manual_roi = parse_roi(args.roi, image_w, image_h) if args.roi else None
+    image, page_geometry = correct_page_geometry(
+        source_image, getattr(args, "geometry_correction", "auto"), manual_roi)
+    working_h, working_w = image.shape[:2]
     if args.roi:
-        roi = parse_roi(args.roi, image_w, image_h)
+        manual_box = dict(zip(("x", "y", "width", "height"), manual_roi))
+        roi_box, _ = transform_box(manual_box, page_geometry["source_to_ocr"], (working_w, working_h))
+        roi = tuple(roi_box[k] for k in ("x", "y", "width", "height"))
         roi_method = "manual"
     elif args.no_auto_roi:
-        roi = (0, 0, image_w, image_h)
+        roi = (0, 0, working_w, working_h)
         roi_method = "full_image"
     else:
         roi = detect_table_roi(image)
         roi_method = "detected" if roi else "full_image_fallback"
-        roi = roi or (0, 0, image_w, image_h)
+        roi = roi or (0, 0, working_w, working_h)
 
     x, y, width, height = roi
     table = image[y:y+height, x:x+width]
     boundaries = detect_horizontal_boundaries(table, args.rows)
     page_dir = output_dir / path.stem
     page_dir.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(page_dir / "table_roi.jpg"), table)
+    # The review fallback must stay an unwarped source crop: its offset alone
+    # cannot represent a perspective transform. Debug output uses working pixels.
+    working_roi = dict(x=x, y=y, width=width, height=height)
+    source_roi, _ = transform_box(working_roi, page_geometry["ocr_to_source"], (image_w, image_h))
+    sx, sy, sw, sh = (source_roi[k] for k in ("x", "y", "width", "height"))
+    cv2.imwrite(str(page_dir / "table_roi.jpg"), source_image[sy:sy+sh, sx:sx+sw])
 
     debug_image = table.copy()
     all_rows, legacy_blocks, all_people = [], [], []
@@ -1250,6 +1262,14 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
                 "ocr_status": ocr_status,
                 "review_status": "needs_review",
             }
+            if len(clean_hanzi_text(hanzi_text)) > 4:
+                # Rectification can connect neighboring prose strokes into a
+                # name-shaped region. Keep every OCR hypothesis and its bbox
+                # as evidence, but do not let a long sentence split biographies
+                # or become a parent anchor.
+                row.setdefault("excluded_name_regions", []).append({
+                    **candidate, "exclusion_reason": "name_ocr_exceeds_four_hanzi"})
+                continue
             candidate["person_id"] = f"{path.stem}_P{len(all_people)+1:04d}"
             candidate["source_page"] = path.name
             candidate["generation_number"] = row["generation_number"]
@@ -1286,9 +1306,22 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         cv2.line(debug_image, (0, boundary.y), (width-1, boundary.y), color, 2)
     cv2.imwrite(str(page_dir / "layout_debug.jpg"), debug_image)
 
+    # Layout decisions are made before inverse mapping, on straightened columns.
+    # Every persisted evidence bbox, including nested tokens/components, is in
+    # source pixels; the working bbox and precise source polygon accompany it.
+    if page_geometry["applied"]:
+        all_rows = map_evidence(all_rows, page_geometry["ocr_to_source"], (image_w, image_h))
+        all_people = [person for row in all_rows for person in row["person_candidates"]]
+        legacy_blocks = map_evidence(legacy_blocks, page_geometry["ocr_to_source"], (image_w, image_h))
+        relationships = map_evidence(relationships, page_geometry["ocr_to_source"], (image_w, image_h))
+    page_geometry["ocr_table_roi"] = working_roi
+    page_geometry["layout_coordinate_space"] = "corrected_page"
+    page_geometry["row_boundaries_coordinate_space"] = "corrected_table_roi"
+    page_geometry["evidence_coordinate_space"] = "original_image"
+    page_geometry["ocr_scale"] = args.scale
     return {
         "source_image": str(path), "image_size": {"width": image_w, "height": image_h},
-        "table_roi": {"x": x, "y": y, "width": width, "height": height}, "roi_method": roi_method,
+        "table_roi": source_roi, "roi_method": roi_method, "page_geometry": page_geometry,
         "ocr_engine": "paddleocr",
         "ocr_language": args.paddle_lang,
         "ocr_model": args.paddle_version,
@@ -1371,6 +1404,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--rows", type=int, default=6, help="Expected horizontal row count (default 6)")
     parser.add_argument("--scale", type=float, default=3.0, help="OCR image enlargement factor")
+    parser.add_argument("--geometry-correction", choices=["auto", "deskew", "none"], default="auto",
+                        help="Correct table geometry before segmentation: auto (rotation/perspective), deskew, none")
     parser.add_argument("--preprocess", choices=["clahe", "gray", "adaptive", "otsu"], default="clahe")
     parser.add_argument("--roi", help="Manual table ROI x,y,width,height in original image coordinates")
     parser.add_argument("--no-auto-roi", action="store_true", help="Use full image; do not detect the table frame")
@@ -1391,6 +1426,9 @@ def main() -> int:
     args = parse_args()
     if args.rows < 1:
         print("[ERROR] --rows must be at least 1", file=sys.stderr)
+        return 2
+    if not np.isfinite(args.scale) or args.scale <= 0:
+        print("[ERROR] --scale must be finite and positive", file=sys.stderr)
         return 2
     if not 0 <= args.paddle_name_min_confidence <= 100:
         print("[ERROR] --paddle-name-min-confidence must be between 0 and 100", file=sys.stderr)
@@ -1427,6 +1465,10 @@ def main() -> int:
                 f"{len(result['relationship_candidates'])} relationship candidates, "
                 f"{result['elapsed_seconds']:.2f}s"
             )
+            geometry = result.get("page_geometry") or {}
+            if geometry:
+                print(f"[GEOMETRY] method={geometry['method']} angle={geometry['angle_degrees']:.3f}deg "
+                      f"applied={geometry['applied']} reason={geometry['reason']}")
             metrics = result.get("paddle_metrics") or {}
             total_calls = metrics.get("row_inferences", 0) + metrics.get("name_fallback_inferences", 0) + metrics.get("column_fallback_inferences", 0)
             print(

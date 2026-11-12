@@ -75,7 +75,7 @@ def previous_row_people(page, row, pages, people, state):
                       if link.get("review_status") == "confirmed" and link.get("source_page") == page_name(previous)
                       and link.get("source_row_id") == previous_row.get("row_id")}
         candidates = [p for p in people if p.get("person_id") in target_ids]
-    return sorted(candidates, key=lambda p: float((p.get("bbox") or {}).get("x", 0)))
+    return sorted(candidates, key=lambda p: float((p.get("ocr_bbox") or p.get("bbox") or {}).get("x", 0)))
 
 
 def orphan_columns(row, people, state=None):
@@ -87,7 +87,8 @@ def orphan_columns(row, people, state=None):
     state = state or {}
     row_people = [p for p in people if p.get("source_row_id") == row.get("row_id")
                   and state.get("people_updates", {}).get(p.get("person_id"), {}).get("review_status", p.get("review_status")) != "rejected"]
-    right_edge = max(((p.get("bbox") or {}).get("x", 0) + (p.get("bbox") or {}).get("width", 0)
+    right_edge = max(((p.get("ocr_bbox") or p.get("bbox") or {}).get("x", 0)
+                      + (p.get("ocr_bbox") or p.get("bbox") or {}).get("width", 0)
                       for p in row_people), default=None)
     attached_boxes = [column.get("bbox") for link in state.get("continuation_links", [])
                       if link.get("review_status") == "confirmed" and link.get("source_row_id") == row.get("row_id")
@@ -103,10 +104,11 @@ def orphan_columns(row, people, state=None):
             continue
         if re.fullmatch(r"[一二三四五六七八九十百〇零0-9]+世", compact):
             continue
-        if right_edge is not None and b.get("x", 0) + b["width"] / 2 < right_edge:
+        layout_box = column.get("ocr_bbox") or b
+        if right_edge is not None and layout_box.get("x", 0) + layout_box["width"] / 2 < right_edge:
             continue
         columns.append(deepcopy(column))
-    return sorted(columns, key=lambda c: c["bbox"]["x"], reverse=True)
+    return sorted(columns, key=lambda c: (c.get("ocr_bbox") or c["bbox"])["x"], reverse=True)
 
 
 def orphan_regions(row, people, state=None):
@@ -114,12 +116,15 @@ def orphan_regions(row, people, state=None):
     regions = []
     for column in orphan_columns(row, people, state):
         box = column["bbox"]
-        if not regions or regions[-1]["left"] - (box["x"] + box["width"]) > 32:
+        layout_box = column.get("ocr_bbox") or box
+        if not regions or regions[-1]["layout_left"] - (layout_box["x"] + layout_box["width"]) > 32:
             regions.append({"columns": [], "left": box["x"], "top": box["y"],
+                            "layout_left": layout_box["x"],
                             "right": box["x"] + box["width"], "bottom": box["y"] + box["height"]})
         region = regions[-1]
         region["columns"].append(column)
         region["left"] = min(region["left"], box["x"])
+        region["layout_left"] = min(region["layout_left"], layout_box["x"])
         region["top"] = min(region["top"], box["y"])
         region["right"] = max(region["right"], box["x"] + box["width"])
         region["bottom"] = max(region["bottom"], box["y"] + box["height"])
@@ -278,6 +283,28 @@ def apply_continuations(person, state):
 def recover_name_candidates(image, page, people, offset=(0, 0)):
     """Geometry-only rescan using existing OCR text; never invokes an OCR engine."""
     from ocr.jokbo_ocr import detect_row_name_regions, page_title_margin, find_matching_ocr_column, clean_hanzi_text
+    from ocr.page_geometry import layout_evidence, map_evidence, transform_box
+
+    geometry = page.get("page_geometry") or {}
+    if geometry.get("applied"):
+        import cv2
+        import numpy as np
+
+        # Reproduce the saved working coordinate system even when the viewer is
+        # showing an unwarped table_roi fallback. Map recovered evidence back.
+        matrix = np.asarray(geometry["source_to_ocr"], dtype=np.float64)
+        translation = np.array([[1, 0, offset[0]], [0, 1, offset[1]], [0, 0, 1]])
+        size = geometry["ocr_image_size"]
+        working = cv2.warpPerspective(image, matrix @ translation, (size["width"], size["height"]),
+                                      flags=cv2.INTER_CUBIC, borderValue=(255, 255, 255))
+        working_people = layout_evidence(people)
+        for person, original in zip(working_people, people):
+            if not original.get("ocr_bbox") and original.get("bbox"):
+                person["bbox"], _ = transform_box(original["bbox"], matrix, (size["width"], size["height"]))
+        working_page = {**page, "rows": layout_evidence(page.get("rows", [])), "page_geometry": {}}
+        additions = recover_name_candidates(working, working_page, working_people)
+        source_size = page["image_size"]
+        return map_evidence(additions, geometry["ocr_to_source"], (source_size["width"], source_size["height"]))
 
     additions = []
     height, width = image.shape[:2]
@@ -295,7 +322,8 @@ def recover_name_candidates(image, page, people, offset=(0, 0)):
             box = region["bbox"]
             center_x, center_y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
             if any((other := p.get("bbox") or {}) and other.get("x", 0) - 5 <= center_x <= other.get("x", 0) + other.get("width", 0) + 5
-                   and other.get("y", 0) - 5 <= center_y <= other.get("y", 0) + other.get("height", 0) + 5 for p in people + additions):
+                   and other.get("y", 0) - 5 <= center_y <= other.get("y", 0) + other.get("height", 0) + 5
+                   for p in people + additions + row.get("excluded_name_regions", [])):
                 continue
             column = find_matching_ocr_column(region, row.get("columns", [])) or {}
             text = str(column.get("text") or "")

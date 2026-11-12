@@ -38,7 +38,7 @@ FIELD_LABELS = {
 
 
 def _box_center_x(item: dict[str, Any]) -> float:
-    box = item.get("bbox") or {}
+    box = item.get("ocr_bbox") or item.get("bbox") or {}
     return float(box.get("x", 0)) + float(box.get("width", 0)) / 2
 
 
@@ -58,11 +58,12 @@ def get_person_section_columns(
         position = next(i for i, p in enumerate(ordered_people) if p.get("person_id") == target_id)
     except StopIteration:
         position = 0
-    own_box = person.get("bbox") or {}
+    own_box = person.get("ocr_bbox") or person.get("bbox") or {}
     upper = float(own_box.get("x", 0)) - 1.0
     lower = 0.0
     if position + 1 < len(ordered_people):
-        left_box = ordered_people[position + 1].get("bbox") or {}
+        left_person = ordered_people[position + 1]
+        left_box = left_person.get("ocr_bbox") or left_person.get("bbox") or {}
         lower = float(left_box.get("x", 0)) + float(left_box.get("width", 0)) + 1.0
 
     columns = []
@@ -70,7 +71,7 @@ def get_person_section_columns(
         box = column.get("bbox") or {}
         if not box:
             continue
-        center = float(box.get("x", 0)) + float(box.get("width", 0)) / 2
+        center = _box_center_x(column)
         text = str(column.get("text") or "").strip()
         if lower < center < upper and text and text not in {"|", "||", "|||", "||||"}:
             columns.append({
@@ -81,6 +82,7 @@ def get_person_section_columns(
                 "token_boxes": column.get("token_boxes") or [],
                 "order_right_to_left": column.get("order_right_to_left"),
                 "center_x": center,
+                **{key: column[key] for key in ("ocr_bbox", "source_polygon") if key in column},
             })
     columns.sort(key=lambda c: c["center_x"], reverse=True)
     return columns
@@ -214,6 +216,7 @@ def extract_person_info_draft(
                 "column_id": col.get("column_id"), "text": col.get("text"),
                 "bbox": col.get("bbox"), "token_boxes": col.get("token_boxes") or [],
                 "mean_confidence": col.get("mean_confidence"),
+                **{key: col[key] for key in ("ocr_bbox", "source_polygon") if key in col},
             }
             for col, _ in selected
         ]
@@ -233,6 +236,7 @@ def extract_person_info_draft(
                 "column_id": col.get("column_id"), "text": col.get("text"),
                 "bbox": col.get("bbox"), "token_boxes": col.get("token_boxes") or [],
                 "mean_confidence": col.get("mean_confidence"),
+                **{key: col[key] for key in ("ocr_bbox", "source_polygon") if key in col},
             }
             for col in columns
         ],

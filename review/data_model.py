@@ -135,6 +135,8 @@ def build_raw_data(
             "source_image": (page_result or {}).get("source_image"),
             "image_file": person.get("image_file"),
             "bbox": dict(person.get("bbox") or {}),
+            **({"source_polygon": person["source_polygon"], "ocr_bbox": person["ocr_bbox"]}
+               if person.get("source_polygon") and person.get("ocr_bbox") else {}),
         },
         "name_ocr": {
             "raw_text": raw_name,

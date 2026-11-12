@@ -14,6 +14,7 @@ import tempfile
 
 from .jokbo_ocr import parse_relationships
 from .storage import page_name, save_page_result, validate_page_result
+from .page_geometry import layout_evidence, map_evidence
 
 
 def refreshed_relationships(page: dict, state: dict) -> list[dict]:
@@ -24,11 +25,15 @@ def refreshed_relationships(page: dict, state: dict) -> list[dict]:
     protected = [r for r in old if r.get("review_status", "needs_review") != "needs_review"
                  or f"{name}::{r.get('relationship_id', '')}" in updates]
     protected_children = {r.get("child_candidate_id") for r in protected}
-    roi = page.get("table_roi") or {}
+    geometry = page.get("page_geometry") or {}
+    roi = geometry.get("ocr_table_roi") or page.get("table_roi") or {}
     width = roi.get("width") or page.get("image_size", {}).get("width")
     if not width:
         raise ValueError("페이지 폭/ROI가 없어 관계를 다시 계산할 수 없습니다.")
-    proposed = parse_relationships(page["rows"], width, table_x=roi.get("x", 0))
+    proposed = parse_relationships(layout_evidence(page["rows"]), width, table_x=roi.get("x", 0))
+    if geometry.get("applied"):
+        size = page["image_size"]
+        proposed = map_evidence(proposed, geometry["ocr_to_source"], (size["width"], size["height"]))
     used_ids = {r.get("relationship_id") for r in old}
     pending_by_child = {}
     for relation in old:

@@ -91,6 +91,7 @@ PaddleOCR 3.x
 - 단일 이미지 파일 또는 이미지 폴더를 입력할 수 있습니다.
 - JPG, JPEG, PNG, TIF, TIFF, BMP, WEBP 형식을 지원합니다.
 - 표 외곽과 가로 행을 검출하고, 각 행 내부의 세로 열을 재구성합니다.
+- 행·열을 나누기 전에 표의 긴 가로선으로 기울기를 확인하고, 근거가 충분하면 회전 또는 원근을 보정합니다. OCR 근거 bbox는 원본 스캔 좌표로 되돌려 저장합니다.
 - 인명 후보는 글자 크기, 연결 요소, 세로 간격, x좌표 군집 등 이미지 기하 정보를 이용해 검출합니다.
 - PaddleOCR 3.x로 본문과 인명 후보를 읽습니다.
 
@@ -260,6 +261,7 @@ python -m ocr.jokbo_ocr --help
 | `--paddle-enable-mkldnn` | 꺼짐 | oneDNN CPU 가속을 명시적으로 활성화 |
 | `--rows` | `6` | 예상 가로 행/구획 수 |
 | `--scale` | `3.0` | OCR 이미지 확대 배율 |
+| `--geometry-correction` | `auto` | 표의 회전·원근 보정. `deskew`는 회전만, `none`은 보정 끄기 |
 | `--preprocess` | `clahe` | `clahe`, `gray`, `adaptive`, `otsu` |
 | `--roi` | 자동 검출 | 수동 표 영역 `x,y,width,height` 지정 |
 | `--no-auto-roi` | 꺼짐 | 표 외곽 자동 검출 비활성화 |
@@ -274,6 +276,23 @@ python -m ocr.jokbo_ocr --help
 | `--name-crop-padding` | `7` | 인명 crop 주위 여백(px) |
 
 참고: `--min-name-font-ratio`는 하위 호환을 위해 남아 있는 deprecated 옵션입니다. 현재 인명 후보는 주로 이미지 기하 정보를 이용해 검출합니다.
+
+### 4.3 기울기·원근 보정과 확대
+
+기본 처리 순서는 **원본 → 표 기하 보정 → 표 ROI/행·열 분할 → 대비 보정·Bicubic 확대 → OCR**입니다. 기존 기본 확대율 `--scale 3.0`을 사용하며, AI 초해상도로 글자 획을 생성하지 않습니다. 확대는 OCR 입력에 적용하고 인명 검출용 픽셀 크기 기준은 유지합니다. 픽셀 확대만으로 원본에서 사라진 획이 복원되지는 않습니다.
+
+`auto`는 여러 높이에 걸친 긴 가로선 최소 3개와 선을 따라 이어지는 실제 잉크를 확인합니다. 최대 약 8도 범위에서 회전 기울기를 추정하고, 신뢰할 수 있는 큰 사각 테두리가 사다리꼴이면 네 모서리로 원근을 보정합니다. 사각 테두리가 충분하지 않으면 가로선에 근거한 회전만 적용할 수 있습니다. 거의 수평이거나 근거가 부족하면 이미지를 그대로 사용합니다. 책 안쪽의 굽은 면을 펴는 곡면 보정은 지원하지 않습니다. 보정의 수학적 연산은 [OpenCV 기하 변환 문서](https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html)를 참고합니다.
+
+한 페이지를 별도 출력 폴더에서 비교하려면:
+
+```bash
+python -m ocr.jokbo_ocr scan/001.jpg --geometry-correction auto --scale 3 --output /tmp/jokbo-corrected
+python -m ocr.jokbo_ocr scan/001.jpg --geometry-correction none --scale 3 --output /tmp/jokbo-baseline
+```
+
+`--roi x,y,width,height`는 계속 **원본 스캔 좌표**이며, 수동 ROI가 있으면 그 영역에서 기울기를 추정해 회전 보정합니다. `--no-auto-roi`는 자동 영역 자르기만 끄고 기하 보정은 별도 설정을 따릅니다. 처리 방식을 완전히 이전처럼 유지하려면 `--geometry-correction none`을 사용하세요.
+
+행/열/인명 분리와 관계 판단은 보정 좌표에서 수행합니다. 저장되는 행·열·토큰·인명·구성요소의 `bbox`는 원본 좌표의 외접 사각형이며, 보정이 적용된 경우 `source_polygon`에 원본의 네 모서리, `ocr_bbox`에 보정 좌표를 함께 보존합니다. 필드 추출·관계 재계산·누락 인명 찾기도 보정 좌표를 사용하고 원문 근거는 원본 좌표로 유지합니다. 새 OCR을 기존 검수 출력에 덮어쓰면 후보 검출 위치나 순서가 달라질 수 있으므로, 먼저 별도 출력에서 비교하세요.
 
 ## 5. OCR 결과 파일
 
@@ -292,12 +311,16 @@ output/
 | 파일 | 설명 |
 |---|---|
 | `001/page.json` | 원본 이미지 경로·크기, 표 ROI, OCR 엔진·모델·성능, 행·열·토큰 bbox, 인물·관계 후보를 저장하는 페이지별 단일 JSON |
-| `table_roi.jpg` | 검출된 족보 표 영역 이미지 |
-| `layout_debug.jpg` | 행/레이아웃/인명 후보 검출 결과를 확인하기 위한 디버그 이미지 |
+| `table_roi.jpg` | 원본 스캔의 표 영역 crop. 원본이 없을 때 검수 화면이 원본 좌표로 표시할 수 있도록 기하 변환하지 않은 이미지 |
+| `layout_debug.jpg` | 보정된 표 영역의 행/레이아웃/인명 검출 디버그 이미지. 보정 적용 시 원본 좌표와 직접 비교하지 않음 |
 
 행·열·인명 crop은 OCR 중 메모리에서 처리하며 별도 `rows/`, `columns/` 이미지 폴더를 만들지 않습니다. OCR 근거는 원본 이미지 경로와 `page.json`의 행·열·토큰·인명 bbox, 원문, confidence로 보존합니다. 이전 버전이 만든 폴더는 자동 삭제하지 않습니다.
 
 `page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. OCR 원문과 성능 정보도 이 파일에 있으므로 별도 CSV나 `ocr.txt`를 만들지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
+
+`page_geometry`에는 보정 적용 여부·보류 이유·검출 각도·방식, 원본↔보정 변환 행렬, 보정 이미지 크기, `ocr_table_roi`, OCR 확대 배율을 저장합니다. `table_roi`와 일반 `bbox`는 원본 좌표입니다. `row_boundaries`의 y와 관계 후보의 중심 x·거리·가지 경계는 보정 표/페이지 좌표이며, 보정 행렬과 `ocr_table_roi`를 통해 해석합니다. 이 메타데이터가 없는 구형 페이지도 계속 읽습니다.
+
+보정 후 본문의 획이 합쳐져 인명 영역처럼 검출되는 경우가 있습니다. 인명 OCR이 한자 4자를 넘으면 인물·관계 기준점으로 사용하지 않고 해당 행의 `excluded_name_regions`에 원문·OCR 대안·confidence·bbox·제외 이유를 보존합니다. 짧은 OCR 오독이나 표식 누락은 여전히 검수가 필요합니다.
 
 인물 후보에는 보통 다음 정보가 포함됩니다.
 
@@ -582,6 +605,7 @@ python -m unittest discover -s tests -v
 - 인명 검출과 부모·자녀 배치 규칙
 - 다음 부모 열 기준의 자녀 묶음 구분, 선남후녀와 기재/출생 순위 구별, 분리된 `女` 표식의 원본 좌표 근거
 - 관계만 재계산할 때 원본 백업·기존 관계 ID·확인/거절/수정 관계·OCR/검수/UUID 보존
+- 양/음 기울기·원근 보정, 보정 보류, 원본↔보정 좌표 변환, 원본 ROI 대체 이미지, 필드/관계/누락 인명 복구의 좌표 보존
 - 선택 인물의 부모/자녀 관계 필터링 및 이미지 번호 매핑
 - `子` / `女` 이름 표식 분리
 - 영구 UID 유지, 판본 출처 위치, 레지스트리 병합
@@ -658,6 +682,7 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 | v6.7.1 | 인물 미선택 상태의 첫 화면에서 OCR 강조 focus가 초기화되지 않아 발생하는 UnboundLocalError 수정, 오래된/잘못된 세션 값에 대한 안전한 기본값 및 회귀 테스트 추가 |
 | 2026-11-10 | 검수 UI를 PySide6 데스크톱 앱으로 통일하고 웹 UI 의존성을 제거 |
 | 2026-11-11 | 선남후녀와 왼쪽으로 이어지는 자녀 묶음을 관계 후보에 반영하고, 기존 OCR의 관계만 백업 후 재계산하는 명령 추가 |
+| 2026-11-12 | 행·열 분할 전 회전·원근 보정과 원본 좌표 역변환 추가, 기존 OCR 확대와 검수 근거 보존 |
 
 ## 16. 프로젝트 파일 구성
 
@@ -666,6 +691,7 @@ the-doos/
 ├── README.md
 ├── ocr/
 │   ├── jokbo_ocr.py            # OCR CLI, 레이아웃, 인명 및 관계 후보 처리
+│   ├── page_geometry.py        # 표 기울기·원근 보정과 원본 좌표 변환
 │   ├── refresh_relationships.py # 저장된 한 페이지의 관계 초안만 재계산
 │   └── storage.py              # 페이지별 OCR 저장·구형 결과 호환 읽기
 ├── review/
@@ -728,6 +754,7 @@ python -m ocr.jokbo_ocr --help
 | 찾고 싶은 것 / 하려는 일 | 우선 읽을 파일 |
 |---|---|
 | OCR 전체 처리 흐름, CLI 옵션, OpenCV 레이아웃·인명/관계 후보 생성 | `ocr/jokbo_ocr.py` |
+| 표 회전·원근 보정, 원본/보정 좌표와 polygon | `ocr/page_geometry.py`, `tests/ocr_tests/test_page_geometry.py`, README §4.3 |
 | PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `ocr/jokbo_ocr.py`, `tests/ocr_tests/test_paddle_adapter.py`, `tests/ocr_tests/test_paddle_optimization.py` |
 | 부모·자녀 추론의 판면·선남후녀 규칙, 기존 관계 초안 재계산 | README §9, `ocr/jokbo_ocr.py`, `ocr/refresh_relationships.py`, `tests/ocr_tests/test_relationship_layout.py` |
 | 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr/storage.py`, `tests/ocr_tests/test_storage.py` |

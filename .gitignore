@@ -14,7 +14,7 @@ data/review/*.bak
 data/exports/*.tmp
 data/exports/*.bak
 data/exports/import.sql
-output/
+output*/
 .venv/
 
 # python

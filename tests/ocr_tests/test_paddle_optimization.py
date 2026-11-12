@@ -47,6 +47,10 @@ class PaddleOptimizationTests(unittest.TestCase):
             {"text": "子成林", "bbox": {"x": 615}}], box), 0)
         self.assertEqual(pipeline.page_title_margin([
             {"text": "杜氏", "bbox": {"x": 300}}], box), 0)
+        # Rectification can move the title token's left edge just outside the
+        # strip while its center remains inside it.
+        self.assertEqual(pipeline.page_title_margin([
+            {"text": "杜陵杜氏", "bbox": {"x": 604, "width": 30}}], box), 45)
 
     def test_split_name_columns_are_reused_in_vertical_order(self):
         columns = [
