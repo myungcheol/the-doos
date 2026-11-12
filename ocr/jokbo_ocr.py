@@ -803,7 +803,7 @@ def extract_text_and_confidence(
 
 def build_column_records(
     tokens: list[dict[str, Any]], regions: list[tuple[int, int]], band: np.ndarray,
-    row_id: str, page_x: int, page_y: int, row_height: int, columns_dir: Path,
+    row_id: str, page_x: int, page_y: int, row_height: int,
 ) -> list[dict[str, Any]]:
     """Map vertical OCR lines to OpenCV-projected column areas."""
     grouped: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
@@ -854,8 +854,6 @@ def build_column_records(
         else:
             crop_left = max(0, item["left"] - 3)
             crop_right = min(band.shape[1], item["right"] + 3)
-        image_file = columns_dir / f"{row_id}_col_{order:02d}.png"
-        cv2.imwrite(str(image_file), band[:, crop_left:crop_right])
         records.append({
             "column_id": f"{row_id}_col_{order:02d}",
             "row_id": row_id,
@@ -874,7 +872,6 @@ def build_column_records(
             "text": item["text"],
             "normalized_hanzi": clean_hanzi_text(item["text"]),
             "mean_confidence": item["mean_confidence"],
-            "image_file": str(image_file),
             "ocr_status": "from_row_ocr",
             "token_boxes": [
                 {"text": token["text"], "bbox": {
@@ -1112,9 +1109,7 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
     table = image[y:y+height, x:x+width]
     boundaries = detect_horizontal_boundaries(table, args.rows)
     page_dir = output_dir / path.stem
-    rows_dir, columns_dir = page_dir / "rows", page_dir / "columns"
-    rows_dir.mkdir(parents=True, exist_ok=True)
-    columns_dir.mkdir(parents=True, exist_ok=True)
+    page_dir.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(page_dir / "table_roi.jpg"), table)
 
     debug_image = table.copy()
@@ -1133,17 +1128,15 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         if band.size == 0:
             continue
         row_id = f"{path.stem}_row_{row_index:02d}"
-        cv2.imwrite(str(rows_dir / f"{row_id}.png"), band)
-        band_text, band_confidence, prepared, tokens = extract_text_and_confidence(
+        band_text, band_confidence, _, tokens = extract_text_and_confidence(
             band, args.scale, args.preprocess, paddle_ocr=paddle_ocr,
         )
         paddle_metrics["row_inferences"] += 1
-        cv2.imwrite(str(rows_dir / f"{row_id}_ocr_input.png"), prepared)
 
         regions = detect_vertical_columns(band, args.column_ink_ratio, args.min_column_width)
         tokens, calls = recover_missing_column_tokens(band, regions, tokens, args, paddle_ocr)
         paddle_metrics["column_fallback_inferences"] += calls
-        columns = build_column_records(tokens, regions, band, row_id, x, y+top, bottom-top, columns_dir)
+        columns = build_column_records(tokens, regions, band, row_id, x, y+top, bottom-top)
         for left, right in regions:
             cv2.rectangle(debug_image, (left, top), (right, bottom), (255, 0, 0), 1)
 
@@ -1172,10 +1165,7 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
         )
         for region_index, geometry in enumerate(name_regions, start=1):
             matched_column = find_matching_ocr_column(geometry, columns)
-            name_crop = crop_name_region(image, geometry["bbox"], args.name_crop_padding)
             source_column_id = f"{row_id}_name_region_{region_index:02d}"
-            image_file_path = columns_dir / f"{source_column_id}.png"
-            image_file = str(image_file_path)
             ocr_variants: list[dict[str, Any]] = []
             best_text = ""
 
@@ -1217,7 +1207,6 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
                         "mean_confidence": row_confidence,
                         "character_count": len(row_text), "status": "reference_only",
                     })
-            cv2.imwrite(str(image_file_path), name_crop)
             usable_variants = [v for v in ocr_variants if v.get("hanja_text")]
             ranked_variants = sorted(
                 usable_variants,
@@ -1242,7 +1231,6 @@ def ocr_one_image(path: Path, args: argparse.Namespace, output_dir: Path, paddle
                     or ([(matched_column or {})["column_id"]] if matched_column else []),
                 "source_row_id": row_id,
                 "bbox": geometry["bbox"],
-                "image_file": image_file,
                 "ocr_variants": ocr_variants,
                 "ranked_ocr_hypotheses": [
                     {"text": v["hanja_text"], "variant": v["variant"], "confidence": v.get("mean_confidence")}

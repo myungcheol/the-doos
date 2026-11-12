@@ -94,9 +94,14 @@ class OcrStorageTests(unittest.TestCase):
                              ["001/page.json"])
             self.assertFalse((output / "001/ocr.txt").exists())
             self.assertFalse(list(output.glob("*.csv")))
+            self.assertFalse((output / "001/rows").exists())
+            self.assertFalse((output / "001/columns").exists())
             page = load_ocr_output(output)[0][0]
             self.assertEqual(page["image_size"], {"width": 100, "height": 120})
             self.assertNotIn("rule_mentions", page["rows"][0])
+            self.assertTrue(all("image_file" not in column
+                                for row in page["rows"] for column in row.get("columns", [])))
+            self.assertTrue(all("image_file" not in person for person in page["people_candidates"]))
 
 
 if __name__ == "__main__":

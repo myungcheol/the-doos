@@ -284,9 +284,7 @@ output/
 └── 001/                              # 원본 파일 stem별 페이지 폴더
     ├── table_roi.jpg
     ├── layout_debug.jpg
-    ├── page.json                    # 이 페이지의 OCR 원본·행·열·인물·관계 후보
-    ├── rows/
-    └── columns/
+    └── page.json                    # 이 페이지의 OCR 원본·행·열·인물·관계 후보
 ```
 
 주요 파일:
@@ -296,7 +294,8 @@ output/
 | `001/page.json` | 원본 이미지 경로·크기, 표 ROI, OCR 엔진·모델·성능, 행·열·토큰 bbox, 인물·관계 후보를 저장하는 페이지별 단일 JSON |
 | `table_roi.jpg` | 검출된 족보 표 영역 이미지 |
 | `layout_debug.jpg` | 행/레이아웃/인명 후보 검출 결과를 확인하기 위한 디버그 이미지 |
-| `rows/`, `columns/` | 분할된 행 및 세로 열 이미지 |
+
+행·열·인명 crop은 OCR 중 메모리에서 처리하며 별도 `rows/`, `columns/` 이미지 폴더를 만들지 않습니다. OCR 근거는 원본 이미지 경로와 `page.json`의 행·열·토큰·인명 bbox, 원문, confidence로 보존합니다. 이전 버전이 만든 폴더는 자동 삭제하지 않습니다.
 
 `page.json`의 `schema_version`은 `1`입니다. `rows`에는 행·열 OCR, `people_candidates`에는 인물 후보, `relationship_candidates`에는 관계 후보가 들어갑니다. OCR 원문과 성능 정보도 이 파일에 있으므로 별도 CSV나 `ocr.txt`를 만들지 않습니다. `review_state.json`과 `reviewed_*.json`은 검수 상태·검수 결과를 저장하므로 루트에 별도로 유지합니다.
 
@@ -308,7 +307,6 @@ output/
 - `ocr_variants`, `ranked_ocr_hypotheses`: OCR 전처리/모델별 후보 결과
 - `ocr_confidence`: OCR 엔진의 confidence 점수
 - `bbox`: 원본 페이지 기준 인명 영역 좌표
-- `image_file`: 인명 crop 이미지 경로
 - `source_row_id`, `source_column_id`: 해당 인물이 발견된 행/열 ID
 - `review_status`: 기본적으로 `needs_review`
 
@@ -400,7 +398,7 @@ python -m review.desktop_review output/
 
 **`raw_data` — 원본 OCR 및 근거**
 
-- `image`: 원본 이미지 경로, 인명 crop 경로, bbox
+- `image`: 원본 이미지 경로와 bbox. 구버전 OCR에 `image_file`이 있으면 호환을 위해 그대로 보존
 - `name_ocr`: 이름 OCR 원문, 정규화 후보, `子`/`女` 표식, confidence, bbox, OCR 대안 가설
 - `record_ocr`: 해당 인물에게 배정한 OCR 기록 전체, 행/열 ID, 추출 방식
 - `field_ocr`: 출생/사망/관직/배우자/묘소/자/호 관련 OCR 원문과 근거 열 및 bbox
@@ -425,7 +423,7 @@ python -m review.desktop_review output/
 
 날짜 변환은 `review/historical_dates.py`와 `sxtwl==2.0.7`을 사용합니다. 서기 날짜는 **역산 그레고리력**으로 표시하며, `sxtwl`의 중국 천문 역법 모델을 사용하므로 시대·지역에 따라 실제 고려/조선의 역일과 다를 가능성을 검수해야 합니다. 고려 왕 원년은 [국사편찬위원회 『고려사절요』 목차](https://db.history.go.kr/goryeo/compareViewer.do?levelId=kj_%24s04), 조선 왕대는 [국사편찬위원회 조선왕조실록](https://sillok.history.go.kr/main.do), 개보·순화 대응 연도는 [국사편찬위원회 사료](https://db.history.go.kr/id/sy_002r_0010_0190_0060)를 참고했습니다. `sxtwl` 날짜는 [『고려사』 975년 음력 10월 26일](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=&levelType=&parentId=kr_002r_0570_0010&types=r)과 [1048년 음력 정월 초하루](https://db.history.go.kr/goryeo/itemLevelKrList.do?itemId=kr&parentId=kr_007r_0040_0010&types=r)의 양력 날짜와 대조했습니다. 왕/연호 목록은 검증된 항목만 제공하며 전체 연호 목록은 아닙니다.
 
-원본 이미지 바이너리를 JSON 안에 넣지는 않습니다. 경로와 bbox로 참조합니다. 이미지 파일을 이동하거나 다른 컴퓨터에서 검수할 때는 `source_image`와 `image_file` 경로가 유효하도록 유지해야 합니다.
+원본 이미지 바이너리를 JSON 안에 넣지는 않습니다. `source_image` 경로와 원본 좌표 bbox로 참조합니다. 이미지 파일을 이동하거나 다른 컴퓨터에서 검수할 때는 `source_image` 경로가 유효하도록 유지해야 합니다. 구버전 OCR 결과의 `image_file`은 읽기 호환을 위해 내보내기에 남길 수 있지만 현재 파이프라인은 crop 파일을 새로 만들지 않습니다.
 
 ### 8.2 `子` / `女` 표식 보존
 
