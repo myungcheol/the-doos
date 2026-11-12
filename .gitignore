@@ -16,6 +16,8 @@ data/exports/*.bak
 data/exports/import.sql
 output*/
 .venv/
+jokbo-assets/
+*.dump
 
 # python
 __pycache__/

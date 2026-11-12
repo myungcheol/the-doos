@@ -1389,6 +1389,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="LLM-free jokbo OCR using PaddleOCR with rule-based genealogy extraction.")
     parser.add_argument("inputs", nargs="+", help="Input image files or directories")
     parser.add_argument("-o", "--output", default="jokbo-output", help="Output directory")
+    parser.add_argument("--storage", choices=["json", "postgres"], default="json", help="OCR 저장 방식")
+    parser.add_argument("--edition", default="jokbo-1987", help="PostgreSQL 판본 ID")
+    parser.add_argument("--publication-year", type=int, default=1987, help="PostgreSQL 판본 발행연도")
     parser.add_argument("--paddle-lang", default="chinese_cht", help="PaddleOCR language; default chinese_cht (Traditional Chinese)")
     parser.add_argument("--paddle-version", choices=["PP-OCRv5", "PP-OCRv4"], default="PP-OCRv5",
                         help="PaddleOCR model family; PP-OCRv5 is recommended for Traditional Chinese and vertical text")
@@ -1440,8 +1443,16 @@ def main() -> int:
     output_dir = Path(args.output).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    store = None
     try:
-        load_ocr_output(output_dir)
+        if args.storage == "postgres":
+            from database.store import PostgresStore
+            store = PostgresStore()
+            # Fail before model initialization when the DB/schema is unavailable.
+            with store.connection() as conn:
+                conn.execute('SELECT version FROM jokbo.schema_version')
+        else:
+            load_ocr_output(output_dir)
         if len({image.stem for image in images}) != len(images):
             raise ValueError("같은 파일 stem을 가진 스캔은 서로 다른 출력 폴더에 저장하세요.")
         for image_path in images:
@@ -1452,11 +1463,19 @@ def main() -> int:
         return 2
 
     results = []
+    failures = 0
     for image_path in images:
         print(f"[OCR:paddleocr] {image_path}")
         try:
             result = ocr_one_image(image_path, args, output_dir, paddle_ocr)
-            save_page_result(output_dir, result)
+            if store:
+                imported = store.import_pages([result], {"edition_id": args.edition,
+                    "publication_year": args.publication_year}, output_dir)
+                print(f"[POSTGRES] {imported[0][1]}: {image_path.name}")
+                if imported[0][1] == "pending":
+                    print("[POSTGRES] 새 OCR은 대기 이력에 보관했습니다. 기존 활성 OCR과 검수는 유지됩니다.")
+            else:
+                save_page_result(output_dir, result)
             results.append(result)
             print(
                 f"[OK:paddleocr] {image_path.name}: {len(result['rows'])} rows, "
@@ -1480,21 +1499,23 @@ def main() -> int:
                 f"fallback_calls={metrics.get('name_fallback_inferences', 0)})"
             )
         except Exception as exc:
+            failures += 1
             print(f"[ERROR:paddleocr] {image_path}: {exc}", file=sys.stderr)
 
     if not results:
-        print("[ERROR] No pages were processed; existing page JSON files were left unchanged.", file=sys.stderr)
+        print("[ERROR] No pages were saved to PostgreSQL." if store else
+              "[ERROR] No pages were processed; existing page JSON files were left unchanged.", file=sys.stderr)
         return 1
     try:
-        _, _, _, warnings = load_ocr_output(output_dir)
+        _, _, _, warnings = load_ocr_output(output_dir) if not store else ([], [], [], [])
         for warning in warnings:
             print(f"[WARN] {warning}", file=sys.stderr)
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"[ERROR] OCR output could not be loaded: {exc}", file=sys.stderr)
         return 2
 
-    print(f"\nDone. No LLM/API was used. Results: {output_dir.resolve()}")
-    return 0
+    print(f"\nDone. No LLM/API was used. Results: {'PostgreSQL' if store else output_dir.resolve()}")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

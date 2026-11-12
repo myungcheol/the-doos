@@ -189,12 +189,12 @@ def get_page_image(page_result: dict[str, Any], page_dir: str) -> tuple[np.ndarr
     subtracted while drawing / added after clicks.
     """
     page_dir = Path(page_dir)
-    source = Path(str(page_result.get("source_image", ""))).expanduser()
+    source = Path(str(page_result.get("asset_path") or page_result.get("source_image", ""))).expanduser()
     if source.exists():
         image = cv2.imread(str(source), cv2.IMREAD_COLOR)
         if image is not None:
             return image, (0, 0), str(source)
-    roi_image = cv2.imread(str(page_dir / "table_roi.jpg"), cv2.IMREAD_COLOR)
+    roi_image = cv2.imread(str(page_result.get("roi_asset_path") or page_dir / "table_roi.jpg"), cv2.IMREAD_COLOR)
     if roi_image is not None:
         roi = page_result.get("table_roi") or {}
         return roi_image, (int(roi.get("x", 0)), int(roi.get("y", 0))), "저장된 table_roi.jpg"

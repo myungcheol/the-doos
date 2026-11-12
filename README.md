@@ -38,7 +38,7 @@
 - **PaddleOCR 3.x**: 세로쓰기 한자 본문과 인명 OCR
 - **Python 규칙**: 인명 후보 정리, 부모·자녀 관계 후보, 인물별 기록 영역과 정보 초안 추출
 - **PySide6**: 원본 스캔을 보면서 인명과 관계를 검수하는 데스크톱 UI
-- **JSON**: OCR 원문, 검수 정보, 판본별 출처, 영구 인물 ID, 관계를 저장
+- **JSON / PostgreSQL**: 파일 방식 또는 DB 방식으로 OCR 근거·검수 상태·영구 인물 ID·가족관계를 저장
 
 전체 흐름은 다음과 같습니다.
 
@@ -196,6 +196,38 @@ pip install -r requirements-desktop.txt
 
 이 파일은 공통 패키지, PySide6, 음력 날짜 변환용 `sxtwl`을 설치합니다. 그래픽 데스크톱 환경이 필요합니다. 선택 영역 OCR을 사용하려면 3.3절의 PaddleOCR도 설치해야 합니다.
 
+### 3.5 PostgreSQL 설치와 전환
+
+파일 방식은 그대로 사용할 수 있습니다. DB 방식을 사용할 때는 PostgreSQL 서버와 빈 UTF-8 데이터베이스를 준비합니다. PostgreSQL 17에서 통합 테스트했으며, 접속 계정은 처음 `jokbo` 스키마를 생성할 권한이 필요합니다.
+
+```bash
+pip install -r requirements-postgres.txt
+# 로컬 PostgreSQL에서 현재 OS 사용자의 접속이 설정된 경우
+createdb --encoding=UTF8 jokbo
+export JOKBO_DATABASE_URL='postgresql:///jokbo'
+export JOKBO_ASSET_ROOT="$PWD/jokbo-assets"
+python -m database init
+
+# 기존 OCR·검수 상태·UUID·이미지를 함께 가져오기
+python -m database import output/
+# DB에서 읽고 DB에 저장하는 검수 UI
+python -m review.desktop_review --storage postgres --edition jokbo-1987
+```
+
+원격 DB는 `JOKBO_DATABASE_URL`에 해당 접속 문자열을 지정합니다. 비밀번호는 코드·저장소에 넣지 않고 PostgreSQL 접속 설정이나 환경변수로 관리합니다. `JOKBO_ASSET_ROOT`는 모든 OCR/검수 프로세스가 같은 파일 내용을 볼 수 있는 영구 디렉터리입니다. 여러 컴퓨터에서는 공유 파일시스템을 같은 내용으로 마운트하고 각 컴퓨터의 경로를 지정하세요. DB에 로컬 절대 경로만 저장하는 방식은 사용하지 않습니다.
+
+`import`는 새 `page.json`과 구형 출력 모두 읽고, `review_state.json`의 UUID·수기 수정·추가 인물·이어진 기록·알 수 없는 확장 필드를 보존합니다. 원래 파일과 루트 `person_registry.json`은 변경하지 않습니다. **이미 사용한 동일 JSON 가져오기는 반복할 수 있지만, 변경된 JSON 검수 상태로 기존 DB 검수를 덮어쓰지는 않습니다.** 읽기 경고, 없는 이미지, 중복 후보 ID, 잘못된 관계가 있으면 해당 가져오기 트랜잭션 전체를 취소합니다.
+
+새 OCR을 JSON 없이 DB에 직접 저장하려면:
+
+```bash
+python -m ocr.jokbo_ocr scan/001.jpg --rows 6 \
+  --storage postgres --edition jokbo-1987 --publication-year 1987 \
+  --output /tmp/jokbo-work
+```
+
+이때 `--output`은 ROI·레이아웃 디버그 이미지의 작업 폴더이며 새 `page.json`은 만들지 않습니다. 원본과 ROI는 DB가 참조하는 관리 저장소에 복사됩니다. 페이지별 DB 저장이 끝난 뒤에만 성공을 보고하며 일부 페이지라도 실패하면 종료 코드는 1입니다. 이미 있는 JSON 파일은 갱신하지 않습니다. 저장 규칙과 재OCR 보호는 8.5절을 따릅니다.
+
 ## 4. OCR 실행
 
 프로젝트 폴더에서 `ocr.jokbo_ocr` 모듈을 실행합니다.
@@ -253,6 +285,9 @@ python -m ocr.jokbo_ocr --help
 |---|---:|---|
 | `inputs` | 필수 | 이미지 파일 또는 이미지 디렉터리. 여러 경로 지정 가능 |
 | `--output`, `-o` | `jokbo-output` | OCR 결과를 저장할 디렉터리 |
+| `--storage` | `json` | `postgres`를 지정하면 OCR을 DB에 직접 저장 |
+| `--edition` | `jokbo-1987` | DB 판본 ID. 다른 판본은 다른 ID 사용 |
+| `--publication-year` | `1987` | DB에 처음 등록하는 판본의 발행연도 |
 | `--paddle-lang` | `chinese_cht` | PaddleOCR 언어 코드 |
 | `--paddle-version` | `PP-OCRv5` | `PP-OCRv5` 또는 `PP-OCRv4` |
 | `--paddle-device` | `cpu` | 예: `cpu`, `gpu:0` |
@@ -296,7 +331,7 @@ python -m ocr.jokbo_ocr scan/001.jpg --geometry-correction none --scale 3 --outp
 
 ## 5. OCR 결과 파일
 
-OCR 실행 결과의 기본 구조:
+JSON 방식(`--storage json`, 기본값)의 OCR 실행 결과 구조:
 
 ```text
 output/
@@ -487,35 +522,74 @@ PER_<UUID>
 
 데스크톱 앱은 기존 `review_state.json`의 `person_uid_map`, 판본 메타데이터와 출처 정보를 읽고 보존합니다. 기본 판본 메타데이터는 `edition_id=jokbo-1987`, `publication_year=1987`입니다. 현재 화면에서는 판본 정보 수정, 공용 `person_registry.json` 갱신, 개정판의 동일인 UID 선택을 지원하지 않습니다. 서로 다른 판본의 동명이인을 자동 병합하지 않으며, 판본 간 동일인 연결에는 별도 검수 기능이 필요합니다.
 
-### 8.5 권장 데이터베이스 구조
+### 8.5 PostgreSQL 저장 규칙과 구현
 
-프로젝트 자체는 DB에 직접 저장하지 않고 JSON을 내보냅니다. 향후 DB로 옮길 때는 아래처럼 정규화하는 방식을 권장합니다.
+구현은 `database/schema.sql`, `database/store.py`에 있습니다. `jokbo` 스키마에 **업무 테이블 9개와 스키마 버전 테이블 1개**, 총 10개를 생성합니다. JSONB는 중첩 배열과 객체를 저장할 수 있으므로 OCR 토큰마다 테이블을 만들 필요는 없습니다. 검색·관계 무결성에 필요한 값은 SQL 열로 분리합니다. JSONB는 문자열 내용과 배열 순서를 보존하지만 JSON 파일의 공백·객체 키 순서는 보존하지 않습니다. [PostgreSQL JSON 문서](https://www.postgresql.org/docs/current/datatype-json.html)
 
-**Person**
+| 테이블 | 저장하는 내용 |
+|---|---|
+| `schema_version` | 스키마 버전. 현재 1이며 향후 변경은 명시적 마이그레이션으로 처리 |
+| `editions` | 판본 ID, 발행연도·권 등 `meta`, 현재 검수 `state`와 충돌 검사용 `revision` |
+| `assets` | 이미지 SHA-256 `id`, 저장소 상대 `path`, 바이트 `size` |
+| `pages` | 판본 내 스캔 페이지 이름. `(edition_id, name)`으로 유일성 보장 |
+| `ocr_runs` | 페이지별 OCR 실행의 전체 `raw` JSONB, 이미지 FK, digest, 생성 시각, 활성 여부 |
+| `persons` | 영구 `PER_<UUID>`와 생성 시각. 동명이인을 이름으로 자동 병합하지 않음 |
+| `occurrences` | 인물의 출처별 `source`, `raw`, `reviewed`, 이름·상태, 페이지·OCR 실행·인물 FK. 이어진 기록도 별도 행 |
+| `parent_child` | `parent_id`, `child_id`, `kind`, `status`, 출처 포함 `evidence`. 한 부모에 여러 행 |
+| `partners` | `person_id`, 선택적 `partner_id`, `kind`, `status`, 원문·출처 포함 `record`. 부인·첩별 여러 행 |
+| `reviews` | 판본별 검수 버전, 전체 상태 스냅샷, 저장 사유와 시각. 이전 버전 보존 |
 
-- `person_uid` — Primary Key
-- 검수된 이름, 성별 표식, 생몰, 관직, 자/호, 메모 등
+```mermaid
+erDiagram
+    editions ||--o{ pages : contains
+    pages ||--o{ ocr_runs : evidence
+    assets o|--o{ ocr_runs : scan_and_roi
+    ocr_runs ||--o{ occurrences : source
+    persons ||--o{ occurrences : appears
+    persons ||--o{ parent_child : parent_or_child
+    persons ||--o{ partners : person_or_partner
+    editions ||--o{ reviews : history
+```
 
-**PersonSourceOccurrence**
+**필드명:** DB에서는 `person_uid → persons.id`, `parent_person_uid → parent_id`, `child_person_uid → child_id`, `raw_data → raw`, `reviewed_data → reviewed`, `review_status → status`로 간결하게 씁니다. `occurrences.local_id`만 기존 페이지 후보 ID이며 외부 계보 연결에는 사용하지 않습니다. 기존 JSON 키나 OCR 근거 내부의 키는 변경하지 않습니다. 덕분에 구형 파일과 검수 프로그램의 좌표·필드 해석이 유지됩니다. 생몰 날짜처럼 불확실성·역법·범위·근거가 필요한 항목은 `reviewed` JSONB에 현재 구조로 남깁니다.
 
-- `source_occurrence_id` — Primary Key
-- `person_uid` — Person Foreign Key
-- 판본/연도/권/인쇄 쪽수/스캔 파일/행/열/열 내 순번/bbox
-- 원본 OCR 및 이미지 참조
+**원본과 검수:** `ocr_runs.raw`는 입력 OCR 전체를 보관합니다. 이름의 `子/女`, 원본/보정 bbox, polygon, 변환 행렬, confidence, 후보와 모든 추가 필드를 유지합니다. 검수 저장은 `editions.state`와 정규화된 검색용 테이블을 같은 트랜잭션으로 갱신하고 `reviews`에 이력을 추가합니다. 다른 판본의 수기 값을 덮어쓰지 않도록 이름·생몰·관직은 인물의 **출처별 reviewed**에 저장합니다. 판본 간 상충하는 기록을 하나의 권위 있는 인물 값으로 자동 합치지 않습니다.
 
-**ParentChildRelationship**
+**가족관계:** `A→B`, `A→C`, `A→D`는 `parent_child`의 세 행입니다. 부모 수도 고정하지 않아 아버지·어머니·양부모를 별도 연결할 수 있습니다. `kind`는 `unspecified`, `biological`, `adoptive`이며 OCR의 위치 추정은 기본적으로 `unspecified`입니다. 기존 관계 JSON에 `parentage_type`이 명시되면 보존합니다. `confirmed`, `needs_review`, `rejected`를 구분하며 이름·위치·confidence로 관계를 자동 확정하지 않습니다. 같은 판본에서 같은 부모·자녀·종류의 중복, 자기 자신과의 관계, 판본을 가로지르는 확정 계보의 순환을 차단합니다. `record_order`, `child_order`, 미확정 `birth_order`는 근거 JSON에 그대로 남깁니다.
 
-- 관계 식별자
-- `parent_person_uid` — Person Foreign Key
-- `child_person_uid` — Person Foreign Key
-- `review_status`, 관계 근거, 출처
+배우자는 `wife`, `concubine`, `husband`, `other`별로 여러 행을 저장합니다. 배우자의 실명이나 동일인이 아직 확인되지 않았다면 `partner_id=NULL`로 두고 원문을 보관합니다. 검수 UI의 배우자 배열에 `person_uid`를 명시하면 **이미 DB에 있는 인물**과 연결합니다. 배우자 이름 문자열로 인물을 자동 생성하거나, 배우자 관계에서 자녀의 어머니를 자동 추론하지 않습니다. 자녀의 모계는 별도의 부모·자녀 연결이 필요합니다.
 
-**PersonSpouse / SpouseRecord** (DB 구현 시 선택)
+**이미지:** 원본 스캔은 다시 인코딩하지 않고 바이트 그대로 `JOKBO_ASSET_ROOT/<해시 앞 2자리>/<전체 SHA-256>`에 복사합니다. 같은 내용은 한 번만 보관하고 DB에는 상대 위치와 해시·크기를 저장합니다. `table_roi.jpg`도 원본 좌표 fallback을 위해 보관합니다. 원본이 이미 없는 구형 출력은 ROI와 원본 오프셋이 있어야 가져올 수 있으며 원본 전체 페이지가 복원되는 것은 아닙니다. `layout_debug.jpg`와 재생성 가능한 행·열 crop은 관리 저장소에 복사하지 않습니다. 디버그 이미지는 작업 폴더에 남습니다. DB 저장 실패 시 완성된 이미지 객체만 남을 수 있고 자동 삭제하지 않습니다.
 
-- 한 인물에게 여러 배우자 기록을 연결
-- 부인/첩/기타 유형, 원문, 검수 상태 저장
+**재입력과 충돌:** 같은 OCR payload는 중복 저장하지 않습니다(작업 출력 경로 제외). 다른 OCR 결과는 새 `ocr_runs` 행에 **pending**으로 보관하며 기존 활성 OCR·검수·UID는 유지합니다. 새 후보 번호와 기존 인물을 자동 대응시키면 수기 수정이 다른 사람에게 붙을 수 있기 때문입니다. `python -m database runs --edition jokbo-1987`로 확인할 수 있습니다. 현재는 pending OCR을 기존 검수와 대조해 활성화하는 UI/마이그레이션은 지원하지 않습니다. 새 페이지 추가는 즉시 사용할 수 있습니다. 같은 판본 메타데이터의 조용한 변경이나 새 판본으로 위장한 재OCR 적용은 피하세요.
 
-부모 한 명과 자녀 여러 명은 여러 `ParentChildRelationship` 레코드로 나타냅니다. 예를 들어 `A→B`, `A→C`, `A→D`는 각각 별도 행입니다.
+DB 검수기는 JSON 캐시를 경유하지 않고 DB에서 읽고 저장합니다. 화면을 연 시점의 `revision`이 달라지면 저장을 거절하며, **페이지 다시 검색**으로 다시 불러옵니다. 이때 미저장 수정은 별도로 기록해 두세요. 스키마·관계 테이블을 SQL로 직접 편집하면 검수 상태와 이력이 어긋나므로 애플리케이션 저장 경로를 사용합니다. 쓰기는 트랜잭션 잠금으로 직렬화하며, 현재 UI는 한 판본 전체를 읽고 저장 때 해당 판본의 검색용 행을 재구성합니다. 대규모 다중 사용자 서비스용 페이지 단위 저장·권한 관리·연결 풀은 아직 구현하지 않았습니다.
+
+#### 조상·후손·공통 조상 조회
+
+```bash
+# 정확히 일치하는 이름으로 UID·출처 판본·검수 상태 확인
+python -m database find '검수한이름'
+python -m database ancestors PER_실제UUID --max-depth 100
+python -m database descendants PER_실제UUID --max-depth 100
+python -m database common-ancestors PER_첫번째UUID PER_두번째UUID
+# 생물학적 부모 관계로 별도 확인된 연결만 조회
+python -m database ancestors PER_실제UUID --kind biological
+```
+
+부모/자녀 양방향 인덱스와 [재귀 CTE](https://www.postgresql.org/docs/current/queries-with.html)를 사용합니다. **확정 관계만** 탐색하며 배우자 연결을 계보로 따라가지 않습니다. 유형 생략은 세 종류의 확정 부모 관계를 모두 포함하므로 생물학적 혈통만을 의미하지 않습니다. `depth`는 기준 인물에서의 최소 세대 거리입니다. 공통 조상은 두 인물까지의 거리와 함께 가까운 순으로 모두 반환하며, 한 사람이 다른 사람의 조상이면 본인도 거리 0으로 포함됩니다. 복수 경로와 복수 공통 조상을 지원합니다. 기본 깊이 100, 최대 1000이며 그보다 먼 조상·후손은 결과에 포함되지 않습니다. 전체 그래프 탐색이 필요한 경우 깊이 제한을 확인하세요.
+
+#### 백업·이동·복구
+
+```bash
+# 기존 디렉터리 덮어쓰기 금지: 새 디렉터리로 내보내기
+python -m database export /tmp/jokbo-export-new --edition jokbo-1987
+python -m database verify-assets
+# 전체 DB(대기 OCR·모든 검수 이력 포함) 백업
+pg_dump --format=custom "$JOKBO_DATABASE_URL" > jokbo-backup.dump
+```
+
+`export`는 활성 OCR·현재 검수·관리 이미지를 기존 파일 검수기로 읽을 수 있게 내보냅니다. **전체 이력 백업은 `pg_dump`와 이미지 저장소 백업을 함께** 해야 합니다. 이미지 객체는 불변·추가 전용이므로 DB dump 후 저장소를 복사하면 dump가 참조한 이미지를 포함할 수 있습니다(동시 삭제 금지). 복구 후 `verify-assets`로 누락·크기·SHA-256을 검사합니다. 이미지 저장소의 이동은 `JOKBO_ASSET_ROOT` 변경으로 대응할 수 있습니다. S3 업로드·이미지 자동 정리 기능은 구현하지 않았습니다.
 
 ### 8.6 페이지를 넘어 이어지는 원문 기록
 
@@ -613,6 +687,17 @@ python -m unittest discover -s tests -v
 - 인물 정보 OCR 키워드 기반 초안 추출
 - 이어진 기록의 부분 행·다중 페이지 연결, 원본 좌표/검수값 보존, 연결 해제와 이전 결과 복원
 - 세로로 분리된 글자 획으로 인한 인명 검출 누락 및 기존 페이지 본문 오탐 방지
+- 이미지 해시 복사·손상 검출, DB 모드 CLI 저장 분기, 관리 이미지의 원본/ROI 좌표
+
+PostgreSQL 통합 테스트는 별도 테스트 DB를 명시했을 때만 실행합니다. 없으면 해당 테스트는 skip입니다. 테스트마다 합성 데이터와 별도 판본을 생성하며 테스트 DB에 남을 수 있으므로 실제 작업 DB를 지정하지 마세요.
+
+```bash
+JOKBO_TEST_DATABASE_URL='postgresql:///jokbo_test' \
+  python -m unittest discover -s tests -v
+python -m compileall -q ocr review database tests
+```
+
+실제 PostgreSQL 테스트는 JSON 이관·반복 가져오기·UID 보존·pending 재OCR·다중 부인/첩·교차 판본 관계·조상/후손/공통 조상·순환/중복 차단·트랜잭션 취소·동시 저장 충돌·이어진 기록·DB 검수기의 미선택 첫 화면과 저장을 확인합니다.
 
 테스트는 단위 로직을 확인하며 실제 PaddleOCR 모델 추론이나 데스크톱 UI의 수동 조작 검증과는 다릅니다. OCR 엔진을 실제로 실행하는 검증은 사용자의 설치 환경에서 수행해야 합니다.
 
@@ -655,7 +740,7 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 4. **자동 부모·자녀 관계는 판면 규칙의 추정 결과입니다.** 검수 전에는 확정 계보로 사용하지 마세요.
 5. **배우자 유형은 원문 확인이 필요합니다.** 배우자 키워드가 검출되었다고 부인/첩 구분이 자동 확정되는 것은 아닙니다.
 6. **개정판의 동일인 연결은 사람이 판단해야 합니다.** 이름이 같다는 이유로 `person_uid`를 자동 병합하지 않습니다.
-7. **DB 저장은 아직 구현하지 않았습니다.** 현재는 검수된 JSON을 내보내며 공용 ID 레지스트리는 자동 갱신하지 않습니다.
+7. **PostgreSQL은 선택 저장 방식입니다.** 3.5·8.5절에 따라 전환하며, pending OCR의 검수 대응·활성화와 판본 간 동일인 선택 UI는 아직 지원하지 않습니다. 공용 파일 레지스트리는 자동 갱신하지 않습니다.
 8. **UI는 로컬 검수용입니다.** 검수 파일과 스캔의 접근 권한을 관리하세요.
 
 족보에는 생존 인물이나 가족에 관한 정보가 포함될 수 있습니다. 원본 이미지와 검수 결과의 접근 권한을 관리하고 외부 공개 전에 자료 권리 및 개인정보 문제를 확인하세요.
@@ -683,12 +768,17 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 | 2026-11-10 | 검수 UI를 PySide6 데스크톱 앱으로 통일하고 웹 UI 의존성을 제거 |
 | 2026-11-11 | 선남후녀와 왼쪽으로 이어지는 자녀 묶음을 관계 후보에 반영하고, 기존 OCR의 관계만 백업 후 재계산하는 명령 추가 |
 | 2026-11-12 | 행·열 분할 전 회전·원근 보정과 원본 좌표 역변환 추가, 기존 OCR 확대와 검수 근거 보존 |
+| 2026-11-12 | PostgreSQL 직접 OCR·검수 저장, JSON 이관·내보내기, 이미지 해시 저장소, 다중 관계와 계보 조회 추가 |
 
 ## 16. 프로젝트 파일 구성
 
 ```text
 the-doos/
 ├── README.md
+├── database/
+│   ├── schema.sql             # PostgreSQL 10개 테이블·인덱스·순환 차단
+│   ├── store.py               # 트랜잭션·이관·이미지·검수·계보 탐색
+│   └── __main__.py            # python -m database 관리 CLI
 ├── ocr/
 │   ├── jokbo_ocr.py            # OCR CLI, 레이아웃, 인명 및 관계 후보 처리
 │   ├── page_geometry.py        # 표 기울기·원근 보정과 원본 좌표 변환
@@ -704,10 +794,12 @@ the-doos/
 ├── requirements.txt             # 공통 의존성
 ├── requirements-paddle.txt      # PaddleOCR 의존성
 ├── requirements-desktop.txt     # PySide6 검수 UI 의존성
+├── requirements-postgres.txt    # 선택 DB 저장 방식의 psycopg 의존성
 ├── .gitignore
 └── tests/
     ├── ocr_tests/              # OCR 파이프라인·저장·관계 배치 테스트
-    └── review_tests/           # 데스크톱·검수 상태·인물 정보 테스트
+    ├── review_tests/           # 데스크톱·검수 상태·인물 정보 테스트
+    └── database_tests/         # 자산·DB 통합·동시 저장·계보 테스트
 ```
 
 
@@ -719,7 +811,7 @@ the-doos/
 
 - 이 프로젝트는 **1987년 발행 족보**의 스캔본을 출발점으로, 판본이 달라져도 재사용할 수 있는 인물·가족관계·출처 데이터를 만드는 로컬 도구입니다.
 - 입력 스캔은 저장소의 `scan/`에 있으며 `scan/001.jpg`는 작은 단위의 재현/확인에 적합합니다. `scan/`의 모든 파일을 테스트 목적으로 일괄 OCR하지 마세요.
-- **아직 구현된 데이터베이스 서비스는 없습니다.** 현재 영속적인 결과는 JSON과 인물 ID 레지스트리이며, 향후 DB 테이블 구조는 8.5절의 제안입니다.
+- **JSON과 선택적 PostgreSQL 저장을 지원합니다.** DB 서버는 따로 준비하며 3.5절에서 연결하고, 구현된 스키마와 운영 규칙은 8.5절을 따릅니다.
 - 이 저장소는 OCR/검수 앱 외에 과거 실험 파일을 포함할 수 있습니다. 현재 실행 진입점은 `ocr.jokbo_ocr`와 `review.desktop_review`입니다.
 
 ### 17.2 첫 실행 순서
@@ -758,6 +850,7 @@ python -m ocr.jokbo_ocr --help
 | PaddleOCR 결과 어댑터, 행 OCR 재사용, 인명 crop fallback | `ocr/jokbo_ocr.py`, `tests/ocr_tests/test_paddle_adapter.py`, `tests/ocr_tests/test_paddle_optimization.py` |
 | 부모·자녀 추론의 판면·선남후녀 규칙, 기존 관계 초안 재계산 | README §9, `ocr/jokbo_ocr.py`, `ocr/refresh_relationships.py`, `tests/ocr_tests/test_relationship_layout.py` |
 | 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr/storage.py`, `tests/ocr_tests/test_storage.py` |
+| PostgreSQL 스키마·JSON 이관·이미지 저장·계보 탐색 | `database/schema.sql`, `database/store.py`, `database/__main__.py`, README §8.5 |
 | 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `review/desktop_review.py`, `tests/review_tests/test_desktop.py` |
 | 검수 상태·내보내기·원본 이미지 로딩 | `review/core.py` |
 | 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review/extensions.py`, `tests/review_tests/test_extensions.py` |
@@ -780,6 +873,8 @@ python -m ocr.jokbo_ocr --help
 | 검수 작업 상태 | OCR 결과 폴더의 `review_state.json` | 수작업 정정, 확인/거절, 수동 관계 등. 백업 후 변경 |
 | 검수된 내보내기 | `reviewed_people.json`, `reviewed_relationships.json` | 사람이 확정/검토 중인 상태를 함께 보관 |
 | 공용 인물 레지스트리 | `person_registry.json` | 영구 인물 ID/출처. **저장소 루트에도 파일이 추적되고 있으므로 실험·실행만으로 변경된 내용을 무심코 커밋하지 말 것** |
+| DB 방식 원본·검수·관계·이력 | PostgreSQL `jokbo` 스키마 | JSON 방식과 선택 사용. DB 검수는 같은 폴더의 파일 상태와 자동 동기화하지 않음 |
+| DB 방식 관리 이미지 | `JOKBO_ASSET_ROOT` | 불변 해시 객체. DB dump와 함께 백업 |
 
 `review_state.json`과 `person_registry.json`을 초기화하면 UUID 연결과 검수 이력이 손상될 수 있습니다. 별도 테스트용 디렉터리를 사용하고, 실제 데이터 변경은 의도·백업·차이를 확인한 후 진행하세요. `.gitignore`가 모든 임시 파일이나 검수 산출물을 자동으로 제외한다고 가정하지 말고, 커밋 전에 `git status`로 검토하세요.
 

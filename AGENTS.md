@@ -6,7 +6,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 
 - Convert scanned traditional vertical Chinese-character Korean genealogy (`족보`) pages into structured, human-reviewed people, source occurrences, and parent/child edges. The source edition currently being reviewed was published in **1987**; future editions may be linked to the same people.
 - Runtime pipeline: **OpenCV + PaddleOCR + deterministic Python rules + PySide6 desktop review UI**. No LLM is required or desired in the OCR/extraction pipeline.
-- A database has **not** been implemented. The persisted workflow uses JSON and `person_registry.json`. Do not describe the future DB schema in README §8.5 as production code.
+- Persistence supports JSON and optional PostgreSQL (`database/`, README §8.5). PostgreSQL uses immutable OCR runs, source-specific raw/reviewed occurrences, typed relationships, revisioned review state, and a content-addressed image directory. Do not imply that pending-run activation, cross-edition identity selection UI, S3, or a multi-user service are implemented.
 - `scan/` contains many scanned pages. Prefer **one-page tests** with `scan/001.jpg`; do not process the entire corpus or publish additional scanned/person data without explicit need.
 
 ## Where to look first
@@ -20,6 +20,7 @@ This file is the **canonical repository-level instruction file** for coding agen
 | Cross-page continuations and recovered candidates | `review/extensions.py` |
 | Person-record OCR draft and evidence bounding boxes | `review/person_info.py` |
 | Stable `person_uid`, source occurrences, raw/reviewed records | `review/data_model.py` |
+| PostgreSQL schema, import/export, assets, revision conflicts, genealogy queries | `database/schema.sql`, `database/store.py`, `database/__main__.py` |
 | Tests and regression examples | `tests/` |
 | Setup, CLI, data formats, review steps, user workflow | README §§3–12, 17–19 |
 
@@ -36,6 +37,7 @@ Run package entry points with `python -m ocr.jokbo_ocr` and `python -m review.de
 7. **Review status:** preserve `needs_review`, `confirmed`, `rejected` semantics. OCR confidence is **not** calibrated probability.
 8. **Source provenance:** OCR field evidence must retain original-image coordinate bbox. A crop/ROI can have an offset; ensure coordinate transforms are correct and test both offset and no-offset paths. After page rectification, `bbox` is the enclosing source-image box, `source_polygon` retains the exact source corners, and `ocr_bbox` is for corrected-page layout calculations only. `page_geometry` stores both transforms. Keep `table_roi.jpg` an unwarped source crop so review fallback offsets remain valid. Never compare corrected boxes directly against source-coordinate selections.
 9. **이 판본의 자녀 기재 순서(선남후녀):** 아들을 먼저, 그다음 딸을 적는다. 출생 순서 `F1, M2, M3, F4`의 기재 순서는 `M2, M3, F1, F4`다. `record_order`는 검출된 자녀의 기재 순서, `child_order`는 같은 성별 표식 안의 기재 순서이며 전체 출생 순위가 아니다. 생년 등 별도 근거 없이 `birth_order`를 확정하지 않는다. `子/女`는 이름 OCR 또는 같은 이름 열의 원본 좌표 근거에서만 읽고, 표식이 없으면 성별 미상으로 둔다. `女` 뒤에는 사위 이름이 실릴 수 있으므로 원문을 딸의 실명으로 자동 확정하지 않는다.
+10. **PostgreSQL:** Keep OCR raw payloads and original image bytes; compact SQL column names must not rename evidence JSON keys. Re-OCR with changed evidence is a pending run, never an automatic replacement of reviewed candidates. Save review state, relational projections and audit snapshots in one transaction with revision conflict detection. Traverse confirmed parent/child edges only; preserve unspecified/biological/adoptive distinctions and separate wife/concubine records with nullable partner identity. Back up both DB and image assets; never auto-delete original files or orphan objects. Use a disposable `JOKBO_TEST_DATABASE_URL` for integration tests, never a user's active DB.
 
 ## Review UI expectations
 
@@ -58,6 +60,7 @@ Run package entry points with `python -m ocr.jokbo_ocr` and `python -m review.de
    python -m compileall -q ocr review tests
    ```
    For UI edits, manually verify in the desktop app if a display environment is available. Never claim actual GUI interaction or PaddleOCR inference testing when it was not performed.
+   For DB edits, also compile `database` and run integration tests against an explicitly isolated PostgreSQL DB via `JOKBO_TEST_DATABASE_URL`. Tests without this variable skip actual PostgreSQL checks.
 5. Verify input vs output and no data loss. Test on an isolated OCR output directory; `review_state.json` and `person_registry.json` are valuable state. **The repository already tracks a root `person_registry.json`** — do not accidentally commit incidental changes to it. Review `git status` and staged diffs before any push.
 6. Update the **single consolidated README.md** (especially workflow/code map and change history) for meaningful behavior changes; do not add versioned README clones. Follow **Development history** below to decide whether a WORKLOG entry is warranted.
 7. If the user requests GitHub updates, commit only intended files and push after tests; do not force-push, overwrite others' work, or claim success before verifying the remote branch/commit. Report precise tests and unverified areas. Include the resulting commit SHA in the worklog when practical; see the guidance below.

@@ -541,8 +541,11 @@ class ReviewWindow(QMainWindow):
               "spouse_text": "배우자 원문 (검수 초안)",
               "burial_text": "묘소", "biography_text": "인물 기록", "notes": "메모"}
 
-    def __init__(self, root=None):
+    def __init__(self, root=None, store=None, edition="jokbo-1987"):
         super().__init__()
+        self.store = store
+        self.edition_id = edition
+        self.db_revision = None
         self.setWindowTitle("족보 OCR 데스크톱 검수")
         self.resize(1500, 900)
         self.root = None
@@ -577,6 +580,7 @@ class ReviewWindow(QMainWindow):
         open_button = QPushButton("OCR 결과 폴더 열기")
         open_button.setObjectName("primary")
         open_button.clicked.connect(self.choose_folder)
+        open_button.setEnabled(store is None)
         top.addWidget(open_button)
         self.folder_label = QLabel("폴더를 선택하세요")
         self.folder_label.setObjectName("muted")
@@ -850,7 +854,9 @@ class ReviewWindow(QMainWindow):
         tabs.currentChanged.connect(self.render_scan)
         tabs.currentChanged.connect(lambda index: save.setVisible(index == 0))
         right_layout.addWidget(save)
-        if root:
+        if store is not None:
+            self.open_database()
+        elif root:
             self.open_folder(Path(root))
 
     def import_previous_page(self):
@@ -860,7 +866,10 @@ class ReviewWindow(QMainWindow):
         if not self.can_discard():
             return
         current = self.page_name
-        self.open_folder(self.root, current)
+        if self.store is not None:
+            self.open_database(current)
+        else:
+            self.open_folder(self.root, current)
 
     def import_page_data(self, rows_file, image_file):
         rows = read_json(rows_file, None)
@@ -1058,6 +1067,21 @@ class ReviewWindow(QMainWindow):
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self, "읽기 오류", str(exc))
             return
+        self.install_review_data(root, pages, people, rels, state, warnings, selected_page)
+
+    def open_database(self, selected_page=None):
+        try:
+            pages, people, rels, state, revision = self.store.load(self.edition_id)
+            if not pages:
+                raise ValueError("검수할 OCR 페이지가 없습니다. 먼저 OCR 또는 JSON 가져오기를 실행하세요.")
+        except (OSError, ValueError, RuntimeError) as exc:
+            QMessageBox.critical(self, "DB 읽기 오류", str(exc))
+            return
+        self.db_revision = revision
+        self.install_review_data(self.store.assets.root, pages, people, rels, state, [], selected_page)
+        self.folder_label.setText(f"PostgreSQL · {self.edition_id} · 검수 버전 {revision}")
+
+    def install_review_data(self, root, pages, people, rels, state, warnings, selected_page=None):
         self.root, self.page_results, self.base_people, self.base_rels, self.state = root, pages, people, rels, state
         for key, default in [("people_updates", {}), ("relationship_updates", {}), ("manual_relationships", []), ("person_uid_map", {}), ("edition", {"edition_id": "jokbo-1987", "publication_year": 1987, "volume": None}), ("page_metadata", {})]:
             self.state.setdefault(key, default)
@@ -1489,6 +1513,14 @@ class ReviewWindow(QMainWindow):
             self.rel_list.addItem(item)
 
     def persist(self):
+        if self.store is not None:
+            try:
+                self.db_revision = self.store.save_review(self.edition_id, self.state, self.db_revision)
+                self.folder_label.setText(f"PostgreSQL · {self.edition_id} · 검수 버전 {self.db_revision}")
+                return True
+            except (OSError, ValueError, RuntimeError) as exc:
+                QMessageBox.critical(self, "DB 저장 오류", str(exc))
+                return False
         if file_digest(self.root / "review_state.json") != self.state_digest:
             QMessageBox.warning(self, "저장 충돌", "다른 프로그램에서 검수 상태를 변경했습니다. 다시 열어 확인하세요.")
             return False
@@ -1677,11 +1709,22 @@ class ReviewWindow(QMainWindow):
 def main():
     parser = argparse.ArgumentParser(description="족보 OCR PySide6 검수 앱")
     parser.add_argument("output", nargs="?", help="OCR 결과 폴더")
+    parser.add_argument("--storage", choices=["json", "postgres"], default="json")
+    parser.add_argument("--edition", default="jokbo-1987", help="PostgreSQL 판본 ID")
     args = parser.parse_args()
+    store = None
+    if args.storage == "postgres":
+        from database.store import PostgresStore, DatabaseError
+        if args.output:
+            parser.error("DB 모드에서는 output 폴더를 지정하지 마세요.")
+        try:
+            store = PostgresStore()
+        except DatabaseError as exc:
+            parser.error(str(exc))
     app = QApplication(sys.argv[:1])
     if not configure_application(app):
         QMessageBox.warning(None, "글꼴 오류", "포함된 한글·한자 글꼴을 불러오지 못했습니다. assets/fonts 폴더를 확인하세요.")
-    window = ReviewWindow(args.output)
+    window = ReviewWindow(args.output, store=store, edition=args.edition)
     window.show()
     return app.exec()
 
