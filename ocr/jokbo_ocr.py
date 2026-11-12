@@ -894,27 +894,69 @@ def _person_center_x(person: dict[str, Any], table_x: int) -> float:
     return float(box.get("x", table_x)) + float(box.get("width", 0)) / 2.0 - table_x
 
 
+def _relationship_person(person: dict[str, Any]) -> bool:
+    """Exclude obvious prose from links, retaining the original OCR candidate."""
+    text = clean_hanzi_text(person.get("name_hanja_candidate") or "")
+    return (person.get("review_status") != "rejected" and len(text) <= 4
+            and text not in {"親族也", "所未詳", "未詳", "墓所未詳", "生卒未詳"})
+
+
+def _relationship_marker(person: dict[str, Any], row: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]]]:
+    """Read 子/女 from the name or a narrow, aligned OCR token above it.
+
+    A detached marker must be in the same name column, not an adjacent biography.
+    Evidence boxes stay in original-image coordinates (including ROI offsets).
+    """
+    evidence = []
+    text = person.get("raw_name_ocr") or person.get("evidence_text") or person.get("name_hanja_candidate") or ""
+    compact = str(text).strip()
+    box = person.get("bbox") or {}
+    if compact[:1] in {"子", "女"}:
+        evidence.append({"marker": compact[0], "text": text, "bbox": dict(box),
+                         "source": "name_ocr", "source_column_id": person.get("source_column_id")})
+    if box:
+        center = _person_center_x(person, 0)
+        width = float(box.get("width", 0))
+        top = float(box.get("y", 0))
+        for column in row.get("columns", []):
+            tokens = column.get("token_boxes") or [column]
+            for token in tokens:
+                marker = str(token.get("text") or "").strip()
+                token_box = token.get("bbox") or {}
+                if marker not in {"子", "女"} or not token_box:
+                    continue
+                token_x = float(token_box["x"]) + float(token_box["width"]) / 2
+                bottom = float(token_box["y"]) + float(token_box["height"])
+                if (abs(token_x - center) <= max(6, width * 0.35)
+                        and float(token_box["width"]) <= max(12, width * 1.8)
+                        and top - max(36, width * 2) <= float(token_box["y"]) <= top + 8
+                        and bottom <= top + max(30, width * 1.5)):
+                    evidence.append({"marker": marker, "text": token["text"], "bbox": dict(token_box),
+                                     "source": "row_ocr_token", "source_column_id": column.get("column_id")})
+    markers = {item["marker"] for item in evidence}
+    return (next(iter(markers)) if len(markers) == 1 else None), evidence
+
+
 def parse_relationships(
     rows: list[dict[str, Any]], page_width: int, table_x: int = 0,
     direct_alignment_ratio: float = 0.04, branch_boundary_margin: float = 10.0,
 ) -> list[dict[str, Any]]:
-    """Infer review-pending parent/child links from the user's page-layout rule.
+    """Infer review-pending links for this edition; see README section 9.
 
-    The generation labels are intentionally ignored. People in the next
-    horizontal band are assigned to the prior-band parent's horizontal branch:
-    - first son is immediately below/aligned with the father;
-    - later sons are to the left of the first son;
-    - daughters, when present, are to the right of the sons.
-
-    Parent branch bounds are midpoints between neighboring parent anchors.
-    All edges remain review-pending because layout is evidence, not proof.
+    Read each row right-to-left. A parent's children extend leftwards until
+    the next parent's aligned column, with sons before daughters (先男後女).
+    Midpoints between parents cut through large sibling groups and are not
+    branch boundaries. 子/女 evidence determines sex; x alone never does.
+    Printed order and within-sex order cannot establish overall birth order.
+    Generation labels are ignored; uncertain links retain no parent assignment.
     """
     suggestions: list[dict[str, Any]] = []
     alignment_tolerance = max(16.0, page_width * direct_alignment_ratio)
 
     for previous, current in zip(rows, rows[1:]):
-        parents = previous.get("person_candidates", [])
-        children = current.get("person_candidates", [])
+        parents = [p for p in previous.get("person_candidates", []) if _relationship_person(p)
+                   and _relationship_marker(p, previous)[0] != "女"]
+        children = [p for p in current.get("person_candidates", []) if _relationship_person(p)]
         if not parents or not children:
             continue
 
@@ -922,21 +964,21 @@ def parse_relationships(
             [( _person_center_x(parent, table_x), parent) for parent in parents],
             key=lambda item: item[0], reverse=True,
         )
-        # Build a branch interval around each parent anchor. A child's x within
-        # this interval belongs to that parent unless it is too close to a split.
+        # Each anchor starts a branch; the next anchor to its left ends it.
         branches: list[dict[str, Any]] = []
         for index, (parent_x, parent) in enumerate(parent_entries):
-            right_bound = (parent_x + parent_entries[index - 1][0]) / 2.0 if index > 0 else float(page_width)
-            left_bound = (parent_x + parent_entries[index + 1][0]) / 2.0 if index + 1 < len(parent_entries) else 0.0
+            right_bound = parent_x
+            left_bound = parent_entries[index + 1][0] if index + 1 < len(parent_entries) else 0.0
             branches.append({
                 "parent": parent, "parent_x": parent_x,
                 "left_bound": left_bound, "right_bound": right_bound,
             })
 
         assigned: dict[str, list[dict[str, Any]]] = {str(b["parent"]["person_id"]): [] for b in branches}
-        for child in children:
+        for child in sorted(children, key=lambda p: _person_center_x(p, table_x), reverse=True):
             child_x = _person_center_x(child, table_x)
-            containing = [b for b in branches if b["left_bound"] <= child_x <= b["right_bound"]]
+            aligned = [b for b in branches if abs(child_x - b["parent_x"]) <= alignment_tolerance]
+            containing = aligned or [b for b in branches if b["left_bound"] < child_x <= b["right_bound"]]
             if len(containing) != 1:
                 # Keep a non-link candidate rather than invent a parent.
                 ranked = sorted(branches, key=lambda b: min(
@@ -954,7 +996,7 @@ def parse_relationships(
                     "relationship_basis": "next_row_branch_position_ambiguous",
                     "placement_role": "unresolved",
                     "horizontal_distance_px": None,
-                    "evidence_text": f"{previous['row_id']} -> {current['row_id']}; child lies on/near branch boundary",
+                    "evidence_text": f"{previous['row_id']} -> {current['row_id']}; no unique parent anchor/branch",
                     "source_row_ids": [previous["row_id"], current["row_id"]],
                     "confidence": 0.2,
                     "review_status": "needs_review",
@@ -962,9 +1004,12 @@ def parse_relationships(
                 })
                 continue
             branch = containing[0]
-            boundary_distance = min(child_x - branch["left_bound"], branch["right_bound"] - child_x)
+            # Aligned children start branches; proximity to that anchor is normal.
+            boundary_distance = child_x - branch["left_bound"]
+            marker, marker_evidence = _relationship_marker(child, current)
             child_copy = {"person": child, "x": child_x,
-                          "near_branch_boundary": boundary_distance <= branch_boundary_margin}
+                          "marker": marker, "marker_evidence": marker_evidence,
+                          "near_branch_boundary": not aligned and boundary_distance <= branch_boundary_margin}
             assigned[str(branch["parent"]["person_id"])].append(child_copy)
 
         for branch in branches:
@@ -975,39 +1020,45 @@ def parse_relationships(
             if not child_group:
                 continue
 
-            # Eldest son anchor: the child closest to the father's x coordinate.
-            aligned = [item for item in child_group if abs(item["x"] - parent_x) <= alignment_tolerance]
+            aligned = [item for item in child_group if item["marker"] != "女"
+                       and abs(item["x"] - parent_x) <= alignment_tolerance]
             first_son = min(aligned, key=lambda item: abs(item["x"] - parent_x)) if aligned else None
-            first_son_x = first_son["x"] if first_son else None
-
-            # Determine each child's positional role using the user's ordering rule.
-            left_sons = sorted(
-                [item for item in child_group if first_son_x is not None and item["x"] < first_son_x - alignment_tolerance],
-                key=lambda item: item["x"], reverse=True,
-            )
-            right_daughters = sorted(
-                [item for item in child_group if first_son_x is not None and item["x"] > first_son_x + alignment_tolerance],
-                key=lambda item: item["x"], reverse=True,
-            )
+            sex_counts = {"子": 0, "女": 0}
+            daughter_seen = False
+            ordering_conflict = False
             for item in child_group:
+                if item["marker"] == "女":
+                    daughter_seen = True
+                elif item["marker"] == "子" and daughter_seen:
+                    ordering_conflict = True
+
+            for record_order, item in enumerate(child_group, 1):
                 child = item["person"]
                 child_x = item["x"]
-                if item is first_son:
-                    role, inferred_sex, order = "first_son_aligned_under_father", "male_candidate", 1
-                elif first_son is not None and child_x < first_son_x - alignment_tolerance:
-                    order = 2 + left_sons.index(item)
-                    role, inferred_sex = f"additional_son_left_of_first_{order}", "male_candidate"
-                elif first_son is not None and child_x > first_son_x + alignment_tolerance:
-                    order = 1 + right_daughters.index(item)
-                    role, inferred_sex = f"daughter_right_of_sons_{order}", "female_candidate"
-                elif first_son is None and child_x < parent_x - alignment_tolerance:
-                    role, inferred_sex, order = "son_left_of_alignment_first_son_not_found", "male_candidate", None
-                elif child_x > parent_x + alignment_tolerance:
-                    role, inferred_sex, order = "daughter_right_of_father_axis", "female_candidate", None
+                marker = item["marker"]
+                order = None
+                if marker:
+                    sex_counts[marker] += 1
+                    order = sex_counts[marker]
+                if marker == "子":
+                    inferred_sex = "male_candidate"
+                    role = ("first_son_aligned_under_father" if item is first_son
+                            else f"son_in_leftward_sibling_group_{order}")
+                elif marker == "女":
+                    inferred_sex, role = "female_candidate", f"daughter_after_sons_{order}"
                 else:
-                    role, inferred_sex, order = "child_near_father_axis_unresolved", "unknown", None
+                    inferred_sex, role = "unknown", "child_marker_unknown"
 
                 ambiguous = item["near_branch_boundary"]
+                warnings = ["Layout candidate; verify the original page. Printed order is not overall birth order."]
+                if first_son is None:
+                    warnings.append("No aligned son anchor was found; missing people or page continuation may affect the branch.")
+                if ambiguous:
+                    warnings.append("Child is near the next parent anchor.")
+                if ordering_conflict:
+                    warnings.append("Son appears after daughter in printed order; branch or OCR markers need review.")
+                if len({e["marker"] for e in item["marker_evidence"]}) > 1:
+                    warnings.append("Conflicting name/row OCR sex markers.")
                 suggestions.append({
                     "relationship_id": f"R{len(suggestions)+1:04d}",
                     "type": "possible_parent_child",
@@ -1016,19 +1067,25 @@ def parse_relationships(
                     "candidate_parent_ids": [],
                     "child_candidate_id": child.get("person_id"),
                     "child_name_hanja_candidate": child.get("name_hanja_candidate"),
-                    "relationship_basis": "successive_row_branch_and_user_position_rule",
+                    "relationship_basis": "successive_row_leftward_branch_sons_before_daughters",
                     "placement_role": role,
                     "inferred_child_sex": inferred_sex,
                     "child_order": order,
+                    "child_order_basis": "detected_same_sex_printed_order",
+                    "record_order": record_order,
+                    "birth_order": None,
+                    "sex_marker": marker,
+                    "sex_marker_evidence": item["marker_evidence"],
+                    "ordering_conflict": ordering_conflict,
                     "parent_center_x": round(parent_x, 2),
                     "child_center_x": round(child_x, 2),
                     "horizontal_distance_px": round(abs(child_x - parent_x), 2),
                     "branch_bounds_x": [round(float(branch["left_bound"]), 2), round(float(branch["right_bound"]), 2)],
                     "evidence_text": f"{previous['row_id']} -> {current['row_id']}; parent branch x={branch['left_bound']:.1f}..{branch['right_bound']:.1f}",
                     "source_row_ids": [previous["row_id"], current["row_id"]],
-                    "confidence": 0.65 if not ambiguous and (first_son is not None or inferred_sex != "unknown") else 0.4,
+                    "confidence": 0.65 if not ambiguous and first_son is not None and not ordering_conflict else 0.4,
                     "review_status": "needs_review",
-                    "warning": "Inferred from the user-provided layout rule; verify against the original genealogy page." if not ambiguous else "Child is near a parent-branch boundary; parent assignment needs review.",
+                    "warning": " ".join(warnings),
                 })
 
     return suggestions
