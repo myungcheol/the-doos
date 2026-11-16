@@ -33,7 +33,10 @@ def main():
         store = PostgresStore()
         if args.command == 'init':
             store.initialize()
-            result = {'schema_version': 1}
+            with store.connection() as conn:
+                result = {'schema_version': conn.execute(
+                    'SELECT max(version) FROM jokbo.schema_version'
+                ).fetchone()[0]}
         elif args.command == 'import':
             result = store.import_directory(args.output, args.edition)
         elif args.command == 'export':

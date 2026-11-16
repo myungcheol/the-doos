@@ -338,8 +338,12 @@ class PostgresStore:
                      self.json({'source_occurrences': person['source_occurrences'], **partner})))
         for rel in relationships:
             parent, child = rel.get('parent_person_uid'), rel.get('child_person_uid')
-            if not parent or not child:
+            parent_local = rel.get('parent_candidate_id')
+            child_local = rel.get('child_candidate_id')
+            if (parent_local and not parent) or (child_local and not child):
                 raise ValueError('관계의 부모/자녀 후보를 찾을 수 없습니다: ' + relationship_key(rel))
+            if rel.get('review_status') == 'confirmed' and (not parent or not child):
+                raise ValueError('미해결 관계는 승인할 수 없습니다: ' + relationship_key(rel))
             conn.execute('''INSERT INTO jokbo.parent_child(edition_id,id,parent_id,child_id,kind,status,evidence)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)''',
                 (eid, relationship_key(rel), parent, child, rel.get('parentage_type', 'unspecified'),

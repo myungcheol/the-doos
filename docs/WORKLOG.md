@@ -12,6 +12,13 @@
 
 ## 기록
 
+### 2026-11-13 — endpoint가 미해결인 관계 후보의 DB 보존
+
+- **문제/원인:** `890.jpg::R0001`은 OCR이 자녀는 찾았지만 부모 후보를 결정하지 못해 `parent_candidate_id=null`, `needs_review`로 올바르게 남긴 근거였다. DB 투영이 모든 관계 후보에 두 `person_uid`가 있다고 가정하여 전체 JSON 이관을 취소했다.
+- **해결:** 스키마 v2에서 `parent_child.parent_id`/`child_id`를 미검수 근거에 한해 nullable로 변경했다. NULL endpoint와 evidence를 그대로 저장하되, 두 endpoint가 없는 `confirmed` 행은 DB constraint와 애플리케이션 검증으로 거부한다. 문자열 로컬 ID가 있는데 해당 인물이 실제로 없는 dangling 참조는 계속 이관 오류다. 조상·후손 쿼리는 확정 edge만 사용하므로 미해결 후보를 따라가지 않는다.
+- **검증:** 미해결 부모 후보의 근거 보존, 승인 거부와 기존 dangling-ID rollback 회귀 테스트를 추가했다. 전용 `jokbo_integration_test` DB에서 전체 126개 테스트가 통과한 뒤 테스트 DB를 삭제했다. 로컬 주 DB를 v1→v2로 마이그레이션하고 실제 `python -m database import output/`을 다시 실행하여 46쪽·243 occurrences·129 관계를 이관했다. 미해결 관계는 34건이며 `890.jpg::R0001`은 부모 NULL, 자녀 연결, `needs_review`로 보존되었다. 관리 자산 92개의 체크섬도 모두 정상이다. 실제 OCR 재추론은 수행하지 않았다.
+- **관련 커밋:** 이 기록을 포함한 변경.
+
 ### 2026-11-12 — 로컬 Docker Compose와 `.env` 기반 DB 접속
 
 - **문제/맥락:** PostgreSQL 저장 기능은 있었지만 사용자가 서버와 환경변수를 직접 준비해야 했다. 로컬 개발은 재현 가능한 한 명령 실행이 필요하고, 실제 서비스는 코드 변경 없이 외부 PostgreSQL URL을 사용해야 했다.

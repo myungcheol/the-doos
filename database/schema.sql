@@ -1,9 +1,12 @@
--- Application-owned schema. Version 1; migrations must be explicit.
+-- Application-owned schema. Version 2; migrations must be explicit.
 CREATE SCHEMA IF NOT EXISTS jokbo;
 CREATE TABLE IF NOT EXISTS jokbo.schema_version (
-    version integer PRIMARY KEY CHECK (version = 1)
+    version integer PRIMARY KEY
 );
-INSERT INTO jokbo.schema_version VALUES (1) ON CONFLICT DO NOTHING;
+INSERT INTO jokbo.schema_version
+SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM jokbo.schema_version);
+ALTER TABLE jokbo.schema_version DROP CONSTRAINT IF EXISTS schema_version_version_check;
+ALTER TABLE jokbo.schema_version DROP CONSTRAINT IF EXISTS schema_version_current;
 
 CREATE TABLE IF NOT EXISTS jokbo.editions (
     id text PRIMARY KEY,
@@ -58,8 +61,8 @@ CREATE INDEX IF NOT EXISTS occurrence_edition ON jokbo.occurrences(edition_id);
 CREATE TABLE IF NOT EXISTS jokbo.parent_child (
     edition_id text NOT NULL REFERENCES jokbo.editions,
     id text NOT NULL,
-    parent_id text NOT NULL REFERENCES jokbo.persons,
-    child_id text NOT NULL REFERENCES jokbo.persons,
+    parent_id text REFERENCES jokbo.persons,
+    child_id text REFERENCES jokbo.persons,
     kind text NOT NULL DEFAULT 'unspecified' CHECK (kind IN ('unspecified', 'biological', 'adoptive')),
     status text NOT NULL CHECK (status IN ('needs_review', 'confirmed', 'rejected')),
     evidence jsonb NOT NULL,
@@ -67,6 +70,13 @@ CREATE TABLE IF NOT EXISTS jokbo.parent_child (
     UNIQUE (edition_id, parent_id, child_id, kind),
     CHECK (parent_id <> child_id)
 );
+-- v2: OCR may leave either endpoint unresolved. Such evidence remains reviewable,
+-- but an edge cannot be confirmed until both people are known.
+ALTER TABLE jokbo.parent_child ALTER COLUMN parent_id DROP NOT NULL;
+ALTER TABLE jokbo.parent_child ALTER COLUMN child_id DROP NOT NULL;
+ALTER TABLE jokbo.parent_child DROP CONSTRAINT IF EXISTS parent_child_confirmed_endpoints;
+ALTER TABLE jokbo.parent_child ADD CONSTRAINT parent_child_confirmed_endpoints
+    CHECK (status <> 'confirmed' OR (parent_id IS NOT NULL AND child_id IS NOT NULL));
 CREATE INDEX IF NOT EXISTS lineage_parent ON jokbo.parent_child(parent_id, kind, child_id) WHERE status = 'confirmed';
 CREATE INDEX IF NOT EXISTS lineage_child ON jokbo.parent_child(child_id, kind, parent_id) WHERE status = 'confirmed';
 CREATE TABLE IF NOT EXISTS jokbo.partners (
@@ -115,3 +125,7 @@ $$;
 DROP TRIGGER IF EXISTS lineage_cycle ON jokbo.parent_child;
 CREATE TRIGGER lineage_cycle BEFORE INSERT OR UPDATE ON jokbo.parent_child
     FOR EACH ROW EXECUTE FUNCTION jokbo.check_lineage();
+
+DELETE FROM jokbo.schema_version;
+INSERT INTO jokbo.schema_version VALUES (2);
+ALTER TABLE jokbo.schema_version ADD CONSTRAINT schema_version_current CHECK (version = 2);

@@ -559,7 +559,7 @@ PER_<UUID>
 
 | 테이블 | 저장하는 내용 |
 |---|---|
-| `schema_version` | 스키마 버전. 현재 1이며 향후 변경은 명시적 마이그레이션으로 처리 |
+| `schema_version` | 스키마 버전. 현재 2이며 `database init`이 명시적·반복 가능한 마이그레이션을 적용 |
 | `editions` | 판본 ID, 발행연도·권 등 `meta`, 현재 검수 `state`와 충돌 검사용 `revision` |
 | `assets` | 이미지 SHA-256 `id`, 저장소 상대 `path`, 바이트 `size` |
 | `pages` | 판본 내 스캔 페이지 이름. `(edition_id, name)`으로 유일성 보장 |
@@ -586,7 +586,7 @@ erDiagram
 
 **원본과 검수:** `ocr_runs.raw`는 입력 OCR 전체를 보관합니다. 이름의 `子/女`, 원본/보정 bbox, polygon, 변환 행렬, confidence, 후보와 모든 추가 필드를 유지합니다. 검수 저장은 `editions.state`와 정규화된 검색용 테이블을 같은 트랜잭션으로 갱신하고 `reviews`에 이력을 추가합니다. 다른 판본의 수기 값을 덮어쓰지 않도록 이름·생몰·관직은 인물의 **출처별 reviewed**에 저장합니다. 판본 간 상충하는 기록을 하나의 권위 있는 인물 값으로 자동 합치지 않습니다.
 
-**가족관계:** `A→B`, `A→C`, `A→D`는 `parent_child`의 세 행입니다. 부모 수도 고정하지 않아 아버지·어머니·양부모를 별도 연결할 수 있습니다. `kind`는 `unspecified`, `biological`, `adoptive`이며 OCR의 위치 추정은 기본적으로 `unspecified`입니다. 기존 관계 JSON에 `parentage_type`이 명시되면 보존합니다. `confirmed`, `needs_review`, `rejected`를 구분하며 이름·위치·confidence로 관계를 자동 확정하지 않습니다. 같은 판본에서 같은 부모·자녀·종류의 중복, 자기 자신과의 관계, 판본을 가로지르는 확정 계보의 순환을 차단합니다. `record_order`, `child_order`, 미확정 `birth_order`는 근거 JSON에 그대로 남깁니다.
+**가족관계:** `A→B`, `A→C`, `A→D`는 `parent_child`의 세 행입니다. 부모 수도 고정하지 않아 아버지·어머니·양부모를 별도 연결할 수 있습니다. `kind`는 `unspecified`, `biological`, `adoptive`이며 OCR의 위치 추정은 기본적으로 `unspecified`입니다. 기존 관계 JSON에 `parentage_type`이 명시되면 보존합니다. `confirmed`, `needs_review`, `rejected`를 구분하며 이름·위치·confidence로 관계를 자동 확정하지 않습니다. OCR이 부모나 자녀를 결정하지 못한 `needs_review`/`rejected` 후보는 해당 endpoint를 NULL로 두고 원문 evidence를 보존합니다. endpoint가 모두 연결되기 전에는 승인할 수 없고 계보 탐색에도 포함되지 않습니다. 존재한다고 적힌 로컬 후보 ID가 인물 목록에 없는 경우는 손상된 참조로 보고 이관을 취소합니다. 같은 판본에서 같은 부모·자녀·종류의 중복, 자기 자신과의 관계, 판본을 가로지르는 확정 계보의 순환을 차단합니다. `record_order`, `child_order`, 미확정 `birth_order`는 근거 JSON에 그대로 남깁니다.
 
 배우자는 `wife`, `concubine`, `husband`, `other`별로 여러 행을 저장합니다. 배우자의 실명이나 동일인이 아직 확인되지 않았다면 `partner_id=NULL`로 두고 원문을 보관합니다. 검수 UI의 배우자 배열에 `person_uid`를 명시하면 **이미 DB에 있는 인물**과 연결합니다. 배우자 이름 문자열로 인물을 자동 생성하거나, 배우자 관계에서 자녀의 어머니를 자동 추론하지 않습니다. 자녀의 모계는 별도의 부모·자녀 연결이 필요합니다.
 

@@ -185,6 +185,26 @@ class PostgresTests(unittest.TestCase):
                          [{'person_id': ids['001_p1'], 'first_depth': 1, 'second_depth': 1}])
         self.assertEqual(self.store.common_ancestors(ids['001_p1'], ids['001_p4'])[0]['first_depth'], 0)
 
+    def test_unresolved_candidate_is_preserved_but_cannot_be_confirmed(self):
+        self.page['relationship_candidates'] = [{
+            'relationship_id': 'unresolved', 'source_page': '001.png',
+            'parent_candidate_id': None, 'child_candidate_id': '001_p2',
+            'review_status': 'needs_review', 'reason': 'ambiguous_parent',
+        }]
+        self.import_page()
+        row = self.rows('''SELECT parent_id,child_id,status,evidence FROM jokbo.parent_child
+            WHERE edition_id=%s AND id=%s''', (self.eid, '001.png::unresolved'))[0]
+        self.assertIsNone(row[0])
+        self.assertEqual(row[1], self.ids()['001_p2'])
+        self.assertEqual(row[2], 'needs_review')
+        self.assertEqual(row[3]['reason'], 'ambiguous_parent')
+        _, _, _, state, revision = self.store.load(self.eid)
+        state['relationship_updates'] = {
+            '001.png::unresolved': {'review_status': 'confirmed'}
+        }
+        with self.assertRaisesRegex(ValueError, '미해결 관계'):
+            self.store.save_review(self.eid, state, revision)
+
     def test_cycle_duplicate_fk_and_conflict_rollback(self):
         self.import_page()
         _, _, _, state, rev = self.store.load(self.eid)
