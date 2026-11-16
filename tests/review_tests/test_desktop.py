@@ -87,6 +87,50 @@ class DesktopReviewTests(unittest.TestCase):
         exports = json.loads((self.root / "reviewed_people.json").read_text(encoding="utf-8"))
         self.assertEqual(exports[0]["raw_data"]["name_ocr"]["raw_text"], "子甲")
 
+    def test_selected_region_ocr_adds_unverified_person_and_preserves_raw_name(self):
+        box = {"x": 55, "y": 45, "width": 12, "height": 18}
+        self.window.set_selected_region(self.window.page, self.window.view, box)
+        self.window.show_region_ocr_result({"request": {"page": "sample.png", "bbox": box},
+                                            "variants": [{"text": "女丙", "hanja_text": "女丙",
+                                                          "mean_confidence": 0.8, "variant": "original"}]})
+        self.assertTrue(self.window.add_region_person_button.isEnabled())
+        self.window.add_region_person()
+        person = self.window.state["additional_people"][0]
+        self.assertEqual(person["raw_name_ocr"], "女丙")
+        self.assertEqual((person["name_hanja_candidate"], person["sex_marker"]), ("丙", "女"))
+        self.assertEqual(person["bbox"], box)
+        self.assertEqual(self.window.selected_id, person["person_id"])
+        self.assertEqual(self.window.raw_name.text(), "女丙")
+        self.assertEqual(self.window.inputs["transcribed_name_hanja"].text(), "丙")
+        saved = json.loads((self.root / "review_state.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["additional_people"][0]["review_status"], "needs_review")
+
+    def test_previous_page_region_cannot_add_person_to_current_page(self):
+        box = {"x": 55, "y": 45, "width": 12, "height": 18}
+        previous = {"source_page": "previous.png"}
+        self.window.set_selected_region(previous, self.window.previous_view, box)
+        self.window.show_region_ocr_result({"request": {"page": "previous.png", "bbox": box},
+                                            "variants": [{"text": "甲", "hanja_text": "甲"}]})
+        self.assertFalse(self.window.add_region_person_button.isEnabled())
+        self.window.add_region_person()
+        self.assertFalse(self.window.state.get("additional_people"))
+
+    def test_rejected_relation_is_hidden_but_can_be_restored(self):
+        relation = {"source_page": "sample.png", "parent_candidate_id": "p1",
+                    "child_candidate_id": "p2", "review_status": "needs_review"}
+        self.window.base_rels.append(relation)
+        self.window.refresh_relations()
+        self.assertEqual(self.window.rel_list.count(), 1)
+        self.window.rel_list.setCurrentRow(0)
+        self.window.review_relation("rejected")
+        self.assertEqual(self.window.rel_list.count(), 0)
+        self.assertEqual(self.window.relationships()[0]["review_status"], "rejected")
+        self.window.show_rejected_relations.setChecked(True)
+        self.assertEqual(self.window.rel_list.count(), 1)
+        self.window.rel_list.setCurrentRow(0)
+        self.window.review_relation("confirmed")
+        self.assertEqual(self.window.relationships()[0]["review_status"], "confirmed")
+
     def test_birth_date_draft_saved_without_changing_original_text(self):
         self.window.select_person_id("p1")
         source = "開寶八年乙亥十月十五日生"
@@ -416,6 +460,7 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(self.window.tabs.currentIndex(), 3)
         self.assertEqual(self.window.region_page, self.window.page)
         self.assertGreater(self.window.region_bbox["width"], 0)
+        self.assertFalse(self.window.view.region_mode)
         self.assertTrue(self.window.run_region_ocr_button.isEnabled())
         variants = [
             {"hanja_text": "甲乙", "mean_confidence": 60, "variant": "원본"},
@@ -434,6 +479,13 @@ class DesktopReviewTests(unittest.TestCase):
         self.assertEqual(self.window.region_candidates.count(), 2)
         self.assertIn("甲乙", self.window.region_candidates.item(0).text())
         self.assertIn("대비", self.window.region_candidates.item(0).text())
+        selected_box = dict(self.window.region_bbox)
+        self.window.scale_scans(1.2)
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(viewport, pos=end)
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=end)
+        self.assertEqual(self.window.region_bbox, selected_box)
+        self.assertEqual(self.window.region_candidates.count(), 2)
         self.window.region_candidates.setCurrentRow(0)
         self.window.copy_region_candidate()
         self.assertEqual(QApplication.clipboard().text(), "甲乙")

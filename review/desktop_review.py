@@ -788,6 +788,9 @@ class ReviewWindow(QMainWindow):
         rel_layout = QVBoxLayout(relations)
         self.rel_list = QListWidget()
         rel_layout.addWidget(self.rel_list)
+        self.show_rejected_relations = QCheckBox("거절한 관계 보기")
+        self.show_rejected_relations.toggled.connect(self.refresh_relations)
+        rel_layout.addWidget(self.show_rejected_relations)
         for text, callback in [("선택 관계 승인", lambda: self.review_relation("confirmed")), ("선택 관계 거절", lambda: self.review_relation("rejected")), ("선택 인물을 부모로 지정", self.set_parent), ("선택 인물을 자녀로 연결", self.add_child), ("부모 선택 취소", self.cancel_parent)]:
             button = QPushButton(text)
             button.clicked.connect(callback)
@@ -847,6 +850,10 @@ class ReviewWindow(QMainWindow):
         self.region_candidates = QListWidget()
         self.region_candidates.itemDoubleClicked.connect(self.copy_region_candidate)
         region_layout.addWidget(self.region_candidates, 1)
+        self.add_region_person_button = QPushButton("선택 영역에서 새 인물 추가")
+        self.add_region_person_button.setEnabled(False)
+        self.add_region_person_button.clicked.connect(self.add_region_person)
+        region_layout.addWidget(self.add_region_person_button)
         self.copy_region_candidate_button = QPushButton("선택한 한자 후보 복사")
         self.copy_region_candidate_button.clicked.connect(self.copy_region_candidate)
         region_layout.addWidget(self.copy_region_candidate_button)
@@ -1148,7 +1155,10 @@ class ReviewWindow(QMainWindow):
                 other.selection_bbox = None
                 other.draw_selection()
         self.region_page, self.region_bbox = page, dict(bbox)
+        # Region selection is one-shot; the next drag should pan the scan.
+        self.select_ocr_region.setChecked(False)
         self.region_candidates.clear()
+        self.add_region_person_button.setEnabled(False)
         self.run_region_ocr_button.setEnabled(not self.ocr_running)
         self.region_label.setText(
             f"{page_name(page)} · 원본 좌표 x {bbox['x']}–{bbox['x'] + bbox['width']}, "
@@ -1182,6 +1192,7 @@ class ReviewWindow(QMainWindow):
         self.ocr_running = True
         self.run_region_ocr_button.setEnabled(False)
         self.region_candidates.clear()
+        self.add_region_person_button.setEnabled(False)
         self.region_label.setText(f"{request['page']} · 선택한 영역을 OCR 처리 중입니다…")
         self.ocr_request.emit(request)
 
@@ -1202,13 +1213,18 @@ class ReviewWindow(QMainWindow):
                 best_by_text[value] = variant
         ranked = sorted(best_by_text.values(), key=lambda item: float(item.get("mean_confidence") or 0), reverse=True)
         self.region_candidates.clear()
+        self.add_region_person_button.setEnabled(False)
         for variant in ranked:
             confidence = variant.get("mean_confidence")
             score = f"{confidence:.1f}" if isinstance(confidence, (int, float)) else "점수 없음"
             item = QListWidgetItem(f"{variant['hanja_text']}  ·  {score}  ·  {variant.get('variant', '')}")
             item.setData(Qt.ItemDataRole.UserRole, variant["hanja_text"])
+            item.setData(Qt.ItemDataRole.UserRole + 1, variant)
             item.setToolTip(str(variant.get("text") or ""))
             self.region_candidates.addItem(item)
+        if ranked:
+            self.region_candidates.setCurrentRow(0)
+            self.add_region_person_button.setEnabled(self.region_page is self.page)
         self.region_label.setText(f"{request['page']} · 한자 후보 {len(ranked)}개 · 원본 좌표 {request['bbox']}")
         if not ranked:
             errors = [str(variant.get("status")) for variant in result["variants"]
@@ -1222,6 +1238,54 @@ class ReviewWindow(QMainWindow):
             return
         QApplication.clipboard().setText(item.data(Qt.ItemDataRole.UserRole))
         self.statusBar().showMessage("한자 후보를 클립보드에 복사했습니다.", 4000)
+
+    def add_region_person(self):
+        """Save a reviewer selected OCR name as an unverified page person."""
+        item = self.region_candidates.currentItem()
+        variant = item.data(Qt.ItemDataRole.UserRole + 1) if item else None
+        if self.region_page is not self.page or not self.region_bbox or not isinstance(variant, dict):
+            return
+        if self.dirty:
+            QMessageBox.information(self, "인물 저장", "인물 변경을 먼저 저장하세요.")
+            return
+        box = dict(self.region_bbox)
+        geometry = self.page.get("page_geometry") or {}
+        ocr_box = None
+        if geometry.get("source_to_ocr") and geometry.get("ocr_image_size"):
+            from ocr.page_geometry import transform_box
+            size = geometry["ocr_image_size"]
+            ocr_box, _ = transform_box(box, geometry["source_to_ocr"],
+                                       (size["width"], size["height"]))
+        center_y = box["y"] + box["height"] / 2
+        row = next((r for r in self.page.get("rows", []) if
+                    (r.get("bbox") or {}).get("y", float("inf")) <= center_y <=
+                    (r.get("bbox") or {}).get("y", 0) + (r.get("bbox") or {}).get("height", 0)), {})
+        candidate_id = "MANUAL_" + uuid.uuid4().hex.upper()
+        raw_text = str(variant.get("text") or variant.get("hanja_text") or "")
+        name, marker, gender = strip_name_marker(str(variant.get("hanja_text") or raw_text))
+        person = {"person_id": candidate_id, "source_page": self.page_name,
+                  "source_row_id": row.get("row_id"), "source_column_id": candidate_id,
+                  "source_ocr_column_ids": [], "bbox": box,
+                  **({"ocr_bbox": ocr_box} if ocr_box else {}),
+                  "source_polygon": [[box["x"], box["y"]], [box["x"] + box["width"], box["y"]],
+                                     [box["x"] + box["width"], box["y"] + box["height"]],
+                                     [box["x"], box["y"] + box["height"]]],
+                  "raw_name_ocr": raw_text, "name_hanja_candidate": name,
+                  "sex_marker": marker, "gender": gender or "unknown",
+                  "ocr_confidence": variant.get("mean_confidence"),
+                  "ranked_ocr_hypotheses": [dict(variant)],
+                  "review_status": "needs_review", "candidate_type": "review_selected_region_ocr",
+                  "recognition_status": "region_ocr_unverified"}
+        self.state.setdefault("additional_people", []).append(person)
+        if not self.persist():
+            self.state["additional_people"].pop()
+            return
+        self.base_people, self.base_rels, self.page_results = merge_review_sources(
+            self.base_people, self.base_rels, self.page_results, self.state)
+        self.change_page()
+        self.select_person_id(candidate_id)
+        self.tabs.setCurrentIndex(0)
+        self.statusBar().showMessage("새 인물을 검토 대기로 추가했습니다. OCR 초안과 원본을 확인하세요.", 6000)
 
     def page_directory(self, page):
         page_dir = Path(page.get("page_output_dir") or self.root / Path(str(page.get("source_image", page_name(page)))).stem)
@@ -1273,6 +1337,7 @@ class ReviewWindow(QMainWindow):
         self.region_page = None
         self.region_bbox = None
         self.region_candidates.clear()
+        self.add_region_person_button.setEnabled(False)
         self.run_region_ocr_button.setEnabled(False)
         self.region_label.setText("이미지에서 OCR 영역 드래그를 켜고 사각형을 선택하세요.")
         for view in (self.view, self.previous_view):
@@ -1504,6 +1569,8 @@ class ReviewWindow(QMainWindow):
         names = {p.get("person_id"): f"{i}. {effective_name(p, self.state)}" for i, p in enumerate(self.page_people, 1)}
         for rel in self.relationships():
             if rel.get("source_page") != self.page_name:
+                continue
+            if rel.get("review_status") == "rejected" and not self.show_rejected_relations.isChecked():
                 continue
             if self.selected_id and self.selected_id not in (rel.get("parent_candidate_id"), rel.get("child_candidate_id")):
                 continue
