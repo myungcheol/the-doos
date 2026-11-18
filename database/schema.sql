@@ -1,4 +1,4 @@
--- Application-owned schema. Version 2; migrations must be explicit.
+-- Application-owned schema. Version 3; migrations must be explicit.
 CREATE SCHEMA IF NOT EXISTS jokbo;
 CREATE TABLE IF NOT EXISTS jokbo.schema_version (
     version integer PRIMARY KEY
@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS jokbo.occurrences (
 CREATE INDEX IF NOT EXISTS occurrence_person ON jokbo.occurrences(person_id);
 CREATE INDEX IF NOT EXISTS occurrence_name ON jokbo.occurrences(name);
 CREATE INDEX IF NOT EXISTS occurrence_edition ON jokbo.occurrences(edition_id);
+-- Public reader: active page overlays and stable per-edition person lookup.
+CREATE INDEX IF NOT EXISTS occurrence_page_visible ON jokbo.occurrences(page_id, person_id)
+    WHERE status <> 'rejected';
+CREATE INDEX IF NOT EXISTS occurrence_edition_person_visible ON jokbo.occurrences(edition_id, person_id)
+    WHERE status <> 'rejected';
+CREATE INDEX IF NOT EXISTS occurrence_name_prefix ON jokbo.occurrences(lower(name) text_pattern_ops)
+    WHERE status <> 'rejected';
 CREATE TABLE IF NOT EXISTS jokbo.parent_child (
     edition_id text NOT NULL REFERENCES jokbo.editions,
     id text NOT NULL,
@@ -79,6 +86,10 @@ ALTER TABLE jokbo.parent_child ADD CONSTRAINT parent_child_confirmed_endpoints
     CHECK (status <> 'confirmed' OR (parent_id IS NOT NULL AND child_id IS NOT NULL));
 CREATE INDEX IF NOT EXISTS lineage_parent ON jokbo.parent_child(parent_id, kind, child_id) WHERE status = 'confirmed';
 CREATE INDEX IF NOT EXISTS lineage_child ON jokbo.parent_child(child_id, kind, parent_id) WHERE status = 'confirmed';
+CREATE INDEX IF NOT EXISTS lineage_edition_parent ON jokbo.parent_child(edition_id, parent_id, child_id)
+    WHERE status = 'confirmed';
+CREATE INDEX IF NOT EXISTS lineage_edition_child ON jokbo.parent_child(edition_id, child_id, parent_id)
+    WHERE status = 'confirmed';
 CREATE TABLE IF NOT EXISTS jokbo.partners (
     edition_id text NOT NULL REFERENCES jokbo.editions,
     id text NOT NULL,
@@ -127,5 +138,5 @@ CREATE TRIGGER lineage_cycle BEFORE INSERT OR UPDATE ON jokbo.parent_child
     FOR EACH ROW EXECUTE FUNCTION jokbo.check_lineage();
 
 DELETE FROM jokbo.schema_version;
-INSERT INTO jokbo.schema_version VALUES (2);
-ALTER TABLE jokbo.schema_version ADD CONSTRAINT schema_version_current CHECK (version = 2);
+INSERT INTO jokbo.schema_version VALUES (3);
+ALTER TABLE jokbo.schema_version ADD CONSTRAINT schema_version_current CHECK (version = 3);

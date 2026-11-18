@@ -6,3 +6,10 @@ data
 .env.local
 **/__pycache__
 *.pyc
+web/node_modules
+web/.next
+web/public/fonts
+web/test-results
+web/playwright-report
+output*
+jokbo-assets

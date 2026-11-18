@@ -26,3 +26,12 @@ __pycache__/
 # local secrets
 .env
 .env.local
+
+# Next.js public reader
+web/node_modules/
+web/.next/
+web/next-env.d.ts
+web/*.tsbuildinfo
+web/test-results/
+web/playwright-report/
+web/public/fonts/

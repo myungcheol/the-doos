@@ -27,6 +27,7 @@
 17. [처음 참여하는 개발자를 위한 빠른 시작](#17-처음-참여하는-개발자를-위한-빠른-시작)
 18. [소스 코드와 데이터 찾아보기](#18-소스-코드와-데이터-찾아보기)
 19. [안전한 개발 및 검수 절차](#19-안전한-개발-및-검수-절차)
+20. [Next.js 공개 족보 열람실](#20-nextjs-공개-족보-열람실)
 
 ---
 
@@ -563,7 +564,7 @@ PER_<UUID>
 
 | 테이블 | 저장하는 내용 |
 |---|---|
-| `schema_version` | 스키마 버전. 현재 2이며 `database init`이 명시적·반복 가능한 마이그레이션을 적용 |
+| `schema_version` | 스키마 버전. 현재 3이며 `database init`이 명시적·반복 가능한 마이그레이션을 적용. v3은 웹 조회용 인덱스 추가 |
 | `editions` | 판본 ID, 발행연도·권 등 `meta`, 현재 검수 `state`와 충돌 검사용 `revision` |
 | `assets` | 이미지 SHA-256 `id`, 저장소 상대 `path`, 바이트 `size` |
 | `pages` | 판본 내 스캔 페이지 이름. `(edition_id, name)`으로 유일성 보장 |
@@ -776,7 +777,7 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 5. **배우자 유형은 원문 확인이 필요합니다.** 배우자 키워드가 검출되었다고 부인/첩 구분이 자동 확정되는 것은 아닙니다.
 6. **개정판의 동일인 연결은 사람이 판단해야 합니다.** 이름이 같다는 이유로 `person_uid`를 자동 병합하지 않습니다.
 7. **PostgreSQL은 선택 저장 방식입니다.** 3.5·8.5절에 따라 전환하며, pending OCR의 검수 대응·활성화와 판본 간 동일인 선택 UI는 아직 지원하지 않습니다. 공용 파일 레지스트리는 자동 갱신하지 않습니다.
-8. **UI는 로컬 검수용입니다.** 검수 파일과 스캔의 접근 권한을 관리하세요.
+8. **데스크톱 UI는 로컬 검수용입니다.** 일반 사용자용 읽기 전용 웹 열람실은 §20을 따릅니다.
 
 족보에는 생존 인물이나 가족에 관한 정보가 포함될 수 있습니다. 원본 이미지와 검수 결과의 접근 권한을 관리하고 외부 공개 전에 자료 권리 및 개인정보 문제를 확인하세요.
 
@@ -804,12 +805,15 @@ OCR 실행 당시의 원본 이미지 경로가 현재도 유효한지 확인합
 | 2026-11-11 | 선남후녀와 왼쪽으로 이어지는 자녀 묶음을 관계 후보에 반영하고, 기존 OCR의 관계만 백업 후 재계산하는 명령 추가 |
 | 2026-11-12 | 행·열 분할 전 회전·원근 보정과 원본 좌표 역변환 추가, 기존 OCR 확대와 검수 근거 보존 |
 | 2026-11-12 | PostgreSQL 직접 OCR·검수 저장, JSON 이관·내보내기, 이미지 해시 저장소, 다중 관계와 계보 조회 추가 |
+| 2026-11-16 | Next.js 공개 열람실: 스캔·인물 상세·이름 검색·선조/후손 단계별 탐색, 조회용 인덱스와 Docker 배포 구성 |
 
 ## 16. 프로젝트 파일 구성
 
 ```text
 the-doos/
 ├── README.md
+├── web/                       # Next.js 열람실·읽기 전용 API·브라우저 테스트
+├── compose.web.yaml           # 웹 서버 Docker 배포
 ├── database/
 │   ├── schema.sql             # PostgreSQL 10개 테이블·인덱스·순환 차단
 │   ├── store.py               # 트랜잭션·이관·이미지·검수·계보 탐색
@@ -886,6 +890,7 @@ python -m ocr.jokbo_ocr --help
 | 부모·자녀 추론의 판면·선남후녀 규칙, 기존 관계 초안 재계산 | README §9, `ocr/jokbo_ocr.py`, `ocr/refresh_relationships.py`, `tests/ocr_tests/test_relationship_layout.py` |
 | 페이지별 OCR 저장·기존 JSON 호환 읽기 | `ocr/storage.py`, `tests/ocr_tests/test_storage.py` |
 | PostgreSQL 스키마·JSON 이관·이미지 저장·계보 탐색 | `database/schema.sql`, `database/store.py`, `database/__main__.py`, README §8.5 |
+| 공개 족보 웹 열람·인물 검색·선조/후손 탐색 | `web/app/`, `web/components/`, `web/lib/catalog.ts`, README §20 |
 | 인물 선택, 이미지 표시, 입력폼, 관계 검수 | `review/desktop_review.py`, `tests/review_tests/test_desktop.py` |
 | 검수 상태·내보내기·원본 이미지 로딩 | `review/core.py` |
 | 이전 페이지 기록 연결·원문 근거, 개별 페이지 불러오기, 누락 인명 복구 | `review/extensions.py`, `tests/review_tests/test_extensions.py` |
@@ -928,3 +933,88 @@ python -m ocr.jokbo_ocr --help
 ---
 
 **문서 관리 원칙:** 새 기능이 추가되면 별도의 `README_vX.md`를 만들기보다 이 `README.md`를 갱신합니다. 큰 변경은 [버전별 기능 이력](#15-버전별-기능-이력)에 한 줄을 추가하고, 설치/실행 방법이나 데이터 구조가 바뀌면 해당 본문도 함께 수정합니다.
+
+## 20. Next.js 공개 족보 열람실
+
+`web/`는 일반 방문자가 PostgreSQL에 저장된 족보를 읽는 Node.js/Next.js 앱입니다. 판본·스캔 페이지 선택, 페이지별 인물 목록, 원본 이미지의 인물 영역 선택, 인물 상세, 이름 검색, 선조·후손 탐색을 제공합니다. 데스크톱 검수에서 저장한 결과는 다음 웹 조회에 반영됩니다.
+
+### 20.1 사전 조사와 DB 설계 선택
+
+[Gramps Web 데이터 모델](https://www.grampsweb.org/user-guide/data-model/)은 인물·가족·이벤트·출처를 별도 객체로 연결하고, 기록을 뒷받침하는 출처와 인물 정체성을 구분합니다. 이 프로젝트의 `persons`·`occurrences`·`parent_child`·`partners`도 이 구분을 이미 지원합니다. 다음 방식을 비교해 **기존 인물/출처/관계 테이블을 유지**했습니다.
+
+| 방식 | 이번 서비스에 대한 판단 |
+|---|---|
+| 인물 테이블에 `parent_id` 하나만 저장 | 여러 부모·양부모·출처별 관계를 표현하기 부족함 |
+| 부모·자녀 쌍을 별도 행으로 저장 | 다중 부모·다수 자녀·관계 유형·검수 상태를 보존하므로 기존 `parent_child` 채택 |
+| 모든 조상·후손 쌍을 미리 계산한 테이블 | 빠른 전체 계보 조회에는 유용하지만 검수 변경마다 파생 경로를 갱신해야 함. 현재 화면은 세대별 요청이므로 추가하지 않음 |
+| 경로 문자열로 계보 저장 | 여러 부모와 공유 조상 때문에 인물 하나가 여러 경로에 나타남. 단일 경로 모델을 기본으로 사용하지 않음 |
+
+전체 계보 조회는 기존 [PostgreSQL 재귀 CTE](https://www.postgresql.org/docs/current/queries-with.html)를 사용할 수 있습니다. 웹 화면은 사용자가 펼친 인물의 직계 부모 또는 자녀를 **한 세대씩**, 요청당 최대 50건으로 조회합니다. 더 많은 형제 관계는 ‘관계 더 보기’로 읽고, 각 인물의 화살표로 다음 세대를 계속 펼칩니다. 공유 조상은 각 가지에 표시할 수 있으며, 같은 경로의 재방문은 추가 확장을 막습니다. `biological`, `adoptive`, `unspecified`를 구분하고, 배우자에서 부모 관계를 추론하지 않습니다. 표시 순서는 출생 순위를 뜻하지 않습니다.
+
+스키마 v3은 새 테이블 없이 `occurrences`의 페이지/판본별 인물 인덱스, 이름 접두 검색 인덱스, `parent_child`의 판본별 양방향 인덱스를 추가합니다. `python -m database init`으로 기존 v2에 적용합니다. 스캔·원문·검수 상태·영구 ID는 마이그레이션에서 수정하지 않습니다. 앱 자체는 v2에도 연결할 수 있으나 페이지가 많으면 v3 인덱스를 적용하세요.
+
+이름 검색은 한자 이름의 일부도 허용하며 정확히 일치하는 이름을 먼저 표시합니다. API는 `match=exact|prefix|contains`를 지원합니다. 접두 검색은 B-tree 인덱스를 사용할 수 있습니다. 기본 부분 검색은 짧은 한자 이름도 지원하지만 큰 데이터에서는 순차 탐색 비용이 남습니다. [PostgreSQL pg_trgm](https://www.postgresql.org/docs/current/pgtrgm.html)의 부분 검색 인덱스는 짧아서 추출 가능한 trigram이 없는 검색어에 효과가 제한되므로 필수 확장으로 추가하지 않았습니다. 실제 데이터가 커지면 측정 후 확장 여부를 결정합니다.
+
+### 20.2 로컬 실행
+
+Node.js 22 이상이 필요합니다. Docker 이미지는 Node.js 24를 사용합니다. PostgreSQL에 OCR을 저장하고 `JOKBO_ASSET_ROOT`의 원본 이미지가 준비된 상태에서 실행합니다.
+
+```bash
+# 저장소 루트: 필요할 때 DB 스키마/인덱스 갱신
+python -m database init
+
+cd web
+npm ci
+npm run dev
+# 개발 서버는 0.0.0.0:3000에서 연결을 받는다.
+
+# 프로덕션 빌드와 로컬 서버
+npm run build
+npm start
+```
+
+루트 `.env`의 `DATABASE_URL`과 `JOKBO_ASSET_ROOT`를 읽습니다. 상대 이미지 경로는 저장소 루트 기준입니다. 웹 전용 DB 계정은 `JOKBO_WEB_DATABASE_URL`로 지정할 수 있고 이 값이 우선합니다. `JOKBO_PUBLIC_EDITIONS=jokbo-1987`처럼 공개할 판본을 쉼표로 지정합니다. 비어 있으면 모든 판본이 공개 조회 대상입니다. 환경변수는 서버에서만 읽고 브라우저에 전달하지 않습니다. 배포 이미지에도 `.env` 파일은 포함하지 않습니다. [Next.js 환경변수](https://nextjs.org/docs/app/guides/environment-variables)
+
+**브라우저에서 `127.0.0.1:3000`에 연결할 수 없을 때:** 개발 서버가 SSH·WSL·개발 컨테이너처럼 브라우저와 다른 환경에 있으면 서버가 출력한 `127.0.0.1`은 그 원격 환경의 주소입니다. 먼저 개발 서버와 같은 터미널에서 `curl -I http://127.0.0.1:3000`이 `200`을 반환하는지 확인하세요. VS Code에서는 하단 **Ports** 탭의 **Forward a Port**로 `3000`을 전달한 다음, Ports 탭에 표시된 **Forwarded Address**를 브라우저에서 여세요. 로컬 포트가 이미 쓰이면 표시 주소가 `localhost:3000`과 다를 수 있습니다. 포트 전달 뒤에도 연결이 안 되면 터미널에 나온 실제 실행 포트와 Ports 탭의 원격 포트가 같은지 확인하세요. [VS Code 공식 포트 전달 안내](https://code.visualstudio.com/docs/remote/ssh#_forwarding-a-port-creating-ssh-tunnel)
+
+화면에 한글·한자가 네모로 표시되는 환경을 위해 웹 실행·빌드 전에 저장소의 Noto Sans CJK KR 글꼴을 `web/public/fonts/`로 복사합니다. 생성된 복사본은 Git에 포함되지 않습니다. 서버에서 `/fonts/NotoSansCJKkr-Regular.otf`가 열리면 글꼴 파일 제공도 정상입니다.
+
+웹은 항상 읽기 전용 트랜잭션으로 조회합니다. 실제 서비스 DB 사용자는 `jokbo` 스키마의 조회 대상 테이블(`editions`, `pages`, `ocr_runs`, `occurrences`, `partners`, `parent_child`)에 SELECT만 부여할 수 있습니다. SQL 입력은 [node-postgres 매개변수 바인딩](https://node-postgres.com/features/queries)을 사용하며 요청별 결과 수와 쿼리 시간을 제한합니다.
+
+### 20.3 열람 방법과 공개 데이터
+
+1. 판본을 고르고 왼쪽 목차에서 스캔 페이지를 엽니다. 페이지 이름 검색과 ‘페이지 더 보기’를 지원합니다.
+2. 원본 이미지의 번호 또는 오른쪽 인물 목록을 누르면 상세 정보가 열립니다. 번호는 해당 페이지의 목록과 일치합니다. 확대·축소·맞춤, 드래그 이동, Ctrl+휠 확대를 지원합니다.
+3. 상단에서 이름을 검색하고 결과를 선택하면 해당 인물의 원본 페이지로 이동합니다. URL에 판본·페이지·인물 ID가 남아 다시 열거나 공유할 수 있습니다.
+4. ‘선조 · 후손’에서 방향을 선택하고 각 이름 옆 화살표를 눌러 여러 세대를 펼칩니다. 이름을 누르면 그 인물을 기준으로 원본과 상세 정보를 엽니다.
+
+활성 OCR 실행만 조회하고 `pending` 실행은 표시하지 않습니다. 인명 검토 대기는 상태를 표시해 열람할 수 있으며 `rejected` 인물·배우자는 제외합니다. 관계 트리는 `confirmed` 부모·자녀 관계만 사용합니다. 출생·사망·관직·묘소·인물 기록은 출처별 검수 값을 표시하고, 추가 정보 검수 상태를 별도로 안내합니다. 검수 메모, 상태 스냅샷 전체, 내부 파일 경로는 공개 응답에서 제외합니다.
+
+이미지는 허용된 판본의 활성 페이지를 통해서만 조회할 수 있습니다. 브라우저 호환 JPEG로 응답하며 관리 저장소의 원본은 수정하지 않습니다. 원본 전체 이미지가 없고 ROI만 있으면 원본 좌표의 `table_roi.x/y`를 빼서 선택 영역을 배치합니다. 여러 판본의 동명이인을 합치거나 서로 다른 출처의 상세 정보를 자동으로 하나로 합치지 않습니다.
+
+### 20.4 Docker와 서버 배포
+
+[Next.js 자체 호스팅](https://nextjs.org/docs/app/guides/self-hosting) 방식으로 Node.js 서버를 실행합니다. `web/Dockerfile`은 standalone 빌드를 만들고, 이미지 저장소는 읽기 전용 볼륨으로 연결합니다. 도메인·HTTPS 연결은 배포 서버를 정한 뒤 reverse proxy에서 구성합니다.
+
+```bash
+# 루트 .env에서 웹 컨테이너가 접근할 DB URL 설정
+# 로컬 Compose DB: JOKBO_WEB_DATABASE_URL=postgresql://사용자:URL인코딩한비밀번호@postgres:5432/DB이름
+# 기존 PostgreSQL 서비스가 실행 중인 경우
+docker compose -f compose.yaml -f compose.web.yaml up -d --build web
+
+# 외부 PostgreSQL: .env에 외부 호스트의 JOKBO_WEB_DATABASE_URL을 지정
+docker compose -f compose.web.yaml up -d --build web
+```
+
+기본 웹 바인딩은 `127.0.0.1:3000`입니다. reverse proxy로 이 주소를 연결하거나 필요에 맞게 `WEB_BIND_ADDRESS`와 `WEB_PORT`를 지정하세요. 로컬 `npm start`는 `PORT`와 `JOKBO_WEB_HOST`로 바꿀 수 있습니다. 공개 서버에서 실행하려면 DB URL과 관리 이미지 저장소를 함께 제공해야 합니다. 현재 앱에는 계정·편집 기능이 없습니다.
+
+### 20.5 검증
+
+```bash
+cd web
+npm run typecheck
+npm test
+npm run build
+```
+
+실제 DB 테스트는 **격리된** `JOKBO_TEST_DATABASE_URL`을 지정해야 실행됩니다. `web/tests/seed.py`는 이름이 `_test`로 끝나는 테스트 DB에 가상 인물·이미지를 넣으며 실제 작업 DB에는 실행하지 않습니다. 이 fixture로 서버를 실행한 뒤 `JOKBO_WEB_TEST_URL`(기본 `http://127.0.0.1:3100`)을 설정하고 `npm run test:e2e`를 실행하면 스캔 클릭·검색·다세대 탐색·모바일 ROI 좌표를 검증합니다.
