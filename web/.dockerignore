@@ -1,8 +1,0 @@
-node_modules
-.next
-.env*
-test-results
-playwright-report
-tests
-*.tsbuildinfo
-public/fonts
