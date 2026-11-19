@@ -141,6 +141,8 @@ def main():
     with args.layout.open(encoding='utf-8') as f:
         layout = json.load(f)
     result = extract(ocr, layout)
+    from information_parser import enrich
+    result = enrich(result)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)

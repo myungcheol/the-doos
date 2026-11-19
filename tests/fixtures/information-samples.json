@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "note": "032 confirmed fragment plus synthetic rule cases; these are not complete person transcriptions",
+  "cases": [
+    {"id":"p032-confirmed","fragments":["甲辰二月生"],"kinds":["birth"],"dates":[{"year_text":"甲辰","month":2,"day":null,"precision":"year_month"}]},
+    {"id":"year-only","fragments":["甲辰生"],"kinds":["birth"],"dates":[{"year_text":"甲辰","month":null,"day":null,"precision":"year"}]},
+    {"id":"year-month","fragments":["甲辰二月卒"],"kinds":["death"],"dates":[{"year_text":"甲辰","month":2,"day":null,"precision":"year_month"}]},
+    {"id":"full-date-split","fragments":["甲辰二月","二十三日生"],"kinds":["birth"],"dates":[{"year_text":"甲辰","month":2,"day":23,"precision":"year_month_day"}]},
+    {"id":"birth-prefix","fragments":["生甲辰二月"],"kinds":["birth"]},
+    {"id":"death-prefix","fragments":["卒丙午年五月廿一日"],"kinds":["death"]},
+    {"id":"two-events","fragments":["甲辰二月生丙午年五月卒"],"kinds":["birth","death"]},
+    {"id":"rebury","fragments":["遷葬甲辰二月墓在先塋"],"kinds":["burial_date","burial_note"]},
+    {"id":"rebury-suffix","fragments":["甲辰二月遷葬"],"kinds":["burial_date"]},
+    {"id":"credentials-offices","fragments":["生員進士兵部尚書中書舍人"],"kinds":["education","education","office","office"]},
+    {"id":"spouse-deferred","fragments":["甲辰生配金氏丙午卒"],"kinds":["birth","spouse_information"],"spouses":[{"label":"金氏","relation_type":"spouse","event":"death","year":"丙午"}]},
+    {"id":"concubine-deferred","fragments":["妾李氏甲辰生"],"kinds":["spouse_information"],"spouses":[{"label":"李氏","relation_type":"concubine","event":"birth","year":"甲辰"}]},
+    {"id":"wife-title-deferred","fragments":["甲辰生夫人洛陽洪氏丙子生"],"kinds":["birth","spouse_information"],"spouses":[{"label":"洛陽洪氏","relation_type":"spouse","event":"birth","year":"丙子"}]},
+    {"id":"wife-title-ocr-confusion","fragments":["甲辰生夫入洛陽洪氏丙子生"],"kinds":["birth","spouse_information"],"spouses":[{"label":"洛陽洪氏","relation_type":"spouse","event":"birth","year":"丙子"}]},
+    {"id":"unknown","fragments":["字某號某有孝行"],"kinds":["general_information"]},
+    {"id":"missing-year","fragments":["二月生"],"kinds":["birth"],"dates":[{"year_text":null,"month":2,"day":null,"precision":"month"}]},
+    {"id":"invalid-month","fragments":["甲辰十三月生"],"kinds":["birth"],"warning":true},
+    {"id":"leap-month","fragments":["甲辰閏二月初一日生"],"kinds":["birth"],"dates":[{"year_text":"甲辰","month":2,"day":1,"precision":"year_month_day","leap_month":true}]},
+    {"id":"era-kept","fragments":["至正十六年生"],"kinds":["unclassified","birth"],"dates":[{"year_text":"十六年","month":null,"day":null,"precision":"year"}]},
+    {"id":"graduation","fragments":["甲辰年卒業"],"kinds":["unclassified"]}
+  ]
+}

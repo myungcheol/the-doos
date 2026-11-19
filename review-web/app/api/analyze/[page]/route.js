@@ -8,7 +8,7 @@ import os from 'node:os';
 const exec=promisify(execFile); const cache=new Map();
 export async function GET(req,{params}) {
  const {page}=await params; if(!/^\d{3}$/.test(page)) return new Response('Not found',{status:404});
- const variant=new URL(req.url).searchParams.get('variant')==='corrected'?'corrected':'original'; const key='typography-v3:'+page+':'+variant;
+ const variant=new URL(req.url).searchParams.get('variant')==='corrected'?'corrected':'original'; const key='information-v4:'+page+':'+variant;
  if(cache.has(key)) return Response.json(cache.get(key));
  const root=path.resolve(process.cwd(),'..'), img=path.join(root,'scan/genealogy',`${page}.jpg`), python=path.join(root,'.venv/bin/python');
  try {await stat(img); const dir=await mkdtemp(path.join(os.tmpdir(),'genealogy-review-')); const layout=path.join(dir,'layout.json'), ocr=path.join(dir,'ocr.json'), result=path.join(dir,'people.json'), preview=path.join(dir,'corrected.png');
