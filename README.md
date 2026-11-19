@@ -13,3 +13,14 @@
 프로그램은 LLM 없이 PaddleOCR, 사전, 명시적인 규칙으로 동작한다.
 자동 OCR 대상은 `scan/genealogy`이며 `scan/frontmatter`는 제외한다.
 개발과 조사에는 AI 코딩 도구를 사용할 수 있다.
+# 단일 이미지 OCR
+
+Python 3.12 환경에서 CPU 기준 실행:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements-ocr.txt
+.venv/bin/python scripts/ocr_image.py scan/genealogy/001.jpg --output /tmp/ocr-001.json
+```
+
+최초 실행 시 PaddleOCR의 공식 모델 다운로드가 필요하다. 출력 파일이 이미 있으면 덮어쓰지 않는다. 결과는 원본 이미지 해시·크기, 모델과 실행 환경, 인식 문자열·신뢰도·원본 좌표를 담는다. 이 단계는 페이지 전체의 원시 인식이며 인물이나 관계를 확정하지 않는다. 실행 결과와 한계는 [기준선 기록](docs/research/ocr-baseline.md)을 참조한다.
