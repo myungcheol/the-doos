@@ -24,8 +24,7 @@ def main():
     from PIL import Image
     from paddleocr import PaddleOCR
 
-    config = dict(device='cpu', text_detection_model_name='PP-OCRv5_mobile_det',
-                  text_recognition_model_name='PP-OCRv5_mobile_rec',
+    config = dict(device='cpu', lang='chinese_cht', ocr_version='PP-OCRv5',
                   use_doc_orientation_classify=False, use_doc_unwarping=False,
                   use_textline_orientation=False)
     started = time.perf_counter()
@@ -48,7 +47,11 @@ def main():
         'run': {'timestamp_utc': datetime.now(timezone.utc).isoformat(),
                 'argv': sys.argv, 'python': platform.python_version(), 'platform': platform.platform(),
                 'paddleocr': version('paddleocr'), 'paddlepaddle': version('paddlepaddle'),
-                'paddlex': version('paddlex'), 'config': config, 'text_rec_score_thresh': 0.0,
+                'paddlex': version('paddlex'), 'config': config,
+                'resolved_models': {
+                    'detection': ocr._merged_paddlex_config['SubModules']['TextDetection']['model_name'],
+                    'recognition': ocr._merged_paddlex_config['SubModules']['TextRecognition']['model_name'],
+                }, 'text_rec_score_thresh': 0.0,
                 'initialization_seconds': round(inference_started - started, 3),
                 'inference_seconds': round(elapsed - inference_started, 3)},
         'regions': [{'text': text, 'score': float(score), 'polygon': poly.tolist()}
