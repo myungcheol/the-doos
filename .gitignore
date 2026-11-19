@@ -16,6 +16,8 @@ data/exports/*.bak
 data/exports/import.sql
 output*/
 .venv/
+review-web/node_modules/
+review-web/.next/
 jokbo-assets/
 *.dump
 

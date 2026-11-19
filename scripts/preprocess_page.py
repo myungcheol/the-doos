@@ -2,10 +2,41 @@
 """Propose ruled page bands and text columns, retaining original pixel coordinates."""
 import argparse
 import json
+import math
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+
+def deskew(image):
+    """Estimate skew from long, nearly horizontal rules; retain all pixels."""
+    h, w = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    ink = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)[1]
+    lines = cv2.HoughLinesP(ink, 1, np.pi / 1800, threshold=int(w * .25),
+                            minLineLength=int(w * .5), maxLineGap=int(w * .08))
+    angles = []
+    for x1, y1, x2, y2 in ([] if lines is None else lines[:, 0]):
+        dx, dy = int(x2)-int(x1), int(y2)-int(y1)
+        if abs(dx) >= w * .5 and abs(dy) <= abs(dx) * .06:
+            angles.append(math.degrees(math.atan2(dy * (1 if dx > 0 else -1), abs(dx))))
+    identity = [[1., 0., 0.], [0., 1., 0.]]
+    if len(angles) < 3:
+        return image, {'applied': False, 'reason': 'insufficient horizontal rules', 'angle_degrees': None, 'matrix': identity, 'inverse_matrix': identity}
+    angle = float(np.median(angles))
+    if np.median(np.abs(np.array(angles) - angle)) > .35:
+        return image, {'applied': False, 'reason': 'inconsistent rule angles', 'angle_degrees': angle, 'matrix': identity, 'inverse_matrix': identity}
+    if abs(angle) < .15:
+        return image, {'applied': False, 'reason': 'angle below 0.15 degrees', 'angle_degrees': angle, 'matrix': identity, 'inverse_matrix': identity}
+    matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1)
+    corners = np.array([[0, 0, 1], [w, 0, 1], [0, h, 1], [w, h, 1]]) @ matrix.T
+    lower, upper = corners.min(axis=0), corners.max(axis=0)
+    matrix[:, 2] -= lower
+    size = np.ceil(upper-lower).astype(int)
+    rotated = cv2.warpAffine(image, matrix, tuple(size), flags=cv2.INTER_CUBIC, borderValue=(255, 255, 255))
+    return rotated, {'applied': True, 'reason': 'estimated from horizontal rules', 'angle_degrees': angle,
+                     'matrix': matrix.tolist(), 'inverse_matrix': cv2.invertAffineTransform(matrix).tolist()}
 
 
 def clusters(values, gap):
@@ -24,6 +55,7 @@ def preprocess(image):
     ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
     horizontal = []
     vertical = []
+    vertical_segments = []
     for threshold in (150, 180, 200):
         line_ink = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY_INV)[1]
         lines = cv2.HoughLinesP(line_ink, 1, np.pi / 1800, threshold=int(width * .25),
@@ -35,8 +67,13 @@ def preprocess(image):
                 horizontal.append((y1 + y2) / 2)
             if abs(dy) >= height * .5 and abs(dx) <= abs(dy) * .06:
                 vertical.append((x1 + x2) / 2)
+                vertical_segments.append(((x1 + x2) / 2, abs(dy)))
     ys = [y for y in clusters(horizontal, 8) if height * .03 < y < height * .98]
     xs = [x for x in clusters(vertical, 8) if width * .025 < x < width * .975]
+    # Prefer the longest ruling segment in a cluster: text strokes can shift
+    # a median boundary inward on dense pages such as 005.
+    xs = sorted(set(round(max((s for s in vertical_segments if abs(s[0]-x) <= 16),
+                              key=lambda s: s[1])[0]) for x in xs))
     if len(xs) < 2 or len(ys) < 2:
         return {'status': 'failed', 'reason': 'page borders or horizontal rules not detected',
                 'width': width, 'height': height, 'bands': []}
@@ -110,15 +147,30 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--overlay', type=Path)
     parser.add_argument('--crop-dir', type=Path, help='save proposed bands as PNGs')
+    parser.add_argument('--deskew-output', type=Path, help='write corrected image when correction is applied')
     args = parser.parse_args()
     image = cv2.imread(str(args.image))
     if image is None:
         parser.error(f'cannot read image: {args.image}')
     if args.output.resolve() == args.image.resolve() or (args.overlay and args.overlay.resolve() in (args.image.resolve(), args.output.resolve())):
         parser.error('image, output and overlay must be different files')
+    if args.deskew_output and args.deskew_output.resolve() in (args.image.resolve(), args.output.resolve(), args.overlay.resolve() if args.overlay else args.image.resolve()):
+        parser.error('corrected image must not overwrite input or other output')
+    if args.deskew_output:
+        image, rotation = deskew(image)
+        if rotation['applied']:
+            ok, encoded = cv2.imencode(args.deskew_output.suffix, image)
+            if not ok:
+                raise RuntimeError('corrected image encoding failed')
+            args.deskew_output.parent.mkdir(parents=True, exist_ok=True)
+            with args.deskew_output.open('xb') as f:
+                f.write(encoded.tobytes())
+    else:
+        rotation = {'applied': False, 'reason': 'not requested'}
     result = preprocess(image)
+    result['rotation'] = rotation
     result['image'] = str(args.image)
-    result['coordinates'] = 'original image pixels; bbox [left, top, right, bottom), origin top-left'
+    result['coordinates'] = 'processed image pixels; bbox [left, top, right, bottom), origin top-left'
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
