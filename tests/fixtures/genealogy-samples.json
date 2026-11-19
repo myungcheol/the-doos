@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "coordinate_system": "원본 이미지 기준 좌상단 x,y, 오른쪽·아래 방향, [x_min,y_min,x_max,y_max], 끝 좌표 제외",
+  "coverage": "영역별 부분 주석. 명시되지 않은 내용은 음성 정답이 아니다.",
+  "pages": [
+    {"file": "scan/genealogy/001.jpg", "width": 688, "height": 948, "regions": [
+      {"id": "p001-gyeonggil", "kind": "name", "bbox": [520, 765, 556, 865], "geometry_status": "draft", "text": "子景吉", "status": "user_confirmed"},
+      {"id": "p001-ref2", "kind": "page_reference", "bbox": [521, 876, 552, 895], "geometry_status": "draft", "text": "下2", "status": "user_confirmed"},
+      {"id": "p001-gyeongdu", "kind": "name", "bbox": [394, 765, 430, 865], "geometry_status": "draft", "text": "子景斗", "status": "user_confirmed"},
+      {"id": "p001-ref3", "kind": "page_reference", "bbox": [392, 876, 424, 895], "geometry_status": "draft", "text": "下3", "status": "user_confirmed"}
+    ]},
+    {"file": "scan/genealogy/002.jpg", "width": 700, "height": 948, "regions": [
+      {"id": "p002-gyeonggil", "kind": "name", "bbox": [234, 113, 267, 195], "geometry_status": "draft", "text": "景吉", "status": "user_confirmed"},
+      {"id": "p002-eungnyong", "kind": "name", "bbox": [233, 240, 273, 342], "geometry_status": "draft", "text": "子應龍", "status": "user_confirmed"}
+    ]},
+    {"file": "scan/genealogy/003.jpg", "width": 802, "height": 953, "regions": [
+      {"id": "p003-gyeongdu", "kind": "name", "bbox": [602, 122, 642, 210], "geometry_status": "draft", "text": "景斗", "status": "user_confirmed"}
+    ]},
+    {"file": "scan/genealogy/004.jpg", "width": 700, "height": 952, "regions": [
+      {"id": "p004-daughter-husband", "kind": "female_entry", "bbox": [504, 365, 538, 469], "geometry_status": "draft", "text": "女金世英", "status": "user_confirmed", "meaning": "이름 미상 두씨 딸의 남편 金世英"}
+    ]},
+    {"file": "scan/genealogy/005.jpg", "width": 697, "height": 951, "regions": [
+      {"id": "p005-person", "kind": "name", "bbox": [277, 629, 317, 735], "geometry_status": "draft", "text": "子廷薰", "status": "user_confirmed"},
+      {"id": "p005-left-info", "kind": "information_area", "bbox": [65, 627, 275, 760], "geometry_status": "draft", "text": null, "status": "user_confirmed", "note": "소속은 사용자 확인. 영역 경계와 전체 전사는 아직 정답이 아니다."}
+    ]},
+    {"file": "scan/genealogy/032.jpg", "width": 708, "height": 957, "regions": [
+      {"id": "p032-partial-date", "kind": "date", "bbox": [499, 650, 521, 735], "geometry_status": "draft", "text": "甲辰二月生", "status": "user_confirmed", "precision": "cyclic_year_month", "gregorian_year": null, "day": null, "note": "연도 후보와 역법 미확정"}
+    ]},
+    {"file": "scan/genealogy/033.jpg", "width": 698, "height": 950, "regions": [
+      {"id": "p033-myeongbaek", "kind": "name", "bbox": [407, 744, 452, 842], "geometry_status": "draft", "text": "子命栢", "status": "user_confirmed"},
+      {"id": "p033-chulgye", "kind": "adoption_note", "bbox": [409, 777, 431, 846], "geometry_status": "draft", "text": null, "status": "user_confirmed", "note": "034쪽의 작은아버지에게 양자로 입적"}
+    ]},
+    {"file": "scan/genealogy/034.jpg", "width": 700, "height": 952, "regions": [
+      {"id": "p034-yugwon", "kind": "name", "bbox": [507, 636, 550, 738], "geometry_status": "draft", "text": "子友權", "status": "user_confirmed", "note": "명栢의 작은아버지, 양부"}
+    ]},
+    {"file": "scan/genealogy/802.jpg", "width": 697, "height": 926, "regions": [
+      {"id": "p802-daughter-husband", "kind": "female_entry", "bbox": [211, 88, 247, 206], "geometry_status": "draft", "text": "女吳龍湜", "status": "user_confirmed", "meaning": "이름 미상 두씨 딸의 남편 吳龍湜"}
+    ]}
+  ],
+  "relations": [
+    {"type": "same_person", "from": "p001-gyeonggil", "to": "p002-gyeonggil", "evidence": ["p001-ref2"], "status": "user_confirmed"},
+    {"type": "same_person", "from": "p001-gyeongdu", "to": "p003-gyeongdu", "evidence": ["p001-ref3"], "status": "user_confirmed"},
+    {"type": "parent_child", "from": "p002-gyeonggil", "to": "p002-eungnyong", "evidence": ["p002-gyeonggil", "p002-eungnyong"], "status": "user_confirmed"},
+    {"type": "information_owner", "from": "p005-person", "to": "p005-left-info", "status": "user_confirmed"},
+    {"type": "adoptive_child", "from": "p034-yugwon", "to": "p033-myeongbaek", "evidence": ["p033-chulgye"], "status": "user_confirmed"}
+  ]
+}
