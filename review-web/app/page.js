@@ -35,6 +35,7 @@ export default function Home() {
   const [viewport, setViewport] = useState({width:600, height:800});
   const [imageSize, setImageSize] = useState({width:688, height:948});
   const [zoom, setZoom] = useState(1);
+  const [referencePages, setReferencePages] = useState({});
   useEffect(() => { fetch('/api/pages').then(r => r.json()).then(setPages); }, []);
   useEffect(() => {
     const observer = new ResizeObserver(entries => {
@@ -46,7 +47,7 @@ export default function Home() {
   }, []);
 
   async function run(selected = variant) {
-    setLoading(true); setError(''); setData(null); setPerson(-1); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setVariant(selected);
+    setLoading(true); setError(''); setData(null); setReferencePages({}); setPerson(-1); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setVariant(selected);
     try {
       const response = await fetch(`/api/analyze/${page}?variant=${selected}`);
       const result = await response.json();
@@ -54,6 +55,20 @@ export default function Home() {
       setData(result);
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
+  useEffect(() => {
+    const refs = data?.people.page_references || [];
+    const targets = [...new Set(refs.filter(ref => ref.status === 'unprocessed').map(ref => ref.target_page))];
+    if (targets.length === 0) return;
+    let cancelled = false;
+    Promise.all(targets.map(async target => {
+      try {
+        const response = await fetch(`/api/analyze/${String(target).padStart(3,'0')}?variant=original`);
+        const result = await response.json();
+        return [target, response.ok ? result : {error:result.error || '대상 쪽 분석 실패'}];
+      } catch (error) { return [target, {error:error.message}]; }
+    })).then(entries => { if (!cancelled) setReferencePages(Object.fromEntries(entries)); });
+    return () => { cancelled = true; };
+  }, [data]);
 
   function rect(b, stroke, key, selected = false) {
     return <rect key={key} x={b[0]} y={b[1]} width={b[2]-b[0]} height={b[3]-b[1]}
@@ -65,6 +80,19 @@ export default function Home() {
   const parentEdge = parentRelations.find(edge => edge.child === person);
   const childEdges = parentRelations.filter(edge => edge.parent === person);
   const unresolvedParent = data?.people.parent_candidates?.unresolved.find(entry => entry.child === person);
+  const crossPageReferences = (data?.people.page_references || []).filter(reference => reference.person === person);
+  const bareName = value => value.replace(/^[子女女]/,'').replace(/□/g,'');
+  function matchingTarget(reference) {
+    const target = referencePages[reference.target_page];
+    if (!target?.people) return [];
+    return target.people.candidates.map((item,index) => ({item,index})).filter(({item}) => bareName(item.name_text) === bareName(candidate.name_text));
+  }
+  function openTarget(reference, targetIndex) {
+    const target = referencePages[reference.target_page];
+    if (!target?.people) return;
+    setPage(String(reference.target_page).padStart(3,'0')); setVariant('original'); setData(target);
+    setPerson(targetIndex); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setTab('references');
+  }
   const activeItem = candidate?.information?.items[itemIndex];
   const selectedRefs = (activeItem?.items?.[childIndex] || activeItem)?.source_refs.map(r => r.region_index) || [];
   const indexedInformation = candidate?.information?.items.map((item, index) => ({item, index})) || [];
@@ -134,7 +162,7 @@ export default function Home() {
         </select>
         <p>주황: 이름 · 초록: 선택 인물 · 청록: 정보 · 노랑: 선택 정보</p>
         {candidate && <nav className="detail-tabs" aria-label="검수 정보 종류">
-          {[['raw','원문'],['life','생몰'],['spouses','배우자·혼인'],['general','일반정보'],['family','부모·자녀']].map(([key,label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
+          {[['raw','원문'],['life','생몰'],['spouses','배우자·혼인'],['general','일반정보'],['family','부모·자녀'],['references','다른 쪽 참조']].map(([key,label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
         </nav>}
         </div>
         {candidate && <div className="person-details"><h3>{candidate.name_text}</h3>
@@ -148,6 +176,19 @@ export default function Home() {
             {parentEdge ? <p><button onClick={() => {setPerson(parentEdge.parent);setInfo(-1);setItemIndex(-1);setChildIndex(-1);}}>{data.people.candidates[parentEdge.parent].name_text} (단 {data.people.candidates[parentEdge.parent].band})</button> · {parentEdge.method === 'same_column' ? '바로 윗단 같은 열' : '윗단 오른쪽 첫 인물'} · 미검수</p> : <p>{unresolvedParent?.reason === 'upper_band_outside_page' ? '윗단이 이 쪽에 없어 보류' : '윗단 오른쪽에 부모 후보가 없어 보류'} — 다른 쪽 연결은 아직 분석하지 않습니다.</p>}
             <h4>자녀 후보</h4>
             {childEdges.length ? <ul>{childEdges.map(edge => <li key={edge.child}><button onClick={() => {setPerson(edge.child);setInfo(-1);setItemIndex(-1);setChildIndex(-1);}}>{data.people.candidates[edge.child].name_text} (단 {data.people.candidates[edge.child].band})</button> · {edge.method === 'same_column' ? '바로 윗단 같은 열' : '윗단 오른쪽 첫 인물'} · 미검수{edge.warnings.includes('female_marker_requires_review') ? ' · 女 항목 확인 필요' : ''}</li>)}</ul> : <p>같은 쪽에서 찾은 자녀 후보가 없습니다. 자녀가 없다는 뜻은 아닙니다.</p>}
+          </section>
+          <section hidden={tab !== 'references'}>
+            <h3>다른 쪽 인물 참조 후보</h3>
+            <p>명시된 上·下 쪽 표지와 대상 쪽 이름만 대조합니다. 같은 이름만으로 전역 인물을 합치지 않으며, 모든 결과는 미검수입니다.</p>
+            {crossPageReferences.length === 0 && <p>이 인물 가까이에서 찾은 다른 쪽 참조 표지가 없습니다.</p>}
+            <ul>{crossPageReferences.map((reference, index) => {
+              const target = referencePages[reference.target_page];
+              const matches = matchingTarget(reference);
+              return <li key={index}>
+                <strong>{reference.raw}</strong> → {String(reference.target_page).padStart(3,'0')}쪽 · {reference.direction === 'up' ? '위쪽 참조' : '아래쪽 참조'}{reference.ocr_direction_uncertain ? ' · OCR 방향 판독 확인 필요' : ''}
+                {reference.status === 'scan_missing' ? <div>대상 스캔 누락: 연결 보류</div> : !target ? <div>대상 쪽 분석 중…</div> : target.error ? <div>대상 쪽 분석 실패: {target.error}</div> : matches.length === 1 ? <div><button onClick={() => openTarget(reference,matches[0].index)}>{matches[0].item.name_text} (단 {matches[0].item.band})</button> · 이름 일치 출현 후보 · 미검수</div> : matches.length > 1 ? <div>대상 쪽에 같은 이름이 {matches.length}개여서 연결 보류</div> : <div>대상 쪽에서 같은 이름을 찾지 못함 — OCR 차이 또는 원본 확인 필요</div>}
+              </li>;
+            })}</ul>
           </section>
           <section hidden={tab !== 'raw'}><h4>왼쪽 정보 원문 후보</h4>
           <ul>{candidate.information_candidates.map((r,i) => <li key={i}>

@@ -175,6 +175,8 @@ def main():
     result = enrich_spouses(result)
     from parent_candidates import extract_parent_candidates
     result = extract_parent_candidates(result)
+    from page_references import extract_references
+    result['page_references'] = extract_references(ocr, result, Path('scan/genealogy'))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
