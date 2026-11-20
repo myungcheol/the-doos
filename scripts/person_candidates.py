@@ -173,6 +173,8 @@ def main():
     result = enrich(result)
     from spouse_parser import enrich_spouses
     result = enrich_spouses(result)
+    from parent_candidates import extract_parent_candidates
+    result = extract_parent_candidates(result)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)

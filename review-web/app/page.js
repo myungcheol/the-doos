@@ -61,6 +61,10 @@ export default function Home() {
   }
 
   const candidate = person >= 0 ? data?.people.candidates[person] : null;
+  const parentRelations = data?.people.parent_candidates?.relations || [];
+  const parentEdge = parentRelations.find(edge => edge.child === person);
+  const childEdges = parentRelations.filter(edge => edge.parent === person);
+  const unresolvedParent = data?.people.parent_candidates?.unresolved.find(entry => entry.child === person);
   const activeItem = candidate?.information?.items[itemIndex];
   const selectedRefs = (activeItem?.items?.[childIndex] || activeItem)?.source_refs.map(r => r.region_index) || [];
   const indexedInformation = candidate?.information?.items.map((item, index) => ({item, index})) || [];
@@ -109,6 +113,8 @@ export default function Home() {
           {bands && data.layout.bands.map((b,i) => rect(b.bbox,'red',`b${i}`))}
           {cols && data.layout.bands.flatMap((b,i) => b.columns.map((c,j) => rect(c.bbox,'blue',`c${i}-${j}`)))}
           {data.people.candidates.map((p,i) => rect(p.name_bbox,i === person ? 'lime' : 'orange',`p${i}`))}
+          {tab === 'family' && parentEdge && rect(data.people.candidates[parentEdge.parent].name_bbox,'magenta','parent')}
+          {tab === 'family' && childEdges.map(edge => rect(data.people.candidates[edge.child].name_bbox,'magenta',`child${edge.child}`))}
           {candidate?.information_candidates.map((r,i) => rect(r.bbox, i === info || selectedRefs.includes(i) ? 'yellow' : '#00ffff', `info${i}`, i === info || selectedRefs.includes(i)))}
         </svg>}
       </div>
@@ -128,13 +134,21 @@ export default function Home() {
         </select>
         <p>주황: 이름 · 초록: 선택 인물 · 청록: 정보 · 노랑: 선택 정보</p>
         {candidate && <nav className="detail-tabs" aria-label="검수 정보 종류">
-          {[['raw','원문'],['life','생몰'],['spouses','배우자·혼인'],['general','일반정보']].map(([key,label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
+          {[['raw','원문'],['life','생몰'],['spouses','배우자·혼인'],['general','일반정보'],['family','부모·자녀']].map(([key,label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
         </nav>}
         </div>
         {candidate && <div className="person-details"><h3>{candidate.name_text}</h3>
           {candidate.missing_name_characters > 0 && <p>OCR 이름 상자는 더 긴데 글자를 {candidate.missing_name_characters}자 덜 읽었습니다. □는 판독이 필요한 누락 글자입니다.</p>}
           {candidate.lineage_marker && <p>표지: {candidate.lineage_marker} — 아들 계통·후손 라인 (이름과 별도)</p>}
           {candidate.geometry_estimated && <p>옆 열과 합쳐진 OCR 상자를 분할한 후보입니다. 글자별 경계는 추정값이므로 원본과 확인해 주세요.</p>}
+          <section hidden={tab !== 'family'}>
+            <h3>같은 쪽 부모·자녀 후보</h3>
+            <p>자홍색 상자는 관계 후보입니다. 윗단 이름의 OCR 누락이나 잘못된 이름, 페이지 경계 때문에 관계가 틀릴 수 있습니다. 배우자는 자녀의 부모로 자동 추가하지 않습니다.</p>
+            <h4>부모 후보</h4>
+            {parentEdge ? <p><button onClick={() => {setPerson(parentEdge.parent);setInfo(-1);setItemIndex(-1);setChildIndex(-1);}}>{data.people.candidates[parentEdge.parent].name_text} (단 {data.people.candidates[parentEdge.parent].band})</button> · {parentEdge.method === 'same_column' ? '바로 윗단 같은 열' : '윗단 오른쪽 첫 인물'} · 미검수</p> : <p>{unresolvedParent?.reason === 'upper_band_outside_page' ? '윗단이 이 쪽에 없어 보류' : '윗단 오른쪽에 부모 후보가 없어 보류'} — 다른 쪽 연결은 아직 분석하지 않습니다.</p>}
+            <h4>자녀 후보</h4>
+            {childEdges.length ? <ul>{childEdges.map(edge => <li key={edge.child}><button onClick={() => {setPerson(edge.child);setInfo(-1);setItemIndex(-1);setChildIndex(-1);}}>{data.people.candidates[edge.child].name_text} (단 {data.people.candidates[edge.child].band})</button> · {edge.method === 'same_column' ? '바로 윗단 같은 열' : '윗단 오른쪽 첫 인물'} · 미검수{edge.warnings.includes('female_marker_requires_review') ? ' · 女 항목 확인 필요' : ''}</li>)}</ul> : <p>같은 쪽에서 찾은 자녀 후보가 없습니다. 자녀가 없다는 뜻은 아닙니다.</p>}
+          </section>
           <section hidden={tab !== 'raw'}><h4>왼쪽 정보 원문 후보</h4>
           <ul>{candidate.information_candidates.map((r,i) => <li key={i}>
             <button onClick={() => {setInfo(i); setItemIndex(-1); setChildIndex(-1);}} aria-pressed={i === info}
