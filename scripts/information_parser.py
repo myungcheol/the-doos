@@ -12,6 +12,7 @@ DATE = re.compile(r'(?P<year>' + NUM + r'年(?:' + CYCLE + r')?|' + CYCLE + r'�
 OFFICES = ('兵部尚書', '中書舍人', '左議政', '右議政', '領議政', '判書', '參判', '郡守', '縣監', '縣令', '知郡事', '學士', '學正', '將軍')
 EDUCATION = ('進士', '生員', '文科', '武科', '及第', '登科')
 EVENTS = {'生': 'birth', '卒': 'death', '歿': 'death', '殁': 'death', '逝': 'death'}
+POSITIONAL_YEAR = re.compile(r'[一二12][0-9〇零一二三四五六七八九。○ＯO]{3}(?=年)')
 
 
 def number(text):
@@ -38,6 +39,8 @@ def number(text):
 def parse_candidate(person, owner_id, resolve_scopes=True):
     regions = person['information_candidates']
     text = ''.join(r['text'] for r in regions)
+    # Matching text has identical character offsets to the untouched source.
+    date_text = POSITIONAL_YEAR.sub(lambda m: m.group().translate(str.maketrans('。○ＯO', '〇〇〇〇')), text)
     offsets = []
     cursor = 0
     for index, region in enumerate(regions):
@@ -62,7 +65,15 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         end = markers[index+1].start() if index+1 < len(markers) else len(text)
         subject_id = f'{owner_id}:spouse-{index}'
         identity = re.match(r'[\u3400-\u9fff]{1,8}?氏', text[marker.end():end])
-        label = identity.group() if identity else '姓名未詳'
+        if identity:
+            label = identity.group()
+        else:
+            # PaddleOCR sometimes drops 氏. Preserve the Han designation in
+            # the same OCR region as the marker instead of inventing 氏.
+            containing = next(((a, b) for a, b, _ in offsets if a <= marker.start() < b), None)
+            local_end = min(end, containing[1]) if containing else marker.end()
+            fallback = re.match(r'[\u3400-\u9fff]{2,8}', text[marker.end():local_end])
+            label = fallback.group() if fallback else '姓名未詳'
         relation = 'concubine' if marker.group().startswith('妾') else 'spouse'
         scoped_regions, mapping = [], []
         for a, b, i in offsets:
@@ -74,6 +85,8 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         for item in nested['items']:
             item['start'] += start
             item['end'] += start
+            for correction in item.get('date', {}).get('ocr_corrections', []):
+                correction['offset'] += start
             item['source_owner_id'] = owner_id
             for ref in item['source_refs']:
                 original_index, shift = mapping[ref['region_index']]
@@ -83,7 +96,7 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         emit('spouse_information', start, end, subject={'id':subject_id, 'label':label,
              'relation_type':relation, 'marker_raw':marker.group()}, items=nested['items'])
 
-    for match in DATE.finditer(text[:limit]):
+    for match in DATE.finditer(date_text[:limit]):
         if not match.group() or not any(match.group(k) for k in ('year', 'month', 'day')):
             continue
         a, b = match.span()
@@ -92,6 +105,9 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         # 生員 is a credential; 卒業 is not a death marker.
         suffix = EVENTS.get(after) if text[b:b+2] not in ('生員', '卒業') else None
         prefix = EVENTS.get(before) if text[max(0,a-1):a+1] not in ('生員', '卒業') else None
+        inferred_death_marker = after == '辛' and any(text[b+1:limit].startswith(word) for word in ('遷葬', '移葬', '葬'))
+        if inferred_death_marker:
+            suffix = 'death'
         if a and claimed[a-1]:
             prefix = None
         burial = next((word for word in ('遷葬', '移葬', '葬') if text[:a].endswith(word)), None)
@@ -103,6 +119,8 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         elif suffix or prefix:
             kind = 'ambiguous_event' if prefix and suffix and prefix != suffix else suffix or prefix
             start, end = (a-1 if prefix else a), (b+1 if suffix else b)
+        elif match.group('year') and re.fullmatch(r'[一二12][0-9〇零一二三四五六七八九]{3}年(?:' + CYCLE + r')?', match.group('year')):
+            kind, start, end = 'date_unspecified', a, b
         else:
             continue
         if any(claimed[start:end]):
@@ -111,11 +129,20 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         parts = [label for label, value in (('year', year), ('month', month), ('day', day)) if value]
         month_value = number(month[:-1]) if month else None
         day_value = number(day[:-1]) if day else None
-        emit(kind, start, end, date={'year_text': year, 'month_text': month, 'day_text': day,
+        warnings = ['date components out of range'] if (month_value is not None and not 1 <= month_value <= 12) or (day_value is not None and not 1 <= day_value <= 30) else []
+        if inferred_death_marker:
+            warnings.append('OCR 辛 interpreted as likely 卒 because burial text follows')
+        year_digits = re.match(r'([一二12][0-9〇零一二三四五六七八九]{3})年', year or '')
+        corrections = [{'raw':text[pos], 'interpreted_as':date_text[pos], 'offset':pos}
+                       for pos in range(a,b) if text[pos] != date_text[pos]]
+        emit(kind, start, end, date={'year_text': text[a:a+len(year)] if year else None, 'month_text': month, 'day_text': day,
+                                    'year_number':number(year_digits.group(1)) if year_digits else None,
+                                    'normalized_year_text':year, 'ocr_corrections':corrections,
                                     'month': month_value, 'day': day_value,
                                     'precision': '_'.join(parts), 'leap_month': True if match.group('leap') else None,
                                     'gregorian_year': None, 'calendar': 'unknown', 'conversion_status': 'not_attempted'},
-             warnings=['date components out of range'] if (month_value is not None and not 1 <= month_value <= 12) or (day_value is not None and not 1 <= day_value <= 30) else [])
+             warnings=warnings,
+             ocr_marker_interpretation={'raw':'辛', 'interpreted_as':'卒'} if inferred_death_marker else None)
 
     for kind, words in (('office', OFFICES), ('education', EDUCATION)):
         for word in sorted(words, key=len, reverse=True):
@@ -153,7 +180,7 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
 def enrich(document):
     for index, person in enumerate(document['candidates']):
         person['information'] = parse_candidate(person, f'candidate-{index}')
-    document['information_parser_version'] = 2
+    document['information_parser_version'] = 3
     return document
 
 

@@ -86,6 +86,24 @@ class PersonCandidatesTest(unittest.TestCase):
         candidate = extract(ocr, layout)['candidates'][0]
         self.assertEqual([r['text'] for r in candidate['information_candidates']], ['右右', '左左'])
 
+    def test_same_vertical_column_is_read_top_to_bottom_despite_x_jitter(self):
+        name = region('子孟文', 80, 10, 1)
+        name['polygon'] = [[80,10],[110,10],[110,100],[80,100]]
+        lower = region('月十九日', 50, 55, 1)
+        upper = region('丙戌四', 48, 10, 1)
+        candidate = extract({'image': {}, 'regions': [lower, name, upper]},
+                            {'bands': [{'bbox': [0,0,120,120]}]})['candidates'][0]
+        self.assertEqual([r['text'] for r in candidate['information_candidates']], ['丙戌四', '月十九日'])
+
+    def test_marker_name_with_three_glyph_box_shows_missing_character(self):
+        name = region('子孟', 50, 10, 1)
+        name['polygon'] = [[50,10],[80,10],[80,100],[50,100]]
+        candidate = extract({'image': {}, 'regions': [name]},
+                            {'bands': [{'bbox': [0,0,120,120]}]})['candidates'][0]
+        self.assertEqual(candidate['name_text'], '子孟□')
+        self.assertEqual(candidate['raw_name_text'], '子孟')
+        self.assertEqual(candidate['missing_name_characters'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

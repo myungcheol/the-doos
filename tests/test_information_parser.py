@@ -8,6 +8,47 @@ from information_parser import parse_candidate
 
 
 class InformationParserTest(unittest.TestCase):
+    def test_positional_years_and_ocr_zero_keep_original_provenance(self):
+        for fragments, year, month, day, kind in [
+            (['一九。四年甲辰', '十二月二十八日', '生'],1904,12,28,'birth'),
+            (['一九三', '八年二月', '五日'],1938,2,5,'date_unspecified'),
+            (['一九〇四年生'],1904,None,None,'birth'),
+        ]:
+            with self.subTest(fragments=fragments):
+                regions = [{'text':t,'bbox':None} for t in fragments]
+                parsed = parse_candidate({'information_candidates':regions},'owner')
+                item = next(i for i in parsed['items'] if i.get('date'))
+                self.assertEqual(item['kind'],kind)
+                self.assertEqual(item['date']['year_number'],year)
+                self.assertEqual(item['date']['month'],month)
+                self.assertEqual(item['date']['day'],day)
+                self.assertEqual(''.join(i['raw'] for i in parsed['items']), ''.join(fragments))
+                self.assertEqual(''.join(regions[r['region_index']]['text'][r['start']:r['end']] for r in item['source_refs']), item['raw'])
+                self.assertEqual(bool(item['date']['ocr_corrections']), '。' in ''.join(fragments))
+
+    def test_punctuation_outside_four_digit_year_is_not_normalized(self):
+        parsed = parse_candidate({'information_candidates':[{'text':'甲辰。二月生','bbox':None}]},'owner')
+        self.assertEqual(parsed['source_text'],'甲辰。二月生')
+        self.assertTrue(all(not i.get('date',{}).get('ocr_corrections') for i in parsed['items']))
+
+    def test_spouse_designation_without氏_uses_marker_region(self):
+        regions = [{'text':'配金海金','bbox':[0,0,10,80]},
+                   {'text':'丙戌生','bbox':[0,0,10,80]}]
+        parsed = parse_candidate({'information_candidates':regions}, 'owner')
+        spouse = next(i for i in parsed['items'] if i['kind'] == 'spouse_information')
+        self.assertEqual(spouse['subject']['label'], '金海金')
+
+    def test_辛_before_burial_is_flagged_as_likely_misread_death_marker(self):
+        regions = [{'text':'甲戌十一月辛','bbox':[0,0,10,80]},
+                   {'text':'葬于先塋','bbox':[0,0,10,80]}]
+        parsed = parse_candidate({'information_candidates':regions}, 'owner')
+        death = next(i for i in parsed['items'] if i['kind'] == 'death')
+        self.assertEqual(death['raw'], '甲戌十一月辛')
+        self.assertEqual(death['date']['year_text'], '甲戌')
+        self.assertEqual(death['date']['month'], 11)
+        self.assertEqual(death['ocr_marker_interpretation'], {'raw':'辛', 'interpreted_as':'卒'})
+        self.assertTrue(death['warnings'])
+
     def test_fixtures_and_complete_source_coverage(self):
         fixture = Path(__file__).parent / 'fixtures' / 'information-samples.json'
         for case in json.loads(fixture.read_text(encoding='utf-8'))['cases']:

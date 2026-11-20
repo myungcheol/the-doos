@@ -100,6 +100,27 @@ def box(region):
             max(p[0] for p in points), max(p[1] for p in points)]
 
 
+def vertical_reading_order(regions):
+    """Group slightly wandering OCR boxes into columns, then read top-down."""
+    columns = []
+    for region in sorted(regions, key=lambda r: -(r['bbox'][0] + r['bbox'][2]) / 2):
+        x0, _, x1, _ = region['bbox']
+        center = (x0 + x1) / 2
+        match = next((column for column in columns
+                      if abs(center - column['center']) <= max(x1-x0, column['width']) * .65), None)
+        if match is None:
+            columns.append({'center': center, 'width': x1-x0, 'regions': [region]})
+        else:
+            match['regions'].append(region)
+            count = len(match['regions'])
+            match['center'] = (match['center'] * (count-1) + center) / count
+            match['width'] = max(match['width'], x1-x0)
+    ordered = []
+    for column in sorted(columns, key=lambda c: -c['center']):
+        ordered.extend(sorted(column['regions'], key=lambda r: (r['bbox'][1], r['bbox'][0])))
+    return ordered
+
+
 def extract(ocr, layout):
     regions = [dict(region, bbox=box(region)) for region in ocr['regions'] if region['polygon']]
     candidates = []
@@ -114,15 +135,22 @@ def extract(ocr, layout):
             name_boxes = [b for n in names for b in n.get('source_boxes', [n['bbox']])]
             info = [r for r in inside if r['bbox'] not in name_boxes and left_limit <= r['bbox'][0]
                     and r['bbox'][2] <= name['bbox'][0] and not NAME.fullmatch(r['text'])]
-            info.sort(key=lambda r: (-(r['bbox'][0] + r['bbox'][2]) / 2, r['bbox'][1]))
+            info = vertical_reading_order(info)
+            name_text = name['text'][2:] if name['text'].startswith('子系') else name['text']
+            rw, rh = dimensions(name)
+            expected_chars = min(4, max(len(name_text), round(rh / max(rw, 1))))
+            missing_chars = expected_chars - len(name_text) if name['detection_reason'] == 'marker' else 0
+            if missing_chars:
+                name_text += '□' * missing_chars
             candidates.append({'band': band_index + 1,
-                               'name_text': name['text'][2:] if name['text'].startswith('子系') else name['text'],
+                               'name_text': name_text,
                                'raw_name_text': name['text'],
                                'name_bbox': name['bbox'],
                                'marker': '子系' if name['text'].startswith('子系') else name['text'][0] if name['detection_reason'] in ('marker', 'split_marker') else None,
                                'detection_reason': name['detection_reason'],
                                'lineage_marker': '子系' if name['text'].startswith('子系') else None,
                                'geometry_estimated': name.get('geometry_estimated', False),
+                               'missing_name_characters': missing_chars,
                                'source_regions': name.get('source_regions', [name]),
                                'needs_review': True, 'information_candidates': info})
     return {'status': 'candidate', 'image': ocr['image'], 'candidates': candidates,
@@ -143,6 +171,8 @@ def main():
     result = extract(ocr, layout)
     from information_parser import enrich
     result = enrich(result)
+    from spouse_parser import enrich_spouses
+    result = enrich_spouses(result)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
