@@ -173,6 +173,8 @@ def main():
     result = enrich(result)
     from spouse_parser import enrich_spouses
     result = enrich_spouses(result)
+    from korean_explanations import enrich_explanations
+    result = enrich_explanations(result)
     from parent_candidates import extract_parent_candidates
     result = extract_parent_candidates(result)
     from page_references import extract_references

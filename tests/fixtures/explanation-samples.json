@@ -1,0 +1,11 @@
+{
+  "cases": [
+    {"id": "year-only", "fragments": ["甲辰生"], "expected": ["甲辰 (월·일 미상) 태어남."]},
+    {"id": "year-month", "fragments": ["甲辰二月卒"], "expected": ["甲辰 2월 (일 미상) 사망함."]},
+    {"id": "year-month-day", "fragments": ["甲辰二月二十三日生"], "expected": ["甲辰 2월 23일 태어남."]},
+    {"id": "concubine", "fragments": ["妾李氏甲辰生"], "expected": ["첩 李氏로 기록됨.", null, "甲辰 (월·일 미상) 태어남."]},
+    {"id": "unknown-spouse", "fragments": ["配甲辰生"], "expected": ["배우자 이름 미상으로 기록됨.", null, "甲辰 (월·일 미상) 태어남."]},
+    {"id": "unclassified", "fragments": ["不詳"], "expected": [null]},
+    {"id": "office-education", "fragments": ["進士郡守"], "expected": ["과거·학력 기록: 進士.", "관직 기록: 郡守."]}
+  ]
+}

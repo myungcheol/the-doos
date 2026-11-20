@@ -6,7 +6,9 @@ const KINDS = {birth:'출생', death:'사망', burial_date:'이장·매장 날�
 const PRECISION = {year:'연', year_month:'연·월', year_month_day:'연·월·일', month:'월만', month_day:'월·일', day:'일만', year_day:'연·일'};
 
 function dateSummary(date) {
-  return `${date.year_number ? `${date.year_number}년 (${date.year_text})` : date.year_text || '연도 미상'} / ${date.leap_month ? '윤' : ''}${date.month_text || '월 미상'} / ${date.day_text || '일 미상'} (서기 미환산)${date.ocr_corrections?.length ? ' · 연도 OCR 보정 후보 포함' : ''}`;
+  const year = date.year_number ? `${date.year_number}년 (${date.year_text})` : date.year_text || '연도 미상';
+  const status = date.year_number ? '숫자 연도 판독' : '서기 미환산';
+  return `${year} / ${date.leap_month ? '윤' : ''}${date.month_text || '월 미상'} / ${date.day_text || '일 미상'} (${status})${date.ocr_corrections?.length ? ' · 연도 OCR 보정 후보 포함' : ''}`;
 }
 
 const LIFE_KINDS = new Set(['birth', 'death', 'burial_date', 'date_unspecified']);
@@ -16,6 +18,9 @@ function InformationItems({items, emptyText, selectedIndex, onSelect}) {
   return <ol>{items.map(({item, index}) => <li key={index} style={{marginBottom:12}}>
     <button onClick={() => onSelect(index)} aria-pressed={index === selectedIndex}
       style={{fontWeight:index === selectedIndex ? 'bold' : 'normal'}}>{KINDS[item.kind] || item.kind}: {item.raw}</button>
+    {item.explanation?.automatic && <div>자동 풀이 후보: {item.explanation.automatic}</div>}
+    {item.explanation?.manual && <div>수동 풀이: {item.explanation.manual}</div>}
+    {!item.explanation?.automatic && !item.explanation?.manual && <div>한국어 풀이 없음 · 원문 확인 필요</div>}
     {item.date && <div>{dateSummary(item.date)} · 원문 정밀도: {PRECISION[item.date.precision] || item.date.precision}</div>}
     {item.ocr_marker_interpretation && <div>OCR 판독 보정 후보: {item.ocr_marker_interpretation.raw} → {item.ocr_marker_interpretation.interpreted_as} (뒤에 묘소 기록이 이어짐)</div>}
     {item.date && item.warnings?.some(warning => warning === 'date components out of range') && <div>날짜 구성요소를 확인해 주세요.</div>}
@@ -214,7 +219,8 @@ export default function Home() {
                 </button>
                 <div>{candidate.name_text} ↔ {p.designation_raw} · 미검수 혼인 후보</div>
                 {spouseItem && <div>배우자 범위 원문: {spouseItem.raw}</div>}
-                <ul>{p.information_items.filter(i => i.date).map((i,j) => <li key={j}>{KINDS[i.kind]}: {dateSummary(i.date)}</li>)}</ul>
+                {spouseItem?.explanation?.automatic && <div>자동 풀이 후보: {spouseItem.explanation.automatic}</div>}
+                <ul>{p.information_items.filter(i => i.date).map((i,j) => <li key={j}>{KINDS[i.kind]}: {dateSummary(i.date)}{i.explanation?.automatic && <div>자동 풀이 후보: {i.explanation.automatic}</div>}</li>)}</ul>
                 {p.unresolved_items.length > 0 && <div>친족 소속 가능성이 있는 정보 {p.unresolved_items.length}건 보류</div>}
               </li>;
             })}</ul>
