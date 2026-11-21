@@ -23,11 +23,13 @@ def main():
         def migration(name):
             sql((ROOT / 'db/migrations' / name).read_text(encoding='utf-8'))
 
-        up = ['001_page_ocr_schema.up.sql', '002_person_schema.up.sql']
-        down = ['002_person_schema.down.sql', '001_page_ocr_schema.down.sql']
+        names = ['001_page_ocr_schema', '002_person_schema', '003_parent_child']
+        up = [name + '.up.sql' for name in names]
+        down = [name + '.down.sql' for name in reversed(names)]
         for name in up:
             migration(name)
         sql((ROOT / 'tests/fixtures/page-person-schema.sql').read_text(encoding='utf-8'))
+        sql((ROOT / 'tests/fixtures/parent-child-schema.sql').read_text(encoding='utf-8'))
         for name in down:
             migration(name)
         sql("DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname='genealogy') THEN RAISE EXCEPTION 'rollback incomplete'; END IF; END $$;")

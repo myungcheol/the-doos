@@ -9,10 +9,11 @@ PostgreSQL 17 기준. 기존 `jokbo` 스키마와 독립된 `genealogy` 스키�
 ```bash
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/001_page_ocr_schema.up.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/002_person_schema.up.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/003_parent_child.up.sql
 docker compose exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TABLE genealogy.schema_migrations;"'
 ```
 
-`down.sql`은 해당 테이블과 데이터를 제거한다. 롤백은 격리된 검증 DB에서 `002` → `001` 순서로만 실행한다. `CASCADE`를 사용하지 않으므로 후속 테이블이 참조하고 있으면 실수로 함께 삭제하지 않고 실패한다.
+`down.sql`은 해당 테이블과 데이터를 제거한다. 롤백은 격리된 검증 DB에서 `003` → `002` → `001` 순서로 검증한다.
 
 검증 명령:
 
@@ -81,8 +82,21 @@ y' = d*x + e*y + f
 
 ## 사용자 검수
 
-1. 위 `schema_migrations` 조회 명령에서 1·2가 보이는지 확인한다. 이미 적용되어 있으면 up 파일을 다시 실행하지 않는다.
+1. 위 `schema_migrations` 조회 명령에서 1·2·3이 보이는지 확인한다. 이미 적용되어 있으면 up 파일을 다시 실행하지 않는다.
 2. 검증 명령을 실행해 `PASS: apply, storage/evidence constraints, rollback, reapply`가 나오는지 확인한다. 이 명령은 기존 DB 데이터를 사용하지 않는다.
 3. 데이터 사전에서 `person_occurrences` 한 행에 여러 OCR 근거를 연결하는 방식, `subject_person_id`/`recorded_person_id`의 구분, 날짜 원문과 보충 flag가 합의와 맞는지 검토한다.
 
 검증 fixture의 간지→서기 예시는 테스트용이며 역사적 환산 결과를 주장하지 않는다. 조회와 편집을 위한 Web UI는 이 티켓의 범위에 포함되지 않는다.
+
+## T017 부모·자녀
+
+`parent_child`에는 부모와 자녀의 인물 ID 한 쌍을 한 번 저장한다. 양쪽의 출현 ID는 각각 해당 인물에 속해야 한다. `method`에는 판정 규칙을, `evidence`에는 위치·경고 등 판정 근거를 담는다. 부모가 확인되지 않은 인물은 연결 없이도 존재할 수 있다.
+
+`parents_of(인물ID)`와 `children_of(인물ID)`는 한 단계의 상대 인물 ID, 관계 ID, 검수 상태를 반환한다. 트리에서 선택한 상대 ID로 같은 함수를 다시 호출하면 다음 단계가 열린다. 결과는 인물 ID 순이며 출생 순위는 뜻하지 않는다. 예시 호출은 다음과 같다.
+
+```sql
+SELECT * FROM genealogy.children_of(42);
+SELECT * FROM genealogy.parents_of(42);
+```
+
+`relation_type`은 족보에 명시된 친생·입양·구분 미상이다. 탐색에는 `in_lineage=true`인 미검수 또는 확정 관계를 사용한다. 거절 관계는 보존하며 탐색에서 제외한다. 자기 참조와 거절되지 않은 관계 사이의 순환을 DB에서 거부한다. `lineage_write_guard` 한 행으로 관계 추가·수정 트랜잭션을 직렬화해 동시 입력에도 순환 검사가 순서대로 이루어지게 한다.
