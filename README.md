@@ -15,6 +15,7 @@
 개발과 조사에는 AI 코딩 도구를 사용할 수 있다.
 
 로컬 PostgreSQL은 `compose.yaml`로 실행한다. 환경 변수 예시는 `.env.postgres.example`, 시작·중지·데이터 유지 방법은 [로컬 PostgreSQL 안내](docs/research/local-postgres.md)를 참조한다.
+페이지·OCR·인물 스키마와 마이그레이션 적용·검증 방법은 [DB 데이터 사전](db/README.md)에 정리했다.
 # 단일 이미지 OCR
 
 Python 3.12 환경에서 CPU 기준 실행:
