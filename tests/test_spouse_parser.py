@@ -19,7 +19,7 @@ class SpouseParserTest(unittest.TestCase):
         self.assertEqual([p['designation_raw'] for p in result['people']], ['金氏','李氏','洪氏'])
         self.assertEqual([m['relation_type'] for m in result['marriages']], ['spouse','spouse','concubine'])
         self.assertEqual(len({p['id'] for p in result['people']}), 3)
-        self.assertTrue(all(m['wife_rank'] is None for m in result['marriages']))
+        self.assertTrue(all('wife_rank' not in m for m in result['marriages']))
         for person in result['people']:
             self.assertTrue(all(i['owner_id']==person['id'] for i in person['information_items']))
             self.assertIsNone(person['personal_name'])

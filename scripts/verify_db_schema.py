@@ -7,10 +7,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def docker_script(script, *arguments, sql=None):
-    return subprocess.run(
+    result = subprocess.run(
         ['docker', 'compose', 'exec', '-T', 'postgres', 'sh', '-c', script, 'schema-test', *arguments],
-        cwd=ROOT, input=sql, text=True, check=True, capture_output=True,
-    ).stdout
+        cwd=ROOT, input=sql, text=True, capture_output=True,
+    )
+    if result.returncode:
+        raise RuntimeError(result.stderr)
+    return result.stdout
 
 
 def main():
@@ -23,13 +26,17 @@ def main():
         def migration(name):
             sql((ROOT / 'db/migrations' / name).read_text(encoding='utf-8'))
 
-        names = ['001_page_ocr_schema', '002_person_schema', '003_parent_child']
+        names = ['001_page_ocr_schema', '002_person_schema', '003_parent_child', '004_review_history',
+                 '005_current_values', '006_marriages', '007_remove_wife_rank']
         up = [name + '.up.sql' for name in names]
         down = [name + '.down.sql' for name in reversed(names)]
         for name in up:
             migration(name)
-        sql((ROOT / 'tests/fixtures/page-person-schema.sql').read_text(encoding='utf-8'))
-        sql((ROOT / 'tests/fixtures/parent-child-schema.sql').read_text(encoding='utf-8'))
+            if name == '004_review_history.up.sql':
+                sql((ROOT / 'tests/fixtures/review-transition-schema.sql').read_text(encoding='utf-8'))
+        fixtures = ['page-person-schema.sql', 'parent-child-schema.sql', 'review-history-schema.sql',
+                    'marriage-schema.sql']
+        sql('\n'.join((ROOT / 'tests/fixtures' / name).read_text(encoding='utf-8') for name in fixtures))
         for name in down:
             migration(name)
         sql("DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname='genealogy') THEN RAISE EXCEPTION 'rollback incomplete'; END IF; END $$;")

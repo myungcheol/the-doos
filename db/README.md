@@ -10,10 +10,14 @@ PostgreSQL 17 기준. 기존 `jokbo` 스키마와 독립된 `genealogy` 스키�
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/001_page_ocr_schema.up.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/002_person_schema.up.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/003_parent_child.up.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/004_review_history.up.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/005_current_values.up.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/006_marriages.up.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/007_remove_wife_rank.up.sql
 docker compose exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TABLE genealogy.schema_migrations;"'
 ```
 
-`down.sql`은 해당 테이블과 데이터를 제거한다. 롤백은 격리된 검증 DB에서 `003` → `002` → `001` 순서로 검증한다.
+`down.sql`은 해당 변경을 되돌린다. 롤백은 격리된 검증 DB에서 `007` → `006` → `005` → `004` → `003` → `002` → `001` 순서로 검증한다. 005 롤백은 현재 수동 값을 004의 테이블 구조로 보존한다. 007 롤백은 제거된 `wife_rank` 열을 빈 값으로 되살리므로 과거 값을 복원하지는 못한다.
 
 검증 명령:
 
@@ -78,11 +82,11 @@ y' = d*x + e*y + f
 
 원문 정밀도는 원문 세 구성요소의 존재로 알 수 있다. 월일이 없는 해의 보충값과 실제 1월 1일은 flag로 구분한다. 음력 2월 30일을 저장할 수 있으며 PostgreSQL `DATE`로 강제 변환하지 않는다. 월 13처럼 판독 범위를 벗어난 값은 숫자 열에 넣지 않고 원문과 경고를 보존한다.
 
-현재값 선택과 수정 이력은 T018에서 구현한다. 이번에는 자동·수동 값과 검수 상태를 저장할 수 있는 기반만 만든다. 부모/자녀는 T017, 혼인은 T039, 실제 OCR 적재는 T019이다.
+현재값 선택과 수정 이력은 아래 T018에 설명한다. 부모/자녀는 T017, 혼인은 T039, 실제 OCR 적재는 T019이다.
 
 ## 사용자 검수
 
-1. 위 `schema_migrations` 조회 명령에서 1·2·3이 보이는지 확인한다. 이미 적용되어 있으면 up 파일을 다시 실행하지 않는다.
+1. 위 `schema_migrations` 조회 명령에서 1·2·3·4·5·6이 보이는지 확인한다. 이미 적용되어 있으면 up 파일을 다시 실행하지 않는다.
 2. 검증 명령을 실행해 `PASS: apply, storage/evidence constraints, rollback, reapply`가 나오는지 확인한다. 이 명령은 기존 DB 데이터를 사용하지 않는다.
 3. 데이터 사전에서 `person_occurrences` 한 행에 여러 OCR 근거를 연결하는 방식, `subject_person_id`/`recorded_person_id`의 구분, 날짜 원문과 보충 flag가 합의와 맞는지 검토한다.
 
@@ -100,3 +104,65 @@ SELECT * FROM genealogy.parents_of(42);
 ```
 
 `relation_type`은 족보에 명시된 친생·입양·구분 미상이다. 탐색에는 `in_lineage=true`인 미검수 또는 확정 관계를 사용한다. 거절 관계는 보존하며 탐색에서 제외한다. 자기 참조와 거절되지 않은 관계 사이의 순환을 DB에서 거부한다. `lineage_write_guard` 한 행으로 관계 추가·수정 트랜잭션을 직렬화해 동시 입력에도 순환 검사가 순서대로 이루어지게 한다.
+
+## T018 수정·삭제와 현재값
+
+`persons`와 `person_facts`에 현재 사용하는 값을 저장한다. 검수 함수는 해당 행을 직접 UPDATE하고 `review_locked=true`로 설정한다. 수정 전후 값·작업자·이유·시각은 같은 트랜잭션에서 `review_history`에 기록한다. 모든 필드를 행 단위로 보호하며, 자동 처리 SQL에서 보호된 행의 갱신을 시도하면 DB가 거부한다.
+
+`current_persons`와 `current_facts`는 기본 테이블에서 삭제·거절 항목을 제외하는 조회 뷰다. 사실을 기록한 인물 또는 대상 인물이 제외되어도 해당 사실을 숨긴다. 부모·자녀 함수는 양쪽 인물의 현재값과 관계 상태를 확인한다.
+
+005는 기존 수동 테이블의 값을 기본 테이블로 옮겨 이력에 남긴 뒤 `person_manual_values`와 `fact_manual_values`를 제거한다. 최초 OCR 판독 근거는 `ocr_regions` 및 실행 결과에 저장된다. `person_facts.origin`은 해당 사실의 최초 생성 경로이고, 수동 검수 여부는 `review_locked` 및 이력으로 확인한다.
+
+```sql
+-- 실제 ID로 바꾸어 호출한다.
+SELECT genealogy.review_values('person', 42,
+    '{"name_hanja":"景吉","review_status":"confirmed"}', '관리자', '스캔 대조');
+SELECT genealogy.review_values('fact', 15,
+    '{"explanation_manual":"갑진년 출생. 월일 미상."}', '관리자', '원문 검수');
+SELECT genealogy.review_relation(7, 'rejected', false, '관리자', '부모 오연결');
+SELECT genealogy.exclude_record('person', 42, '관리자', '비침으로 생긴 오검출');
+SELECT * FROM genealogy.current_persons;
+SELECT * FROM genealogy.review_history ORDER BY id;
+```
+
+패치의 JSON null은 값을 비운다. 이름을 미상으로 바꿀 때는 이름과 `name_unknown`을 함께 수정한다. 보충 월일을 실제 날짜로 수정할 때도 원문 월일·숫자·정규화 값·보충 flag가 모두 CHECK 제약을 만족해야 한다. 잘못된 수정은 트랜잭션에서 취소된다.
+
+`person_exclusions`, `fact_exclusions`에 삭제 이유와 시각을 남긴다. 기존 인물과 관계·근거의 외래 키를 보존하며 물리 DELETE는 거부한다. 관계 검수는 `review_relation`으로 수행하며 검수한 관계를 자동 UPDATE로 덮어쓰면 오류가 발생한다.
+
+`review_history`는 인물·출현·독음·사실·계보 및 삭제표시의 변경 전후 전체 값, 작업자, 이유, 시각을 기록한다. 이력 UPDATE/DELETE는 거부한다. SQL 작업자는 검수 함수의 인자로 제공하며 관리자 인증은 후속 웹 티켓에서 연결한다. 자동 처리 이력의 작업자는 `automatic`이다. 004 당시 수동 테이블의 기존 이력도 유지한다.
+
+재처리 시 `ingest_person(출현ID, 판독이름)`을 사용하면 기존 인물 ID를 반환한다. 검수·제외 인물의 값과 제외 상태를 유지한다. 새 OCR 실행을 기존 출현에 매칭하는 T019 적재기는 반드시 같은 출현 ID를 재사용해야 한다. 새 출현을 잘못 생성하는 의미상 중복은 이 함수만으로 판별할 수 없으며 T019의 입력 매칭 검증 대상이다. 사실 적재도 기존 ID를 재사용하고 `WHERE NOT review_locked`로 자동 갱신 대상을 제한한다. 기존 삭제표시를 보존한다.
+
+혼인 테이블의 이력 연결은 아래 T039에 설명한다. 현재 자동 검증에는 수동 수정 후 재처리, 제외 후 동일 출현 재적재, 삭제/거절 인물의 양방향 탐색 제외, 검수 관계 덮어쓰기 거부, 이력 변경 거부를 포함한다.
+
+## T039 배우자·혼인
+
+| 테이블 | 필드와 의미 |
+|---|---|
+| `marriages` | `person_id`는 설명 주인 A, `spouse_id`는 독립 배우자 B다. `relation_type`은 spouse/concubine이며 명시된 첩인 경우에만 concubine이다. `review_status`, `review_locked`는 검수 상태와 자동 갱신 보호다. |
+| `marriage_sources` | `marriage_id`와 A의 배우자 설명인 `person_facts.id`를 연결한다. 설명 사실의 kind는 spouse_information이며 recorded_person_id와 subject_person_id는 해당 혼인의 두 인물이어야 한다. 한 혼인은 여러 설명을 근거로 가질 수 있다. |
+
+配 등 모든 부인은 spouse, 명시된 妾만 concubine으로 저장한다. 사별·이혼 등에 따른 복수 부인도 각각 spouse로 저장할 수 있다. 배우자의 개인 이름이 없으면 persons의 이름 미상 flag를 사용하고 金氏 같은 표기는 설명 원문에 보존한다. 이름이나 성씨가 같아도 인물 ID가 다르면 별도 혼인을 저장할 수 있다.
+
+배우자 설명과 생몰은 각각 사실 행으로 저장한다. A의 설명에 B의 사망이 기록돼 있으면 설명과 사망 사실의 recorded_person_id는 A이고 subject_person_id는 B다. 설명에서 `marriage_sources`를 따라 혼인과 B로 이동하고, B의 사실에서 생몰을 조회할 수 있다. 원래 OCR 영역은 기존 `fact_sources`로 연결한다.
+
+`ingest_marriage(A,B,관계유형,설명사실ID)`는 혼인 ID를 반환한다. 인물 쌍에 유일성 제약이 있어 A–B와 B–A를 재적재해도 같은 ID를 반환한다. 반대 방향의 설명은 근거를 추가하고 기존 배우자 역할을 유지한다. 검수·거절한 혼인도 같은 ID를 재사용한다. 새 설명 사실을 매번 중복 생성하지 않도록 사실 ID를 매칭하는 작업은 T019 적재기에서 담당한다.
+
+`review_marriage`는 관계유형·검수 상태를 현재 행에 갱신하고 이력을 남긴다. 검수한 행의 자동 갱신과 물리 삭제는 거부한다. 상대방을 잘못 연결했을 때는 해당 관계를 거절하고 올바른 상대방의 새 관계를 만든다. 연결된 설명의 소속을 바꿔 혼인 근거가 모순되는 수정도 거부한다.
+
+`current_marriages`는 관계가 거절되었거나 양쪽 인물 중 하나가 삭제·거절되었으면 제외한다. 배우자 이름을 수정해도 인물 ID와 설명 근거 연결은 유지된다. 근거 설명 사실의 제외와 혼인 관계의 거절은 각각 검수할 수 있다.
+
+```sql
+-- 실제 ID로 바꾸어 호출한다.
+SELECT genealogy.ingest_marriage(42, 43, 'spouse', 15);
+SELECT genealogy.review_marriage(7, 'spouse', 'confirmed', '관리자', '배우자 확인');
+SELECT genealogy.review_marriage(7, 'spouse', 'rejected', '관리자', '배우자 오연결');
+SELECT * FROM genealogy.current_marriages WHERE person_id=42 OR spouse_id=42;
+SELECT m.*, f.raw_text, f.recorded_person_id, f.subject_person_id
+FROM genealogy.marriage_sources s
+JOIN genealogy.marriages m ON m.id=s.marriage_id
+JOIN genealogy.person_facts f ON f.id=s.fact_id
+WHERE f.id=15;
+```
+
+자동 검증은 A–B/A–C, 첩·이름 미상·지위 미상, 정방향/역방향 중복 적재, 이름 수정 후 원문·생몰 소속, 검수 지위 보존, 배우자 삭제/혼인 거절 후 재적재, 모순된 근거·자기 혼인 거부, 변경 이력과 롤백·재적용을 포함한다.

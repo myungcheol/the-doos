@@ -30,7 +30,7 @@ def parse_spouses(person):
                        'information_items':own, 'unresolved_items':uncertain,
                        'source_owner_id':source_owner, 'source_refs':scope['source_refs']})
         marriages.append({'from':source_owner, 'to':subject['id'],
-                          'relation_type':subject['relation_type'], 'wife_rank':None,
+                          'relation_type':subject['relation_type'],
                           'marker_raw':marker, 'needs_review':True,
                           'source_refs':scope['source_refs']})
         relative_context = relative is not None
