@@ -20,7 +20,7 @@
     {"id":"missing-year","fragments":["二月生"],"kinds":["birth"],"dates":[{"year_text":null,"month":2,"day":null,"precision":"month"}]},
     {"id":"invalid-month","fragments":["甲辰十三月生"],"kinds":["birth"],"warning":true},
     {"id":"leap-month","fragments":["甲辰閏二月初一日生"],"kinds":["birth"],"dates":[{"year_text":"甲辰","month":2,"day":1,"precision":"year_month_day","leap_month":true}]},
-    {"id":"era-kept","fragments":["至正十六年生"],"kinds":["unclassified","birth"],"dates":[{"year_text":"十六年","month":null,"day":null,"precision":"year"}]},
+    {"id":"era-kept","fragments":["至正十六年生"],"kinds":["birth"],"dates":[{"gregorian_year":1356,"year_text":"至正十六年","month":null,"day":null,"precision":"year"}]},
     {"id":"graduation","fragments":["甲辰年卒業"],"kinds":["unclassified"]}
   ]
 }

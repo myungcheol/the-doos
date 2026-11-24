@@ -7,7 +7,14 @@ const PRECISION = {year:'연', year_month:'연·월', year_month_day:'연·월·
 
 function dateSummary(date) {
   const year = date.year_number ? `${date.year_number}년 (${date.year_text})` : date.year_text || '연도 미상';
-  const status = date.year_number ? '숫자 연도 판독' : '서기 미환산';
+  const years = date.date_details?.candidate_years || [];
+  const statuses = {
+    resolved: `서기 ${date.gregorian_year}년`,
+    ambiguous: `서기 후보 ${years.join(', ')}년`,
+    conflict: '연도와 간지 불일치',
+    unresolved: '연도 확인 필요',
+  };
+  const status = statuses[date.conversion_status] || (date.year_number ? '숫자 연도 판독' : '서기 미환산');
   return `${year} / ${date.leap_month ? '윤' : ''}${date.month_text || '월 미상'} / ${date.day_text || '일 미상'} (${status})${date.ocr_corrections?.length ? ' · 연도 OCR 보정 후보 포함' : ''}`;
 }
 

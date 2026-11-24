@@ -1,0 +1,27 @@
+{
+  "version": "2026-11-23.1",
+  "sources": {
+    "korean-eras": "https://contents.history.go.kr/front/ta/print.do?levelId=ta_h71_0080_0010&whereStr=",
+    "chunghye": "https://db.history.go.kr/goryeo/level.do?levelId=kr_087r_0010_0100&types=r",
+    "chunghye-restored": "https://db.history.go.kr/goryeo/level.do?levelId=kr_087r_0010_0120&types=r",
+    "gongmin": "https://db.history.go.kr/goryeo/level.do?levelId=kr_087r_0010_0150&types=r",
+    "chinese-eras": "https://ciyuan.cp.com.cn/appendix/DynastyTable",
+    "yeonsan": "https://sillok.history.go.kr/search/inspectionMonthList.do?id=kja_109110"
+  },
+  "entries": [
+    {"id":"goryeo-taejo-cheonsu","aliases":["天授","高麗天授"],"first":918,"last":933,"source":"korean-eras"},
+    {"id":"goryeo-gwangjong-gwangdeok","aliases":["光德","高麗光德"],"first":950,"last":951,"source":"korean-eras"},
+    {"id":"goryeo-gwangjong-junpung","aliases":["峻豊","峻豐","高麗峻豊","高麗峻豐"],"first":960,"last":963,"source":"korean-eras"},
+    {"id":"goryeo-chunghye","aliases":["忠惠王"],"first":1331,"last":1332,"accession":1330,"source":"chunghye"},
+    {"id":"goryeo-chunghye-restored","aliases":["忠惠王","忠惠王後","忠惠王復位"],"first":1340,"last":1344,"accession":1339,"source":"chunghye-restored"},
+    {"id":"goryeo-gongmin","aliases":["恭愍王"],"first":1352,"last":1374,"accession":1351,"source":"gongmin"},
+    {"id":"shu-qiande","aliases":["乾德","前蜀乾德"],"first":919,"last":924,"source":"chinese-eras"},
+    {"id":"song-qiande","aliases":["乾德","宋乾德","北宋乾德"],"first":963,"last":968,"source":"chinese-eras"},
+    {"id":"yuan-zhizheng","aliases":["至正","元至正"],"first":1341,"last":1368,"source":"chinese-eras"},
+    {"id":"joseon-yeonsan","aliases":["燕山君","燕山"],"first":1495,"last":1506,"accession":1494,"source":"yeonsan"},
+    {"id":"ming-hongzhi","aliases":["弘治","明弘治"],"first":1488,"last":1505,"source":"chinese-eras"},
+    {"id":"joseon-geonyang","aliases":["建陽"],"first":1896,"last":1897,"source":"korean-eras"},
+    {"id":"korea-gwangmu","aliases":["光武"],"first":1897,"last":1907,"source":"korean-eras"},
+    {"id":"korea-yunghui","aliases":["隆熙"],"first":1907,"last":1910,"source":"korean-eras"}
+  ]
+}

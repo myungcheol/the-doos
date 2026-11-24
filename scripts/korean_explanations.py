@@ -18,6 +18,8 @@ def date_phrase(date):
     year = date.get('year_text')
     if date.get('year_number') and year:
         year = f"{date['year_number']}년 (원문 {year})"
+    elif date.get('gregorian_year') and year:
+        year = f"{year} (서기 {date['gregorian_year']}년)"
     month = date.get('month')
     day = date.get('day')
     if date.get('month_text'):
@@ -42,7 +44,7 @@ def automatic_explanation(item):
     kind = item.get('kind')
     if kind in DATE_EVENTS:
         phrase = date_phrase(item.get('date'))
-        if phrase is None or item.get('warnings'):
+        if phrase is None or item.get('warnings') or item['date'].get('conversion_status') == 'conflict':
             return None
         return f"{phrase} {DATE_EVENTS[kind]}."
     if kind == 'spouse_information':
@@ -76,5 +78,5 @@ def enrich_explanations(document):
             item['explanation'] = explain_item(item)
             for nested in item.get('items', []):
                 nested['explanation'] = explain_item(nested)
-    document['explanation_template_version'] = 1
+    document['explanation_template_version'] = 2
     return document

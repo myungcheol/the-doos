@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Conservative, source-preserving information candidates; no era conversion."""
+"""Conservative, source-preserving information candidates with local era-year lookup."""
 import argparse
 import json
 import re
 from pathlib import Path
 
+from era_dates import CYCLE, ERA_NAME, normalize_date
+
 NUM = r'[0-9〇零一二三四五六七八九十百千廿卅元]+'
-CYCLE = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
-DATE = re.compile(r'(?P<year>' + NUM + r'年(?:' + CYCLE + r')?|' + CYCLE + r'年?)?'
-                  r'(?P<leap>閏|闰)?(?P<month>' + NUM + r'月)?(?P<day>初?' + NUM + r'日)?')
+ERA_YEAR = rf'(?P<era>{ERA_NAME})(?:(?P<accession>卽位|即位)|(?P<ordinal>{NUM}))年'
+YEAR = rf'(?:(?:{ERA_YEAR}|(?:西紀)?{NUM}年)(?:(?:歲次)?(?P<cycle>{CYCLE}))?|(?P<cycle_only>{CYCLE})年?)'
+DATE = re.compile(rf'(?P<calendar_mark>[陰陽農][曆歷])?(?P<year>{YEAR})?(?P<leap>閏|闰)?(?P<month>(?:正|□+|{NUM})月)?(?P<day>初?(?:□+|{NUM})日)?')
 OFFICES = ('兵部尚書', '中書舍人', '左議政', '右議政', '領議政', '判書', '參判', '郡守', '縣監', '縣令', '知郡事', '學士', '學正', '將軍')
 EDUCATION = ('進士', '生員', '文科', '武科', '及第', '登科')
 EVENTS = {'生': 'birth', '卒': 'death', '歿': 'death', '殁': 'death', '逝': 'death'}
@@ -16,12 +18,15 @@ POSITIONAL_YEAR = re.compile(r'[一二12][0-9〇零一二三四五六七八九�
 
 
 def number(text):
+    if text == '正':
+        return 1
     if text is None:
         return None
     text = text.replace('初', '').replace('廿', '二十').replace('卅', '三十')
     if text.isdigit():
         return int(text)
     digits = dict(zip('〇零一二三四五六七八九元', (0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1)))
+    digits.update({str(n): n for n in range(10)})
     if all(c in digits for c in text):
         return int(''.join(str(digits[c]) for c in text))
     total = current = 0
@@ -119,7 +124,7 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         elif suffix or prefix:
             kind = 'ambiguous_event' if prefix and suffix and prefix != suffix else suffix or prefix
             start, end = (a-1 if prefix else a), (b+1 if suffix else b)
-        elif match.group('year') and re.fullmatch(r'[一二12][0-9〇零一二三四五六七八九]{3}年(?:' + CYCLE + r')?', match.group('year')):
+        elif match.group('era') or match.group('year') and re.fullmatch(r'(?:西紀)?[一二12][0-9〇零一二三四五六七八九]{3}年(?:' + CYCLE + r')?', match.group('year')):
             kind, start, end = 'date_unspecified', a, b
         else:
             continue
@@ -129,18 +134,34 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         parts = [label for label, value in (('year', year), ('month', month), ('day', day)) if value]
         month_value = number(month[:-1]) if month else None
         day_value = number(day[:-1]) if day else None
-        warnings = ['date components out of range'] if (month_value is not None and not 1 <= month_value <= 12) or (day_value is not None and not 1 <= day_value <= 30) else []
+        mark = match.group('calendar_mark') or ''
+        calendar = 'unknown'
+        if mark.startswith('陽'):
+            calendar = 'solar'
+        elif mark or match.group('leap'):
+            calendar = 'lunar'
+        max_day = 30 if calendar == 'lunar' else 31
+        warnings = []
+        if ((month_value is not None and not 1 <= month_value <= 12)
+                or (day_value is not None and not 1 <= day_value <= max_day)):
+            warnings.append('date components out of range')
+        if (month and month_value is None) or (day and day_value is None):
+            warnings.append('unreadable date component')
         if inferred_death_marker:
             warnings.append('OCR 辛 interpreted as likely 卒 because burial text follows')
-        year_digits = re.match(r'([一二12][0-9〇零一二三四五六七八九]{3})年', year or '')
+        year_digits = re.match(r'(?:西紀)?([一二12][0-9〇零一二三四五六七八九]{3})年', year or '')
         corrections = [{'raw':text[pos], 'interpreted_as':date_text[pos], 'offset':pos}
                        for pos in range(a,b) if text[pos] != date_text[pos]]
-        emit(kind, start, end, date={'year_text': text[a:a+len(year)] if year else None, 'month_text': month, 'day_text': day,
-                                    'year_number':number(year_digits.group(1)) if year_digits else None,
-                                    'normalized_year_text':year, 'ocr_corrections':corrections,
-                                    'month': month_value, 'day': day_value,
-                                    'precision': '_'.join(parts), 'leap_month': True if match.group('leap') else None,
-                                    'gregorian_year': None, 'calendar': 'unknown', 'conversion_status': 'not_attempted'},
+        date = {'year_text': text[match.start('year'):match.end('year')] if year else None, 'month_text': month, 'day_text': day,
+                'year_number': number(year_digits.group(1)) if year_digits else None,
+                'normalized_year_text': year, 'ocr_corrections': corrections,
+                'month': month_value, 'day': day_value, 'precision': '_'.join(parts),
+                'leap_month': True if match.group('leap') else None,
+                'calendar': calendar}
+        date = normalize_date(date, era=match.group('era'), ordinal=number(match.group('ordinal')),
+                              accession=bool(match.group('accession')),
+                              cycle=match.group('cycle') or match.group('cycle_only'))
+        emit(kind, start, end, date=date,
              warnings=warnings,
              ocr_marker_interpretation={'raw':'辛', 'interpreted_as':'卒'} if inferred_death_marker else None)
 
@@ -180,7 +201,7 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
 def enrich(document):
     for index, person in enumerate(document['candidates']):
         person['information'] = parse_candidate(person, f'candidate-{index}')
-    document['information_parser_version'] = 3
+    document['information_parser_version'] = 4
     return document
 
 
@@ -188,10 +209,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('people', type=Path, nargs='?')
     parser.add_argument('--samples', type=Path, help='parse labeled rule examples without OCR')
-    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--text', help='inspect a transcription without running OCR')
+    parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    if bool(args.people) == bool(args.samples):
-        parser.error('provide either people JSON or --samples')
+    if sum(x is not None for x in (args.people, args.samples, args.text)) != 1:
+        parser.error('provide people JSON, --samples or --text')
+    if args.text is not None:
+        if args.output:
+            parser.error('--text prints to stdout')
+        result = parse_candidate({'information_candidates': [{'text': args.text, 'bbox': None}]}, 'sample')
+        print(json.dumps(result['items'], indent=2, ensure_ascii=False))
+        return
+    if not args.output:
+        parser.error('--output is required for file inputs')
     if args.samples:
         with args.samples.open(encoding='utf-8') as f:
             cases = json.load(f)['cases']

@@ -72,7 +72,7 @@ class InformationParserTest(unittest.TestCase):
                 for actual, expected in zip(dates, case.get('dates', [])):
                     for key,value in expected.items():
                         self.assertEqual(actual[key], value)
-                    self.assertIsNone(actual['gregorian_year'])
+                    self.assertEqual(actual['gregorian_year'], expected.get('gregorian_year'))
                 if 'dates' in case:
                     self.assertEqual(len(dates), len(case['dates']))
                 if case.get('warning'):
