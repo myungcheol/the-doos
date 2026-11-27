@@ -27,7 +27,7 @@ def main():
             sql((ROOT / 'db/migrations' / name).read_text(encoding='utf-8'))
 
         names = ['001_page_ocr_schema', '002_person_schema', '003_parent_child', '004_review_history',
-                 '005_current_values', '006_marriages', '007_remove_wife_rank', '008_page_imports']
+                 '005_current_values', '006_marriages', '007_remove_wife_rank', '008_page_imports', '009_ocr_batches']
         up = [name + '.up.sql' for name in names]
         down = [name + '.down.sql' for name in reversed(names)]
         for name in up:

@@ -253,8 +253,7 @@ def store_people(db, import_id, baseline, people, original, rotation, size, regi
 
 def import_page(db, scan, prepared):
     selected, size, rotation, layout, ocr, people = prepared
-    # A replay of a saved run has the same artifact. Distinct OCR executions
-    # retain separate evidence even when their interpreted records agree.
+    # Execution timestamps and timings do not change the recognized content.
     artifact = fingerprint(ocr)
     projection = fingerprint({k:v for k,v in people.items() if k != 'image'})
     with db.transaction():
@@ -269,10 +268,13 @@ def import_page(db, scan, prepared):
             image = image_id(db, page, selected, layout['height'], layout['width'], variant='deskewed',
                              original_image_id=original, rotation_degrees=rotation['angle_degrees'],
                              forward_matrix=sum(rotation['matrix'], []), inverse_matrix=sum(rotation['inverse_matrix'], []))
-        prior = db.execute('SELECT id,status,run_id FROM page_imports WHERE page_id=%s AND artifact_hash=%s '
-                           'AND projection_hash=%s', (page, artifact, projection)).fetchone()
-        if prior:
-            return dict(import_id=prior[0], status=prior[1], run_id=prior[2], replay=True)
+        previous = db.execute('SELECT i.id,i.status,i.run_id,r.raw_result FROM page_imports i '
+                              'JOIN ocr_runs r ON r.id=i.run_id WHERE i.page_id=%s AND r.image_id=%s '
+                              'AND i.projection_hash=%s ORDER BY i.id', (page, image, projection)).fetchall()
+        for prior in previous:
+            if prior[3]['regions'] == ocr['regions'] and prior[3].get('vertical_retries') == ocr.get('vertical_retries'):
+                return dict(import_id=prior[0], status=prior[1], run_id=prior[2], replay=True,
+                            message='같은 결과가 이미 저장되어 있어 건너뜁니다.')
         baseline = db.execute("SELECT id,projection_hash FROM page_imports WHERE page_id=%s AND status='applied'",
                               (page,)).fetchone()
         if baseline is None:
@@ -281,8 +283,6 @@ def import_page(db, scan, prepared):
             if existing:
                 raise ValueError('Page already has unmapped occurrences; reconcile before importing')
             status = 'applied'
-        elif projection == baseline[1]:
-            status = 'equivalent'
         else:
             status = 'needs_review'
         same_run = db.execute('SELECT run_id FROM page_imports WHERE page_id=%s AND artifact_hash=%s LIMIT 1',
