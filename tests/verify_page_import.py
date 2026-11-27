@@ -1,0 +1,90 @@
+"""Run the T019 importer against synthetic OCR in a disposable Compose DB."""
+from copy import deepcopy
+from pathlib import Path
+import sys
+import uuid
+
+import cv2
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from import_page import SCANS, analyze, connect, import_page
+from verify_db_schema import docker_script
+
+
+def fixture(scan):
+    size = cv2.imread(str(scan)).shape[:2]
+    def region(text, x, y, w, h, band):
+        return dict(text=text, score=.9, band=band, polygon=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]])
+    layout = dict(height=size[0], width=size[1], bands=[
+        dict(bbox=[0,0,300,200], columns=[]), dict(bbox=[0,200,300,400], columns=[])])
+    ocr = dict(image=dict(path=str(scan)), run=dict(timestamp_utc='2026-11-23T12:00:00+00:00',
+        config=dict(lang='chinese_cht',ocr_version='PP-OCRv5',device='cpu'), paddleocr='fixture',
+        initialization_seconds=0, inference_seconds=0), regions=[
+        region('子甲乙',200,20,32,90,1), region('配金氏至正十六年卒妾李氏甲辰生',150,20,10,140,1),
+        region('子丙丁',200,220,32,90,2), region('下53',204,325,20,30,2)])
+    return scan, size, None, layout, ocr, analyze(ocr, layout, SCANS)
+
+
+def verify(db):
+    scan = SCANS / '001.jpg'
+    prepared = fixture(scan)
+    def one(query, params=()):
+        return db.execute(query, params).fetchone()[0]
+
+    broken = deepcopy(prepared)
+    broken[-1]['parent_candidates']['relations'][0]['child'] = 999
+    try:
+        import_page(db, scan, broken)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError('expected late failure')
+    assert one('SELECT count(*) FROM genealogy.pages') == 0
+    assert one('SELECT count(*) FROM genealogy.persons') == 0
+    assert one('SELECT count(*) FROM genealogy.review_history') == 0
+
+    first = import_page(db, scan, prepared)
+    assert first['status'] == 'applied'
+    assert one('SELECT count(*) FROM genealogy.marriages') == 2
+    assert one('SELECT count(*) FROM genealogy.parent_child') == 1
+    assert one('SELECT status FROM genealogy.page_reference_candidates') == 'scan_missing'
+    fact, spouse = db.execute("SELECT id,subject_person_id FROM genealogy.person_facts WHERE kind='death' "
+                             "AND gregorian_year=1356 AND month_assumed AND day_assumed").fetchone()
+    assert one("SELECT count(*) FROM genealogy.marriages WHERE spouse_id=%s AND relation_type='spouse'", (spouse,)) == 1
+    assert one('SELECT count(*) FROM genealogy.fact_sources WHERE fact_id=%s', (fact,)) == 1
+    one("SELECT genealogy.review_values('fact',%s,%s,'test','verified')",
+        (fact, '{"explanation_manual":"검수한 값"}'))
+    one("SELECT genealogy.review_values('person',%s,%s,'test','verified')",
+        (spouse, '{"name_unknown":false,"name_hanja":"校正"}'))
+    edge = one('SELECT id FROM genealogy.parent_child')
+    one("SELECT genealogy.review_relation(%s,'rejected',false,'test','incorrect')", (edge,))
+
+    assert import_page(db, scan, prepared) == dict(first, replay=True)
+    rerun = deepcopy(prepared)
+    rerun[-2]['run']['timestamp_utc'] = '2026-11-23T13:00:00+00:00'
+    assert import_page(db, scan, rerun)['status'] == 'equivalent'
+    changed = deepcopy(rerun)
+    changed[-1]['candidates'][0]['name_text'] = '子乙甲'
+    assert import_page(db, scan, changed)['status'] == 'needs_review'
+    assert one('SELECT count(*) FROM genealogy.ocr_runs') == 2
+    assert one('SELECT count(*) FROM genealogy.persons') == 4
+    assert one('SELECT count(*) FROM genealogy.person_occurrences') == 2
+    assert one('SELECT count(*) FROM genealogy.marriages') == 2
+    assert one('SELECT explanation_manual FROM genealogy.current_facts WHERE id=%s', (fact,)) == '검수한 값'
+    assert one('SELECT name_hanja FROM genealogy.current_persons WHERE id=%s', (spouse,)) == '校正'
+    assert one('SELECT review_status FROM genealogy.parent_child WHERE id=%s', (edge,)) == 'rejected'
+
+
+if __name__ == '__main__':
+    database = 'the_doos_import_test_' + uuid.uuid4().hex
+    docker_script('createdb -U "$POSTGRES_USER" -- "$1"', database)
+    try:
+        with connect(database) as db:
+            for path in sorted((ROOT / 'db/migrations').glob('*.up.sql')):
+                db.execute(path.read_text())
+            db.commit()
+            verify(db)
+        print('PASS: rollback, spouses and dates, evidence, missing scan, review protection, replay and rerun')
+    finally:
+        docker_script('dropdb -U "$POSTGRES_USER" -- "$1"', database)

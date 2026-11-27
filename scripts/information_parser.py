@@ -56,7 +56,7 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
 
     def emit(kind, start, end, **extra):
         refs = [{'region_index': i, 'start': max(start, a)-a, 'end': min(end, b)-a,
-                 'bbox': regions[i]['bbox']} for a, b, i in offsets if a < end and start < b]
+                 'bbox': regions[i]['bbox']} for a, b, i in offsets if max(start, a) < min(end, b)]
         items.append({'kind': kind, 'owner_id': owner_id, 'raw': text[start:end],
                       'start': start, 'end': end, 'source_refs': refs, 'needs_review': True, **extra})
         claimed[start:end] = [True] * (end-start)
@@ -82,7 +82,7 @@ def parse_candidate(person, owner_id, resolve_scopes=True):
         relation = 'concubine' if marker.group().startswith('妾') else 'spouse'
         scoped_regions, mapping = [], []
         for a, b, i in offsets:
-            if a < end and start < b:
+            if max(start, a) < min(end, b):
                 left, right = max(start,a)-a, min(end,b)-a
                 scoped_regions.append(dict(regions[i], text=regions[i]['text'][left:right]))
                 mapping.append((i,left))

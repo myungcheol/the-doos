@@ -8,6 +8,14 @@ from information_parser import parse_candidate
 
 
 class InformationParserTest(unittest.TestCase):
+    def test_empty_ocr_region_between_fragments(self):
+        parts = [{'text': t, 'bbox': None} for t in ['配金氏甲辰', '', '生']]
+        scope = parse_candidate({'information_candidates':parts}, 'a')['items'][0]
+        birth = next(item for item in scope['items'] if item['kind'] == 'birth')
+        for item in (scope, birth):
+            self.assertEqual([r['region_index'] for r in item['source_refs']], [0, 2])
+            self.assertTrue(all(r['start'] < r['end'] for r in item['source_refs']))
+
     def test_positional_years_and_ocr_zero_keep_original_provenance(self):
         for fragments, year, month, day, kind in [
             (['一九。四年甲辰', '十二月二十八日', '生'],1904,12,28,'birth'),

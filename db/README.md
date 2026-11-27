@@ -14,10 +14,11 @@ docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-trans
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/005_current_values.up.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/006_marriages.up.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/007_remove_wife_rank.up.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/008_page_imports.up.sql
 docker compose exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TABLE genealogy.schema_migrations;"'
 ```
 
-`down.sql`은 해당 변경을 되돌린다. 롤백은 격리된 검증 DB에서 `007` → `006` → `005` → `004` → `003` → `002` → `001` 순서로 검증한다. 005 롤백은 현재 수동 값을 004의 테이블 구조로 보존한다. 007 롤백은 제거된 `wife_rank` 열을 빈 값으로 되살리므로 과거 값을 복원하지는 못한다.
+`down.sql`은 해당 변경을 되돌린다. 롤백은 격리된 검증 DB에서 `008` → `007` → `006` → `005` → `004` → `003` → `002` → `001` 순서로 검증한다. 005 롤백은 현재 수동 값을 004의 테이블 구조로 보존한다. 007 롤백은 제거된 `wife_rank` 열을 빈 값으로 되살리므로 과거 값을 복원하지는 못한다.
 
 검증 명령:
 
@@ -86,7 +87,7 @@ y' = d*x + e*y + f
 
 ## 사용자 검수
 
-1. 위 `schema_migrations` 조회 명령에서 1·2·3·4·5·6이 보이는지 확인한다. 이미 적용되어 있으면 up 파일을 다시 실행하지 않는다.
+1. 위 `schema_migrations` 조회 명령에서 1~8이 보이는지 확인한다. 이미 적용되어 있으면 up 파일을 다시 실행하지 않는다.
 2. 검증 명령을 실행해 `PASS: apply, storage/evidence constraints, rollback, reapply`가 나오는지 확인한다. 이 명령은 기존 DB 데이터를 사용하지 않는다.
 3. 데이터 사전에서 `person_occurrences` 한 행에 여러 OCR 근거를 연결하는 방식, `subject_person_id`/`recorded_person_id`의 구분, 날짜 원문과 보충 flag가 합의와 맞는지 검토한다.
 

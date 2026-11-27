@@ -5,6 +5,8 @@ const KINDS = {birth:'출생', death:'사망', burial_date:'이장·매장 날�
   office:'관직', education:'학력·과거', general_information:'일반 부가 정보', unclassified:'미분류 원문', spouse_information:'배우자 정보', ambiguous_event:'사건 종류 불확실', date_unspecified:'날짜 (생몰 표지 미확인)'};
 const PRECISION = {year:'연', year_month:'연·월', year_month_day:'연·월·일', month:'월만', month_day:'월·일', day:'일만', year_day:'연·일'};
 
+const IMPORT_STATUS = {applied:'최초 적재', equivalent:'동일한 추출', needs_review:'기존 추출과 차이 있음'};
+
 function dateSummary(date) {
   const year = date.year_number ? `${date.year_number}년 (${date.year_text})` : date.year_text || '연도 미상';
   const years = date.date_details?.candidate_years || [];
@@ -58,15 +60,22 @@ export default function Home() {
     return () => observer.disconnect();
   }, []);
 
-  async function run(selected = variant) {
-    setLoading(true); setError(''); setData(null); setReferencePages({}); setPerson(-1); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setVariant(selected);
+  const lookup = useRef(0);
+  async function loadPage(targetPage, importId) {
+    const request = ++lookup.current;
+    setPage(targetPage);
+    setLoading(true); setError(''); setData(null); setReferencePages({}); setPerson(-1); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setVariant('original');
     try {
-      const response = await fetch(`/api/analyze/${page}?variant=${selected}`);
+      const suffix = importId ? '?import=' + importId : '';
+      const response = await fetch(`/api/analyze/${targetPage}${suffix}`);
       const result = await response.json();
+      if (request !== lookup.current) return;
       if (!response.ok) throw Error(result.error);
+      setVariant(result.variant);
       setData(result);
-    } catch (e) { setError(e.message); } finally { setLoading(false); }
+    } catch (e) { if (request === lookup.current) setError(e.message); } finally { if (request === lookup.current) setLoading(false); }
   }
+  useEffect(() => { loadPage('001'); return () => { lookup.current++; }; }, []);
   useEffect(() => {
     const refs = data?.people.page_references || [];
     const targets = [...new Set(refs.filter(ref => ref.status === 'unprocessed').map(ref => ref.target_page))];
@@ -74,7 +83,7 @@ export default function Home() {
     let cancelled = false;
     Promise.all(targets.map(async target => {
       try {
-        const response = await fetch(`/api/analyze/${String(target).padStart(3,'0')}?variant=original`);
+        const response = await fetch(`/api/analyze/${String(target).padStart(3,'0')}`);
         const result = await response.json();
         return [target, response.ok ? result : {error:result.error || '대상 쪽 분석 실패'}];
       } catch (error) { return [target, {error:error.message}]; }
@@ -87,6 +96,7 @@ export default function Home() {
       fill={selected ? 'rgba(255,255,0,0.25)' : 'none'} stroke={stroke} strokeWidth={selected ? 3 : 2} />;
   }
 
+  const record = data?.records.find(row => row.candidate_index === person);
   const candidate = person >= 0 ? data?.people.candidates[person] : null;
   const parentRelations = data?.people.parent_candidates?.relations || [];
   const parentEdge = parentRelations.find(edge => edge.child === person);
@@ -102,7 +112,7 @@ export default function Home() {
   function openTarget(reference, targetIndex) {
     const target = referencePages[reference.target_page];
     if (!target?.people) return;
-    setPage(String(reference.target_page).padStart(3,'0')); setVariant('original'); setData(target);
+    setPage(String(reference.target_page).padStart(3,'0')); setVariant(target.variant); setData(target);
     setPerson(targetIndex); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setTab('references');
   }
   const activeItem = candidate?.information?.items[itemIndex];
@@ -116,10 +126,10 @@ export default function Home() {
     <header className="review-toolbar">
     <h1>족보 인물 후보 검수</h1>
     <div className="toolbar-controls">
-    <select aria-label="스캔 쪽" disabled={loading} value={page} onChange={e => {setPage(e.target.value); setData(null); setPerson(-1); setInfo(-1); setItemIndex(-1); setChildIndex(-1); setVariant('original');}}>
+    <select aria-label="스캔 쪽" disabled={loading} value={page} onChange={e => loadPage(e.target.value)}>
       {pages.map(p => <option key={p}>{p}</option>)}
     </select>{' '}
-    <button onClick={() => run()} disabled={loading}>{loading ? '분석 중…' : 'OCR 및 후보 분석'}</button>{' '}
+    <button onClick={() => loadPage(page, data?.selected)} disabled={loading}>{loading ? '조회 중…' : '다시 조회'}</button>{' '}
     <label><input type="checkbox" checked={bands} onChange={e => setBands(e.target.checked)}/>단</label>{' '}
     <label><input type="checkbox" checked={cols} onChange={e => setCols(e.target.checked)}/>열</label>
     </div>
@@ -135,12 +145,13 @@ export default function Home() {
         <button onClick={() => setZoom(1)}>화면 맞춤</button>
         <output>{Math.round(zoom*100)}%</output>
       </div>
-    {data && <div>{data.rotation.applied ? <>
-      기울기 {data.rotation.angle_degrees.toFixed(2)}° 감지, 보정본 저장됨.{' '}
-      <button onClick={() => run('original')} disabled={loading || variant === 'original'}>원본 분석</button>{' '}
-      <button onClick={() => run('corrected')} disabled={loading || variant === 'corrected'}>보정본 분석</button>{' '}
-      현재: {variant === 'original' ? '원본' : '보정본'}
-    </> : <>보정하지 않음: {data.rotation.reason}</>}</div>}
+    {data && <label>저장된 OCR 실행{' '}
+      <select value={data.selected} onChange={e => loadPage(page, e.target.value)}>
+        {data.runs.map(r => <option key={r.id} value={r.id}>
+          #{r.run_id} · {r.variant === 'deskewed' ? `보정본 ${r.rotation_degrees.toFixed(2)}°` : '원본'} · {IMPORT_STATUS[r.status]}
+        </option>)}
+      </select>
+    </label>}
     </div>
       <div className="scan-viewport" ref={viewportRef}>
       <div className="scan-canvas" style={{width:Math.max(viewport.width,imageSize.width*scale), height:Math.max(viewport.height,imageSize.height*scale)}}>
@@ -164,7 +175,7 @@ export default function Home() {
       </section>
       <aside className="review-panel" aria-label="인물 정보 검수">
         {error && <pre role="alert" className="review-error">{error}</pre>}
-        {!data && <p className="empty-state">{loading ? 'OCR 분석 중입니다. 잠시 기다려 주세요.' : '쪽을 선택하고 분석한 뒤 검수할 인물을 선택하세요.'}</p>}
+        {!data && !error && <p className="empty-state">{loading ? '저장된 OCR 결과를 불러오는 중입니다.' : '쪽을 선택하세요.'}</p>}
         {data && <>
         <div className="person-picker">
         <h2>인물 후보 {data.people.candidates.length}명</h2>
@@ -174,10 +185,20 @@ export default function Home() {
         </select>
         <p>주황: 이름 · 초록: 선택 인물 · 청록: 정보 · 노랑: 선택 정보</p>
         {candidate && <nav className="detail-tabs" aria-label="검수 정보 종류">
-          {[['raw','원문'],['life','생몰'],['spouses','배우자·혼인'],['general','일반정보'],['family','부모·자녀'],['references','다른 쪽 참조']].map(([key,label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
+          {[['current','현재 검수값'],['raw','원문'],['life','생몰'],['spouses','배우자·혼인'],['general','일반정보'],['family','부모·자녀'],['references','다른 쪽 참조']].map(([key,label]) => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
         </nav>}
         </div>
         {candidate && <div className="person-details"><h3>{candidate.name_text}</h3>
+          {tab === 'current' && <section>
+            {record ? <>
+              <p>{record.name_hanja || '이름 미상'} · {{pending:'미검수',confirmed:'확정',rejected:'거절'}[record.review_status]}
+                {record.visible ? '' : ' · 서비스 조회 제외'}</p>
+              <h4>현재 조회되는 부가 정보</h4>
+              {record.facts.length ? <ul>{record.facts.map(f => <li key={f.id}>
+                {KINDS[f.kind]} · {f.raw}{f.explanation && <div>{f.explanation}</div>}
+              </li>)}</ul> : <p>표시할 부가 정보가 없습니다.</p>}
+            </> : <p>기존 인물과 대조가 필요한 추출입니다.</p>}
+          </section>}
           {candidate.missing_name_characters > 0 && <p>OCR 이름 상자는 더 긴데 글자를 {candidate.missing_name_characters}자 덜 읽었습니다. □는 판독이 필요한 누락 글자입니다.</p>}
           {candidate.lineage_marker && <p>표지: {candidate.lineage_marker} — 아들 계통·후손 라인 (이름과 별도)</p>}
           {candidate.geometry_estimated && <p>옆 열과 합쳐진 OCR 상자를 분할한 후보입니다. 글자별 경계는 추정값이므로 원본과 확인해 주세요.</p>}
@@ -198,7 +219,7 @@ export default function Home() {
               const matches = matchingTarget(reference);
               return <li key={index}>
                 <strong>{reference.raw}</strong> → {String(reference.target_page).padStart(3,'0')}쪽 · {reference.direction === 'up' ? '위쪽 참조' : '아래쪽 참조'}{reference.ocr_direction_uncertain ? ' · OCR 방향 판독 확인 필요' : ''}
-                {reference.status === 'scan_missing' ? <div>대상 스캔 누락: 연결 보류</div> : !target ? <div>대상 쪽 분석 중…</div> : target.error ? <div>대상 쪽 분석 실패: {target.error}</div> : matches.length === 1 ? <div><button onClick={() => openTarget(reference,matches[0].index)}>{matches[0].item.name_text} (단 {matches[0].item.band})</button> · 이름 일치 출현 후보 · 미검수</div> : matches.length > 1 ? <div>대상 쪽에 같은 이름이 {matches.length}개여서 연결 보류</div> : <div>대상 쪽에서 같은 이름을 찾지 못함 — OCR 차이 또는 원본 확인 필요</div>}
+                {reference.status === 'scan_missing' ? <div>대상 스캔 누락: 연결 보류</div> : !target ? <div>대상 쪽 조회 중…</div> : target.error ? <div>대상 쪽 조회: {target.error}</div> : matches.length === 1 ? <div><button onClick={() => openTarget(reference,matches[0].index)}>{matches[0].item.name_text} (단 {matches[0].item.band})</button> · 이름 일치 출현 후보 · 미검수</div> : matches.length > 1 ? <div>대상 쪽에 같은 이름이 {matches.length}개여서 연결 보류</div> : <div>대상 쪽에서 같은 이름을 찾지 못함 — OCR 차이 또는 원본 확인 필요</div>}
               </li>;
             })}</ul>
           </section>

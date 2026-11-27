@@ -18,19 +18,19 @@
 페이지·OCR·인물 스키마와 마이그레이션 적용·검증 방법은 [DB 데이터 사전](db/README.md)에 정리했다.
 # 단일 이미지 OCR
 
-Python 3.12 환경에서 CPU 기준 실행:
+로컬 PostgreSQL에 마이그레이션을 적용한 뒤 Python 3.12 환경에서 실행한다.
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/pip install -r requirements-ocr.txt
-.venv/bin/python scripts/ocr_image.py scan/genealogy/001.jpg --output /tmp/ocr-001.json
+.venv/bin/pip install -r requirements-ocr.txt -r requirements-db.txt
+.venv/bin/python scripts/ocr_image.py scan/genealogy/001.jpg
 ```
 
-최초 실행 시 PaddleOCR의 공식 모델 다운로드가 필요하다. 기본 설정은 CPU, `PP-OCRv5`, `chinese_cht`이다. 출력 파일이 이미 있으면 덮어쓰지 않는다. 결과는 원본 이미지 해시·크기, 모델과 실행 환경, 인식 문자열·신뢰도·원본 좌표를 담는다. 이 단계는 페이지 전체의 원시 인식이며 인물이나 관계를 확정하지 않는다. 실행 결과와 한계는 [기준선 기록](docs/research/ocr-baseline.md)을 참조한다.
+최초 실행 시 PaddleOCR의 공식 모델 다운로드가 필요하다. 기본 설정은 CPU, `PP-OCRv5`, `chinese_cht`이다. 명령은 원본 이미지 해시와 크기, 모델과 실행 환경, 인식 문자열과 좌표, 인물과 관계 후보를 PostgreSQL에 저장한다.
 
 ## 전처리 검수
 
-인물·본문 영역 후보와 전처리 결과를 검수하려면 다음을 실행하고 브라우저에서 `http://127.0.0.1:3000`을 연다. Python 3.12 환경과 OCR 의존성 설치가 먼저 필요하다.
+인물·본문 영역 후보와 전처리 결과를 검수하려면 다음을 실행하고 브라우저에서 `http://127.0.0.1:3000`을 연다. 먼저 로컬 DB를 실행하고 [적재 안내](db/import-page.md)에 따라 검수할 쪽을 적재한다.
 
 ```bash
 cd review-web
@@ -38,8 +38,14 @@ npm install
 npm run dev
 ```
 
-쪽을 선택하고 분석 버튼을 누르면 검출한 단별로 실제 CPU OCR을 실행한다. 빨강은 단, 파랑은 열 후보, 주황은 이름 후보이며 인물을 선택하면 왼쪽 설명 후보를 확인할 수 있다. 최초 실행은 모델 다운로드가 필요하며 시간이 걸린다. 단 검출이 틀리면 OCR 결과도 영향을 받는다. 전처리와 인물 후보는 초안이고 수정·저장 기능은 아직 없다. 실행 중인 서버의 메모리에 분석 결과를 임시 보관하고, 중간 JSON은 시스템 임시 디렉터리에 남는다.
+쪽을 선택하면 PostgreSQL에 저장한 실행을 연다. 빨강은 단, 파랑은 열, 주황은 이름 후보이며 인물을 선택하면 근거 영역을 확인할 수 있다. 새 쪽은 먼저 아래 명령으로 적재한다.
 
-기울기 보정이 필요한 쪽은 원본을 보존하고 `data/ocr/deskew/`에 보정 PNG를 저장한다. 화면의 원본 분석·보정본 분석 버튼으로 각각 OCR 결과를 비교한다. 화면에서 선택한 분석본은 현재 화면에만 적용되며 영구 저장되지 않는다. 검출한 기울기가 불확실하거나 0.15도 미만이면 회전하지 않는다. 회전 행렬과 역행렬은 전처리 JSON에 포함된다.
+```bash
+.venv/bin/python scripts/ocr_image.py scan/genealogy/002.jpg
+```
+
+원본과 보정본을 모두 적재한 쪽은 실행 선택기에서 두 결과를 비교할 수 있다. 보정본은 `scripts/import_page.py <스캔> --deskew`로 적재한다.
 
 검수 화면은 왼쪽 스캔과 오른쪽 정보 영역으로 나뉜다. 오른쪽만 스크롤되며 인물 선택은 상단에 고정된다. ‘원문 후보’, ‘생몰·일반 정보’, ‘배우자·혼인’ 탭으로 내용을 전환하고 항목을 누르면 왼쪽 스캔의 근거 영역을 강조한다. T008 샘플 검수 패널은 제거했으며 자동 테스트용 fixture는 유지한다. [규칙·한계](docs/research/information-parser.md)를 참고한다.
+
+단일 족보 스캔을 PostgreSQL에 적재하고 원문 근거를 조회하는 방법은 [단일 페이지 적재 안내](db/import-page.md)에 있다.

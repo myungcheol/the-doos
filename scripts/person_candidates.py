@@ -158,16 +158,7 @@ def extract(ocr, layout):
                          'name-shaped text in body may be misclassified']}
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('ocr', type=Path)
-    parser.add_argument('layout', type=Path)
-    parser.add_argument('--output', required=True, type=Path)
-    args = parser.parse_args()
-    with args.ocr.open(encoding='utf-8') as f:
-        ocr = json.load(f)
-    with args.layout.open(encoding='utf-8') as f:
-        layout = json.load(f)
+def analyze(ocr, layout, scan_dir):
     result = extract(ocr, layout)
     from information_parser import enrich
     result = enrich(result)
@@ -178,7 +169,21 @@ def main():
     from parent_candidates import extract_parent_candidates
     result = extract_parent_candidates(result)
     from page_references import extract_references
-    result['page_references'] = extract_references(ocr, result, Path('scan/genealogy'))
+    result['page_references'] = extract_references(ocr, result, scan_dir)
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('ocr', type=Path)
+    parser.add_argument('layout', type=Path)
+    parser.add_argument('--output', required=True, type=Path)
+    args = parser.parse_args()
+    with args.ocr.open(encoding='utf-8') as f:
+        ocr = json.load(f)
+    with args.layout.open(encoding='utf-8') as f:
+        layout = json.load(f)
+    result = analyze(ocr, layout, Path('scan/genealogy'))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
